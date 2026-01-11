@@ -206,6 +206,7 @@ enum ERlvBehaviour {
     RLV_BHVR_EDITPROFILE,           // "editprofile" // [RLVa:ID]
     RLV_BHVR_EDITPICKS,             // "editpicks" // [RLVa:ID]
     RLV_BHVR_EDITDISPLAYNAME,       // "editdisplayname" // [RLVa:ID]
+    RLV_BHVR_EDITPFP,               // "editpfp" // [RLVa:ID]
     RLV_BHVR_ALWAYSRUN,             // "alwaysrun"
     RLV_BHVR_TEMPRUN,               // "temprun"
     RLV_BHVR_DETACHME,              // "detachme"
