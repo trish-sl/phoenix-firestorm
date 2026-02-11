@@ -764,8 +764,8 @@ bool LLToolCompGun::handleHover(S32 x, S32 y, MASK mask)
 
 bool LLToolCompGun::handleMouseDown(S32 x, S32 y, MASK mask)
 {
-    // if the left button is grabbed, don't put up the pie menu
-    if (gAgent.leftButtonGrabbed() && gViewerInput.isLMouseHandlingDefault(MODE_FIRST_PERSON))
+    // if the left button is blocked, don't put up the pie menu
+    if (gAgent.leftButtonBlocked() && gViewerInput.isLMouseHandlingDefault(MODE_FIRST_PERSON))
     {
         gAgent.setControlFlags(AGENT_CONTROL_ML_LBUTTON_DOWN);
         return false;
@@ -781,8 +781,8 @@ bool LLToolCompGun::handleMouseDown(S32 x, S32 y, MASK mask)
 
 bool LLToolCompGun::handleDoubleClick(S32 x, S32 y, MASK mask)
 {
-    // if the left button is grabbed, don't put up the pie menu
-    if (gAgent.leftButtonGrabbed() && gViewerInput.isLMouseHandlingDefault(MODE_FIRST_PERSON))
+    // if the left button is blocked, don't put up the pie menu
+    if (gAgent.leftButtonBlocked() && gViewerInput.isLMouseHandlingDefault(MODE_FIRST_PERSON))
     {
         gAgent.setControlFlags(AGENT_CONTROL_ML_LBUTTON_DOWN);
         return false;
