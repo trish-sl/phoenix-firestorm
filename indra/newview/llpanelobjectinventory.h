@@ -33,6 +33,10 @@
 
 #include "llinventory.h"
 
+#include <map>
+#include <set>
+#include <unordered_map>
+
 class LLScrollContainer;
 class LLFolderView;
 class LLFolderViewFolder;
@@ -65,6 +69,9 @@ public:
     LLFolderViewModelInventory& getRootViewModel() { return mInventoryViewModel; }
 
     void doToSelected(const LLSD& userdata);
+    void stopScript();
+    void stopScripts();
+    bool canStopScripts() const;
 
     void refresh();
     const LLUUID& getTaskUUID() { return mTaskUUID;}
@@ -75,6 +82,10 @@ public:
     LLFolderView* getRootFolder() const { return mFolders; }
     LLInventoryFilter& getFilter() { return mInventoryViewModel.getFilter(); }
     const LLInventoryFilter& getFilter() const { return mInventoryViewModel.getFilter(); }
+
+    bool getScriptRunningState(const LLUUID& item_id, bool& running) const;
+    void requestScriptRunningInfo(const LLUUID& item_id);
+    static void handleScriptRunningReply(const LLUUID& object_id, const LLUUID& item_id, bool running);
 
     virtual void draw();
     virtual void deleteAllChildren();
@@ -116,6 +127,12 @@ protected:
 
 private:
     std::unordered_map<LLUUID, LLFolderViewItem*> mItemMap;
+    void setScriptRunningState(const LLUUID& item_id, bool running);
+
+    static std::set<LLPanelObjectInventory*> sInstances;
+
+    std::map<LLUUID, bool> mScriptRunningState;
+    std::set<LLUUID> mScriptRunningRequested;
 
     LLScrollContainer* mScroller;
     LLFolderView* mFolders;

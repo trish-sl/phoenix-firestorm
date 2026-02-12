@@ -616,6 +616,14 @@ void LLTaskInvFVBridge::buildContextMenu(LLMenuGL& menu, U32 flags)
 // [/RLVa:KB]
     }
     items.push_back(std::string("Task Properties"));
+    if (item->getType() == LLAssetType::AT_LSL_TEXT)
+    {
+        items.push_back(std::string("Task Stop Script"));
+        if (!mPanel->canStopScripts())
+        {
+            disabled_items.push_back(std::string("Task Stop Script"));
+        }
+    }
     // <FS:Ansariel> Improved object properties
     //if ((flags & FIRST_SELECTED_ITEM) == 0)
     //{
@@ -760,6 +768,17 @@ void LLTaskCategoryBridge::buildContextMenu(LLMenuGL& menu, U32 flags)
 {
     std::vector<std::string> items;
     std::vector<std::string> disabled_items;
+
+    LLInventoryObject* category = findInvObject();
+    if (category && category->getParentUUID().isNull() && category->getName() == "Contents")
+    {
+        items.push_back(std::string("Task Stop Scripts"));
+        if (!mPanel->canStopScripts())
+        {
+            disabled_items.push_back(std::string("Task Stop Scripts"));
+        }
+    }
+
     hide_context_entries(menu, items, disabled_items);
 }
 
@@ -1046,8 +1065,64 @@ public:
                        const std::string& name) :
         LLTaskInvFVBridge(panel, uuid, name) {}
 
+    LLFontGL::StyleFlags getLabelStyle() const override;
+    std::string getLabelSuffix() const override;
     //static bool enableIfCopyable( void* userdata );
 };
+
+LLFontGL::StyleFlags LLTaskScriptBridge::getLabelStyle() const
+{
+    LLFontGL::StyleFlags style = LLTaskInvFVBridge::getLabelStyle();
+    const LLInventoryItem* item = findItem();
+    if (!item || item->getType() != LLAssetType::AT_LSL_TEXT)
+    {
+        return style;
+    }
+
+    bool is_running = true;
+    if (mPanel)
+    {
+        if (!mPanel->getScriptRunningState(mUUID, is_running))
+        {
+            mPanel->requestScriptRunningInfo(mUUID);
+        }
+    }
+
+    if (!is_running)
+    {
+        style = static_cast<LLFontGL::StyleFlags>(style | LLFontGL::ITALIC);
+    }
+
+    return style;
+}
+
+std::string LLTaskScriptBridge::getLabelSuffix() const
+{
+    std::string suffix = LLTaskInvFVBridge::getLabelSuffix();
+    const LLInventoryItem* item = findItem();
+    if (!item || item->getType() != LLAssetType::AT_LSL_TEXT)
+    {
+        return suffix;
+    }
+
+    bool is_running = true;
+    if (mPanel)
+    {
+        if (!mPanel->getScriptRunningState(mUUID, is_running))
+        {
+            mPanel->requestScriptRunningInfo(mUUID);
+            return suffix;
+        }
+    }
+
+    if (!is_running)
+    {
+        static const std::string stopped_suffix = " [stopped]";
+        suffix += stopped_suffix;
+    }
+
+    return suffix;
+}
 
 class LLTaskLSLBridge : public LLTaskScriptBridge
 {
@@ -1471,6 +1546,7 @@ LLTaskInvFVBridge* LLTaskInvFVBridge::createObjectBridge(LLPanelObjectInventory*
 ///----------------------------------------------------------------------------
 
 static LLDefaultChildRegistry::Register<LLPanelObjectInventory> r("panel_inventory_object");
+std::set<LLPanelObjectInventory*> LLPanelObjectInventory::sInstances;
 
 void do_nothing()
 {
@@ -1487,8 +1563,12 @@ LLPanelObjectInventory::LLPanelObjectInventory(const LLPanelObjectInventory::Par
     mInventoryViewModel(p.name),
     mShowRootFolder(p.show_root_folder)
 {
+    sInstances.insert(this);
+
     // Setup context menu callbacks
     mCommitCallbackRegistrar.add("Inventory.DoToSelected", boost::bind(&LLPanelObjectInventory::doToSelected, this, _2));
+    mCommitCallbackRegistrar.add("Inventory.StopScript", boost::bind(&LLPanelObjectInventory::stopScript, this));
+    mCommitCallbackRegistrar.add("Inventory.StopScripts", boost::bind(&LLPanelObjectInventory::stopScripts, this));
     mCommitCallbackRegistrar.add("Inventory.EmptyTrash", boost::bind(&LLInventoryModel::emptyFolderType, &gInventory, "ConfirmEmptyTrash", LLFolderType::FT_TRASH));
     mCommitCallbackRegistrar.add("Inventory.EmptyLostAndFound", boost::bind(&LLInventoryModel::emptyFolderType, &gInventory, "ConfirmEmptyLostAndFound", LLFolderType::FT_LOST_AND_FOUND));
     mCommitCallbackRegistrar.add("Inventory.DoCreate", boost::bind(&do_nothing));
@@ -1504,6 +1584,8 @@ LLPanelObjectInventory::LLPanelObjectInventory(const LLPanelObjectInventory::Par
 // Destroys the object
 LLPanelObjectInventory::~LLPanelObjectInventory()
 {
+    sInstances.erase(this);
+
     if (!gIdleCallbacks.deleteFunction(idle, this))
     {
         LL_WARNS() << "LLPanelObjectInventory::~LLPanelObjectInventory() failed to delete callback" << LL_ENDL;
@@ -1519,6 +1601,87 @@ bool LLPanelObjectInventory::postBuild()
     gIdleCallbacks.addFunction(idle, this);
 
     return true;
+}
+
+bool LLPanelObjectInventory::getScriptRunningState(const LLUUID& item_id, bool& running) const
+{
+    auto it = mScriptRunningState.find(item_id);
+    if (it == mScriptRunningState.end())
+    {
+        return false;
+    }
+
+    running = it->second;
+    return true;
+}
+
+void LLPanelObjectInventory::requestScriptRunningInfo(const LLUUID& item_id)
+{
+    if (item_id.isNull())
+    {
+        return;
+    }
+
+    if (mScriptRunningRequested.find(item_id) != mScriptRunningRequested.end() ||
+        mScriptRunningState.find(item_id) != mScriptRunningState.end())
+    {
+        return;
+    }
+
+    LLViewerObject* object = gObjectList.findObject(mTaskUUID);
+    if (!object || object->isInventoryPending())
+    {
+        return;
+    }
+
+    LLViewerRegion* region = object->getRegion();
+    if (!region)
+    {
+        return;
+    }
+
+    LLInventoryObject* inv_obj = object->getInventoryObject(item_id);
+    if (!inv_obj || inv_obj->getType() != LLAssetType::AT_LSL_TEXT)
+    {
+        return;
+    }
+
+    LLMessageSystem* msg = gMessageSystem;
+    msg->newMessageFast(_PREHASH_GetScriptRunning);
+    msg->nextBlockFast(_PREHASH_Script);
+    msg->addUUIDFast(_PREHASH_ObjectID, mTaskUUID);
+    msg->addUUIDFast(_PREHASH_ItemID, item_id);
+    msg->sendReliable(region->getHost());
+
+    mScriptRunningRequested.insert(item_id);
+}
+
+void LLPanelObjectInventory::setScriptRunningState(const LLUUID& item_id, bool running)
+{
+    mScriptRunningState[item_id] = running;
+    mScriptRunningRequested.insert(item_id);
+
+    if (LLFolderViewItem* item = getItemByID(item_id))
+    {
+        item->refresh();
+        if (mFolders)
+        {
+            mFolders->requestArrange();
+        }
+    }
+}
+
+void LLPanelObjectInventory::handleScriptRunningReply(const LLUUID& object_id, const LLUUID& item_id, bool running)
+{
+    for (LLPanelObjectInventory* panel : sInstances)
+    {
+        if (!panel || panel->mTaskUUID != object_id)
+        {
+            continue;
+        }
+
+        panel->setScriptRunningState(item_id, running);
+    }
 }
 
 void LLPanelObjectInventory::doToSelected(const LLSD& userdata)
@@ -1542,10 +1705,113 @@ void LLPanelObjectInventory::doToSelected(const LLSD& userdata)
     }
 }
 
+bool LLPanelObjectInventory::canStopScripts() const
+{
+    LLViewerObject* object = gObjectList.findObject(mTaskUUID);
+    if (!object || object->isInventoryPending() || !object->permModify())
+    {
+        return false;
+    }
+
+    LLInventoryObject::object_list_t contents;
+    object->getInventoryContents(contents);
+    for (const LLPointer<LLInventoryObject>& inventory : contents)
+    {
+        if (inventory && inventory->getType() == LLAssetType::AT_LSL_TEXT)
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+void LLPanelObjectInventory::stopScripts()
+{
+    if (!canStopScripts())
+    {
+        return;
+    }
+
+    LLViewerObject* object = gObjectList.findObject(mTaskUUID);
+    LLViewerRegion* region = object ? object->getRegion() : nullptr;
+    if (!object || !region)
+    {
+        return;
+    }
+
+    LLInventoryObject::object_list_t contents;
+    object->getInventoryContents(contents);
+    for (const LLPointer<LLInventoryObject>& inventory : contents)
+    {
+        if (!inventory || inventory->getType() != LLAssetType::AT_LSL_TEXT)
+        {
+            continue;
+        }
+
+        LLMessageSystem* msg = gMessageSystem;
+        msg->newMessageFast(_PREHASH_SetScriptRunning);
+        msg->nextBlockFast(_PREHASH_AgentData);
+        msg->addUUIDFast(_PREHASH_AgentID, gAgent.getID());
+        msg->addUUIDFast(_PREHASH_SessionID, gAgent.getSessionID());
+        msg->nextBlockFast(_PREHASH_Script);
+        msg->addUUIDFast(_PREHASH_ObjectID, mTaskUUID);
+        msg->addUUIDFast(_PREHASH_ItemID, inventory->getUUID());
+        msg->addBOOLFast(_PREHASH_Running, false);
+        msg->sendReliable(region->getHost());
+
+        setScriptRunningState(inventory->getUUID(), false);
+    }
+}
+
+void LLPanelObjectInventory::stopScript()
+{
+    if (!canStopScripts() || !mFolders)
+    {
+        return;
+    }
+
+    LLFolderViewItem* selected_item = mFolders->getCurSelectedItem();
+    if (!selected_item)
+    {
+        return;
+    }
+
+    const LLFolderViewModelItemInventory* selected_inventory =
+        dynamic_cast<const LLFolderViewModelItemInventory*>(selected_item->getViewModelItem());
+    if (!selected_inventory)
+    {
+        return;
+    }
+
+    LLViewerObject* object = gObjectList.findObject(mTaskUUID);
+    LLViewerRegion* region = object ? object->getRegion() : nullptr;
+    LLInventoryObject* inventory = object ? object->getInventoryObject(selected_inventory->getUUID()) : nullptr;
+    if (!object || !region || !inventory || inventory->getType() != LLAssetType::AT_LSL_TEXT)
+    {
+        return;
+    }
+
+    LLMessageSystem* msg = gMessageSystem;
+    msg->newMessageFast(_PREHASH_SetScriptRunning);
+    msg->nextBlockFast(_PREHASH_AgentData);
+    msg->addUUIDFast(_PREHASH_AgentID, gAgent.getID());
+    msg->addUUIDFast(_PREHASH_SessionID, gAgent.getSessionID());
+    msg->nextBlockFast(_PREHASH_Script);
+    msg->addUUIDFast(_PREHASH_ObjectID, mTaskUUID);
+    msg->addUUIDFast(_PREHASH_ItemID, inventory->getUUID());
+    msg->addBOOLFast(_PREHASH_Running, false);
+    msg->sendReliable(region->getHost());
+
+    setScriptRunningState(inventory->getUUID(), false);
+}
+
 void LLPanelObjectInventory::clearContents()
 {
     mHaveInventory = false;
     mIsInventoryEmpty = true;
+    mScriptRunningState.clear();
+    mScriptRunningRequested.clear();
     if (LLToolDragAndDrop::getInstance() && LLToolDragAndDrop::getInstance()->getSource() == LLToolDragAndDrop::SOURCE_WORLD)
     {
         LLToolDragAndDrop::getInstance()->endDrag();
@@ -1584,6 +1850,8 @@ void LLPanelObjectInventory::reset()
     p.view_model = &mInventoryViewModel;
     p.root = NULL;
     p.options_menu = "menu_inventory.xml";
+    // Enable label styling and suffixes (used for stopped scripts).
+    p.use_label_suffix = true;
 
     // <FS:Ansariel> Inventory specials
     p.for_inventory = true;
@@ -1864,6 +2132,11 @@ void LLPanelObjectInventory::createViewsForCategory(LLInventoryObject::object_li
 
                 view->addToFolder(folder);
                 addItemID(obj->getUUID(), view);
+
+                if (obj->getType() == LLAssetType::AT_LSL_TEXT)
+                {
+                    requestScriptRunningInfo(obj->getUUID());
+                }
             }
         }
     }
