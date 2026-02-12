@@ -401,6 +401,7 @@ public:
 
 private:
     virtual bool canClose();
+    void onClose(bool app_quitting) override;
     void closeIfNeeded();
     virtual void draw();
 
