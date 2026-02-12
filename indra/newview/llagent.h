@@ -583,6 +583,8 @@ private:
     void            updateIgnorePrejump(const LLSD &data);
     void            updateFSAlwaysFly(const LLSD &data);
     // </FS> Ignore prejump and always fly
+    F64             mLastJumpRequestTime;
+    bool            mPendingFinishAnim;
 
     //--------------------------------------------------------------------
     // Animations

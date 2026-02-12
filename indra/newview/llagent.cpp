@@ -145,6 +145,7 @@ const S32 UI_FEATURE_FLAGS = 7;
 
 // The agent instance.
 LLAgent gAgent;
+static constexpr F64 JUMP_FINISH_DEBOUNCE_SECS = 0.5;
 
 class LLTeleportRequest
 {
@@ -474,6 +475,8 @@ LLAgent::LLAgent() :
     mIgnorePrejump(false),
     mAlwaysFly(false),
     // </FS>
+    mLastJumpRequestTime(0.0),
+    mPendingFinishAnim(false),
 
     mControlFlags(0x00000000),
 
@@ -1732,7 +1735,13 @@ U32 LLAgent::getControlFlags()
 //-----------------------------------------------------------------------------
 void LLAgent::setControlFlags(U32 mask)
 {
+    const U32 prev_flags = mControlFlags;
     mControlFlags |= mask;
+
+    if ((mask & AGENT_CONTROL_UP_POS) && !(prev_flags & AGENT_CONTROL_UP_POS) && !getFlying() && !mAutoPilot)
+    {
+        mLastJumpRequestTime = LLTimer::getTotalSeconds();
+    }
 }
 
 //-----------------------------------------------------------------------------
@@ -2488,6 +2497,21 @@ void LLAgent::propagate(const F32 dt)
         {
             // land automatically
             setFlying(false);
+        }
+    }
+
+    if (mPendingFinishAnim)
+    {
+        const bool up_pos = (mControlFlags & AGENT_CONTROL_UP_POS) != 0;
+        const bool in_air = isAgentAvatarValid() && gAgentAvatarp->mInAir;
+        const F64 now = LLTimer::getTotalSeconds();
+        const F64 elapsed = now - mLastJumpRequestTime;
+        const bool recent_jump = (mLastJumpRequestTime > 0.0) && (elapsed < JUMP_FINISH_DEBOUNCE_SECS);
+
+        if (!up_pos && !recent_jump && !in_air)
+        {
+            setControlFlags(AGENT_CONTROL_FINISH_ANIM);
+            mPendingFinishAnim = false;
         }
     }
 
@@ -3255,7 +3279,25 @@ void LLAgent::onAnimStop(const LLUUID& id)
     }
     else if (id == ANIM_AGENT_PRE_JUMP || id == ANIM_AGENT_LAND || id == ANIM_AGENT_MEDIUM_LAND)
     {
-        setControlFlags(AGENT_CONTROL_FINISH_ANIM);
+        // If the jump key is currently held, avoid forcing a finish-anim that can
+        // short-circuit the next pre-jump in cases of rapid successive jumps.
+        // Breaking change since v7 viewers or so, likely caused by https://github.com/FirestormViewer/phoenix-firestorm/commit/da87e8bd370ea079576f8b412a4ddb80c0715bd1
+        // TODO: the real fix would be to discern which anim the viewer finished, but this requires simulator fixes.
+        const bool up_pos = (mControlFlags & AGENT_CONTROL_UP_POS) != 0;
+        const bool in_air = isAgentAvatarValid() && gAgentAvatarp->mInAir;
+        const F64 now = LLTimer::getTotalSeconds();
+        const F64 elapsed = now - mLastJumpRequestTime;
+        const bool recent_jump = (mLastJumpRequestTime > 0.0) && (elapsed < JUMP_FINISH_DEBOUNCE_SECS);
+
+        if (!up_pos && !recent_jump && !in_air)
+        {
+            setControlFlags(AGENT_CONTROL_FINISH_ANIM);
+            mPendingFinishAnim = false;
+        }
+        else
+        {
+            mPendingFinishAnim = true;
+        }
     }
 }
 
