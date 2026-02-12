@@ -701,11 +701,28 @@ void LLNetMap::draw()
 
         LLWorld::getInstance()->getAvatars(&avatar_ids, &positions, gAgentCamera.getCameraPositionGlobal());
 
-        // Draw avatars
+        struct AvatarDrawData
+        {
+            LLUUID id;
+            LLVector3 pos_map;
+            LLVector3d pos_global;
+            bool unknown_relative_z;
+            LLColor4 color;
+        };
+
+        std::vector<AvatarDrawData> draw_data;
+        draw_data.reserve(avatar_ids.size());
+
+        std::vector<size_t> non_friend_indices;
+        std::vector<size_t> contact_set_indices;
+        std::vector<size_t> friend_indices;
+
+        LLAvatarTracker& avatar_tracker = LLAvatarTracker::instance();
+        LGGContactSets& contact_sets = LGGContactSets::instance();
+
+        // Gather avatar draw data and pick info first.
         for (U32 i = 0; i < avatar_ids.size(); i++)
         {
-            // <FS:Ansariel> Performance improvement
-            //LLUUID uuid = avatar_ids[i];
             const LLUUID& uuid = avatar_ids.at(i);
             // Skip self, we'll draw it later
             if (uuid == gAgent.getID()) continue;
@@ -713,8 +730,6 @@ void LLNetMap::draw()
             pos_map = globalPosToView(positions[i]);
 
             // <FS:Ansariel> Check for unknown Z-offset => AVATAR_UNKNOWN_Z_OFFSET
-            //unknown_relative_z = positions[i].mdV[VZ] >= COARSEUPDATE_MAX_Z &&
-            //      camera_position.mV[VZ] >= COARSEUPDATE_MAX_Z;
             unknown_relative_z = false;
             if (positions[i].mdV[VZ] == AVATAR_UNKNOWN_Z_OFFSET)
             {
@@ -736,46 +751,20 @@ void LLNetMap::draw()
 
             LLColor4 color = getAvatarColor(uuid);  // <FS:CR>
 
-// [RLVa:KB] - Checked: 2010-04-19 (RLVa-1.2.0f) | Modified: RLVa-1.2.0f | FS-Specific
-            LLWorldMapView::drawAvatar(
-                pos_map.mV[VX], pos_map.mV[VY],
-                (RlvActions::canShowName(RlvActions::SNC_DEFAULT, uuid)) ? color : map_avatar_color.get(),
-                pos_map.mV[VZ], mDotRadius,
-                unknown_relative_z);
-// [/RLVa:KB]
-//          LLWorldMapView::drawAvatar(
-//              pos_map.mV[VX], pos_map.mV[VY],
-//              color,
-//              pos_map.mV[VZ], mDotRadius,
-//              unknown_relative_z);
+            const size_t draw_index = draw_data.size();
+            draw_data.push_back({ uuid, pos_map, positions[i], unknown_relative_z, color });
 
-            if(uuid.notNull())
+            if (avatar_tracker.isBuddy(uuid))
             {
-                bool selected = false;
-                uuid_vec_t::iterator sel_iter = gmSelected.begin();
-                for (; sel_iter != gmSelected.end(); sel_iter++)
-                {
-                    if(*sel_iter == uuid)
-                    {
-                        selected = true;
-                        break;
-                    }
-                }
-                if(selected)
-                {
-                    if( (pos_map.mV[VX] < 0) ||
-                        (pos_map.mV[VY] < 0) ||
-                        (pos_map.mV[VX] >= getRect().getWidth()) ||
-                        (pos_map.mV[VY] >= getRect().getHeight()) )
-                    {
-                        S32 x = ll_round( pos_map.mV[VX] );
-                        S32 y = ll_round( pos_map.mV[VY] );
-                        LLWorldMapView::drawTrackingCircle( getRect(), x, y, color, 1, 10);
-                    } else
-                    {
-                        LLWorldMapView::drawTrackingDot(pos_map.mV[VX],pos_map.mV[VY],color,0.f);
-                    }
-                }
+                friend_indices.push_back(draw_index);
+            }
+            else if (contact_sets.isNonFriend(uuid))
+            {
+                contact_set_indices.push_back(draw_index);
+            }
+            else
+            {
+                non_friend_indices.push_back(draw_index);
             }
 
 // [SL:KB] - Patch: World-MiniMap | Checked: 2012-07-08 (Catznip-3.3)
@@ -797,13 +786,61 @@ void LLNetMap::draw()
 // [SL:KB] - Patch: World-MiniMap | Checked: 2012-07-08 (Catznip-3.3)
             }
 // [/SL:KB]
-//          F32 dist_to_cursor_squared = dist_vec_squared(LLVector2(pos_map.mV[VX], pos_map.mV[VY]),
-//                                          LLVector2(local_mouse_x,local_mouse_y));
-//          if(dist_to_cursor_squared < min_pick_dist_squared && dist_to_cursor_squared < closest_dist_squared)
-//          {
-//              closest_dist_squared = dist_to_cursor_squared;
-//              mClosestAgentToCursor = uuid;
-//          }
+        }
+
+        auto draw_avatar_entry = [&](const AvatarDrawData& entry)
+        {
+// [RLVa:KB] - Checked: 2010-04-19 (RLVa-1.2.0f) | Modified: RLVa-1.2.0f | FS-Specific
+            LLWorldMapView::drawAvatar(
+                entry.pos_map.mV[VX], entry.pos_map.mV[VY],
+                (RlvActions::canShowName(RlvActions::SNC_DEFAULT, entry.id)) ? entry.color : map_avatar_color.get(),
+                entry.pos_map.mV[VZ], mDotRadius,
+                entry.unknown_relative_z);
+// [/RLVa:KB]
+
+            if (entry.id.notNull())
+            {
+                bool selected = false;
+                uuid_vec_t::iterator sel_iter = gmSelected.begin();
+                for (; sel_iter != gmSelected.end(); sel_iter++)
+                {
+                    if (*sel_iter == entry.id)
+                    {
+                        selected = true;
+                        break;
+                    }
+                }
+                if (selected)
+                {
+                    if ((entry.pos_map.mV[VX] < 0) ||
+                        (entry.pos_map.mV[VY] < 0) ||
+                        (entry.pos_map.mV[VX] >= getRect().getWidth()) ||
+                        (entry.pos_map.mV[VY] >= getRect().getHeight()))
+                    {
+                        S32 x = ll_round(entry.pos_map.mV[VX]);
+                        S32 y = ll_round(entry.pos_map.mV[VY]);
+                        LLWorldMapView::drawTrackingCircle(getRect(), x, y, entry.color, 1, 10);
+                    }
+                    else
+                    {
+                        LLWorldMapView::drawTrackingDot(entry.pos_map.mV[VX], entry.pos_map.mV[VY], entry.color, 0.f);
+                    }
+                }
+            }
+        };
+
+        // Draw order: non-friends -> contact set -> friends.
+        for (size_t idx : non_friend_indices)
+        {
+            draw_avatar_entry(draw_data[idx]);
+        }
+        for (size_t idx : contact_set_indices)
+        {
+            draw_avatar_entry(draw_data[idx]);
+        }
+        for (size_t idx : friend_indices)
+        {
+            draw_avatar_entry(draw_data[idx]);
         }
 
         // Draw dot for autopilot target
