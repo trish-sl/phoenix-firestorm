@@ -98,6 +98,7 @@
 #include "llurlmatch.h"
 #include "lltextutil.h"
 #include "lllogininstance.h"
+#include "llinstantmessage.h"
 #include "llprogressview.h"
 #include "llvocache.h"
 #include "lldiskcache.h"
@@ -113,6 +114,7 @@
 #include "llweb.h"
 // <FS:Ansariel> [FS communication UI]
 #include "fsfloatervoicecontrols.h"
+#include "fsfloaternearbychat.h"
 // </FS:Ansariel> [FS communication UI]
 // [SL:KB] - Patch: Build-ScriptRecover | Checked: 2011-11-24 (Catznip-3.2.0)
 #include "llfloaterscriptrecover.h"
@@ -5737,6 +5739,99 @@ public:
         }
 };
 
+static bool tryRecoverAgentRegion(LLViewerRegion* dead_region)
+{
+    if (!dead_region || !isAgentAvatarValid())
+    {
+        return false;
+    }
+
+    if (gAgent.getTeleportState() == LLAgent::TELEPORT_NONE && !gAgentAvatarp->isCrossingRegion())
+    {
+        return false;
+    }
+
+    static LLCachedControl<F32> recovery_window(gSavedSettings, "FSDebugDcThreshold", 120.f);
+    const F32 max_window = recovery_window;
+    F32 elapsed = 0.f;
+    bool has_timer = false;
+    if (gTeleportDisplay)
+    {
+        elapsed = gTeleportDisplayTimer.getElapsedTimeF32();
+        has_timer = true;
+    }
+    else if (gAgentAvatarp->isCrossingRegion())
+    {
+        elapsed = gAgentAvatarp->getRegionCrossingElapsedTimeF32();
+        has_timer = true;
+    }
+    if (has_timer && max_window > 0.f && elapsed > max_window)
+    {
+        LL_WARNS("Teleport") << "Skipping recovery after " << elapsed
+                             << "s (exceeds " << max_window << "s window)" << LL_ENDL;
+        return false;
+    }
+
+    LLViewerRegion* candidate = nullptr;
+    if (LLViewerRegion* avatar_region = gAgentAvatarp->getRegion())
+    {
+        if (avatar_region != dead_region && avatar_region->isAlive())
+        {
+            candidate = avatar_region;
+        }
+    }
+
+    if (!candidate)
+    {
+        LLViewerRegion* pos_region = LLWorld::getInstance()->getRegionFromPosGlobal(gAgentAvatarp->getPositionGlobal());
+        if (pos_region && pos_region != dead_region && pos_region->isAlive())
+        {
+            candidate = pos_region;
+        }
+    }
+
+    if (!candidate)
+    {
+        return false;
+    }
+
+    if (FSFloaterNearbyChat* nearby_chat = FSFloaterNearbyChat::getInstance())
+    {
+        LLChat chat;
+        chat.mFromName = SYSTEM_FROM;
+        chat.mFromID = LLUUID::null;
+        chat.mSourceType = CHAT_SOURCE_SYSTEM;
+        chat.mText = "WARNING: Viewer attempting to reconnect to region...";
+        nearby_chat->addMessage(chat);
+    }
+
+    LL_INFOS("Teleport") << "Recovering agent region after dead circuit "
+                         << dead_region->getHost() << " -> " << candidate->getHost() << LL_ENDL;
+
+    const LLVector3 shift_vector = candidate->getPosRegionFromGlobal(dead_region->getOriginGlobal());
+    gAgent.setRegion(candidate);
+    gObjectList.shiftObjects(shift_vector);
+    gAgentAvatarp->updateRegion(candidate);
+
+    if (gAssetStorage)
+    {
+        gAssetStorage->setUpstream(candidate->getHost());
+    }
+    if (gCacheName)
+    {
+        gCacheName->setUpstream(candidate->getHost());
+    }
+    gViewerThrottle.sendToSim();
+    gViewerWindow->sendShapeToSim();
+
+    if (gAgent.getTeleportState() != LLAgent::TELEPORT_NONE)
+    {
+        gAgent.setTeleportState(LLAgent::TELEPORT_NONE);
+    }
+
+    return true;
+}
+
 static LLTrace::BlockTimerStatHandle FTM_AUDIO_UPDATE("Update Audio");
 static LLTrace::BlockTimerStatHandle FTM_CLEANUP("Cleanup");
 static LLTrace::BlockTimerStatHandle FTM_CLEANUP_DRAWABLES("Drawables");
@@ -6618,7 +6713,19 @@ void LLAppViewer::idleNetwork()
         if ((mAgentRegionLastAlive && !this_region_alive) // newly dead
             && (mAgentRegionLastID == this_region_id)) // same region
         {
-            forceDisconnect(LLTrans::getString("AgentLostConnection"));
+            if (tryRecoverAgentRegion(agent_region))
+            {
+                agent_region = gAgent.getRegion();
+                if (agent_region)
+                {
+                    this_region_id = agent_region->getRegionID();
+                    this_region_alive = agent_region->isAlive();
+                }
+            }
+            else
+            {
+                forceDisconnect(LLTrans::getString("AgentLostConnection"));
+            }
         }
         mAgentRegionLastID = this_region_id;
         mAgentRegionLastAlive = this_region_alive;
