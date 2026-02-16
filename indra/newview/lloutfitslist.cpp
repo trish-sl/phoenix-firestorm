@@ -245,7 +245,7 @@ void LLOutfitsList::updateAddedCategory(LLUUID cat_id)
     tab->setFocusReceivedCallback(boost::bind(&LLOutfitListBase::ChangeOutfitSelection, this, list, cat_id));
 
     // Setting callback to reset items selection inside outfit on accordion collapsing and expanding (EXT-7875)
-    tab->setDropDownStateChangedCallback(boost::bind(&LLOutfitsList::resetItemSelection, this, list, cat_id));
+    tab->setDropDownStateChangedCallback(boost::bind(&LLOutfitsList::resetItemSelection, this, list, cat_id, _2));
 
     // Depending on settings, force showing list items that don't match current filter(EXT-7158)
     static LLCachedControl<bool> list_filter(gSavedSettings, "OutfitListFilterFullList");
@@ -577,11 +577,28 @@ void LLOutfitsList::updateChangedCategoryName(LLViewerInventoryCategory *cat, st
     }
 }
 
-void LLOutfitsList::resetItemSelection(LLWearableItemsList* list, const LLUUID& category_id)
+void LLOutfitsList::resetItemSelection(LLWearableItemsList* list, const LLUUID& category_id, const LLSD& param)
 {
+    if (!list)
+    {
+        return;
+    }
+
     list->resetSelection();
     mItemSelected = false;
     signalSelectionOutfitUUID(category_id);
+
+    if (param.asBoolean() && list->getNeedsRefresh())
+    {
+        // Tab expanded: refresh list now so accordion height matches contents.
+        list->setForceRefresh(true);
+        list->setNeedsRefresh(true);
+        list->doIdle();
+        if (mAccordion)
+        {
+            mAccordion->arrange();
+        }
+    }
 }
 
 void LLOutfitsList::onChangeOutfitSelection(LLWearableItemsList* list, const LLUUID& category_id)

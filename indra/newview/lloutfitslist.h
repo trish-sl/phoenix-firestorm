@@ -382,7 +382,7 @@ private:
     /**
      *Resets items selection inside outfit
      */
-    void resetItemSelection(LLWearableItemsList* list, const LLUUID& category_id);
+    void resetItemSelection(LLWearableItemsList* list, const LLUUID& category_id, const LLSD& param);
 
     /**
      * Removes the outfit from selection.
