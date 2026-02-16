@@ -120,6 +120,39 @@ static bool enableVolumeSAPProtection()
 }
 // NaCl End
 
+static bool gltf_blend_has_transparency(const LLGLTFMaterial* mat)
+{
+    if (!mat || (mat->mAlphaMode != LLGLTFMaterial::ALPHA_MODE_BLEND &&
+        mat->mAlphaMode != LLGLTFMaterial::ALPHA_MODE_MASK))
+    {
+        return false;
+    }
+
+    if (mat->mAlphaMode == LLGLTFMaterial::ALPHA_MODE_BLEND)
+    {
+        if (mat->mBaseColor.mV[3] < 0.999f)
+        {
+            return true;
+        }
+    }
+    else if (mat->mAlphaMode == LLGLTFMaterial::ALPHA_MODE_MASK)
+    {
+        if (mat->mBaseColor.mV[3] + 0.0001f < mat->mAlphaCutoff)
+        {
+            return true;
+        }
+    }
+
+    const LLFetchedGLTFMaterial* fetched = dynamic_cast<const LLFetchedGLTFMaterial*>(mat);
+    if (fetched && fetched->mBaseColorTexture.notNull())
+    {
+        const S32 comps = fetched->mBaseColorTexture->getComponents();
+        return (comps == 4 || comps == 2);
+    }
+
+    return mat->mTextureId[LLGLTFMaterial::GLTF_TEXTURE_INFO_BASE_COLOR].notNull();
+}
+
 // Implementation class of LLMediaDataClientObject.  See llmediadataclient.h
 class LLMediaDataClientObjectImpl : public LLMediaDataClientObject
 {
@@ -6176,12 +6209,15 @@ void LLVolumeGeometryManager::rebuildGeom(LLSpatialGroup* group)
 
                     bool force_simple = (facep->getPixelArea() < FORCE_SIMPLE_RENDER_AREA);
                     U32 type = gPipeline.getPoolTypeFromTE(te, tex);
-                    if (is_pbr && gltf_mat && gltf_mat->mAlphaMode != LLGLTFMaterial::ALPHA_MODE_BLEND)
+                    if (is_pbr && gltf_mat)
                     {
-                        type = LLDrawPool::POOL_GLTF_PBR;
+                        const bool gltf_alpha =
+                            (gltf_mat->mAlphaMode == LLGLTFMaterial::ALPHA_MODE_BLEND ||
+                             gltf_mat->mAlphaMode == LLGLTFMaterial::ALPHA_MODE_MASK) &&
+                            gltf_blend_has_transparency(gltf_mat);
+                        type = gltf_alpha ? LLDrawPool::POOL_ALPHA : LLDrawPool::POOL_GLTF_PBR;
                     }
-                    else
-                    if (type != LLDrawPool::POOL_ALPHA && force_simple)
+                    else if (type != LLDrawPool::POOL_ALPHA && force_simple)
                     {
                         type = LLDrawPool::POOL_SIMPLE;
                     }
@@ -6916,12 +6952,26 @@ U32 LLVolumeGeometryManager::genDrawInfo(LLSpatialGroup* group, U32 mask, LLFace
                 { // all other parameters ignored if gltf material is present
                     if (gltf_mat->mAlphaMode == LLGLTFMaterial::ALPHA_MODE_BLEND)
                     {
-                        registerFace(group, facep, LLRenderPass::PASS_ALPHA);
-                        is_alpha = true;
+                        if (gltf_blend_has_transparency(gltf_mat))
+                        {
+                            registerFace(group, facep, LLRenderPass::PASS_ALPHA);
+                            is_alpha = true;
+                        }
+                        else
+                        {
+                            registerFace(group, facep, LLRenderPass::PASS_GLTF_PBR);
+                        }
                     }
                     else if (gltf_mat->mAlphaMode == LLGLTFMaterial::ALPHA_MODE_MASK)
                     {
-                        registerFace(group, facep, LLRenderPass::PASS_GLTF_PBR_ALPHA_MASK);
+                        if (gltf_blend_has_transparency(gltf_mat))
+                        {
+                            registerFace(group, facep, LLRenderPass::PASS_GLTF_PBR_ALPHA_MASK);
+                        }
+                        else
+                        {
+                            registerFace(group, facep, LLRenderPass::PASS_GLTF_PBR);
+                        }
                     }
                     else
                     {
