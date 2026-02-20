@@ -132,12 +132,87 @@ void startP2PVoiceCoro(std::string url, LLUUID tempSessionId, LLUUID creatorId, 
 void chatterBoxInvitationCoro(std::string url, LLUUID sessionId, LLIMMgr::EInvitationType invitationType, const LLSD& voiceChannelInfo);
 void chatterBoxHistoryCoro(std::string url, LLUUID sessionId, std::string from, std::string message, U32 timestamp);
 void start_deprecated_conference_chat(const LLUUID& temp_session_id, const LLUUID& creator_id, const LLUUID& other_participant_id, const LLSD& agents_to_invite);
+static void inviteConferenceCoro(std::string url, LLUUID sessionId, LLSD agents);
+
+static void invite_conference_participants(const LLUUID& session_id, const uuid_vec_t& ids);
+static void restart_conference_if_stale(const LLUUID& session_id);
+static void record_conference_invite_ids(const LLUUID& session_id, const uuid_vec_t& ids);
 
 const LLUUID LLOutgoingCallDialog::OCD_KEY = LLUUID("7CF78E11-0CFE-498D-ADB9-1417BF03DDB4");
 //
 // Globals
 //
 LLIMMgr* gIMMgr = NULL;
+
+static std::map<LLUUID, uuid_vec_t> sConferenceInviteIds;
+static std::set<LLUUID> sStaleConferenceRestarted;
+
+static void record_conference_invite_ids(const LLUUID& session_id, const uuid_vec_t& ids)
+{
+    if (ids.empty())
+    {
+        return;
+    }
+    sConferenceInviteIds[session_id] = ids;
+}
+
+static void restart_conference_if_stale(const LLUUID& session_id)
+{
+    if (gIMMgr == NULL)
+    {
+        return;
+    }
+
+    auto it = sConferenceInviteIds.find(session_id);
+    if (it == sConferenceInviteIds.end() || it->second.empty())
+    {
+        return;
+    }
+
+    if (!sStaleConferenceRestarted.insert(session_id).second)
+    {
+        return;
+    }
+
+    uuid_vec_t ids = it->second;
+    sConferenceInviteIds.erase(it);
+
+    FSCommon::report_to_nearby_chat("Recreating conference");
+    LL_WARNS("IMVIEW") << "Conference session " << session_id << " appears stale; restarting." << LL_ENDL;
+
+    gIMMgr->leaveSession(session_id);
+    LLAvatarActions::startConference(ids, session_id);
+}
+
+static void invite_conference_participants(const LLUUID& session_id, const uuid_vec_t& ids)
+{
+    if (ids.empty())
+    {
+        return;
+    }
+
+    LLViewerRegion* region = gAgent.getRegion();
+    if (!region)
+    {
+        return;
+    }
+
+    std::string url = region->getCapability("ChatSessionRequest");
+    if (url.empty())
+    {
+        return;
+    }
+
+    LLSD agents = LLSD::emptyArray();
+    for (const auto& id : ids)
+    {
+        agents.append(id);
+    }
+
+    record_conference_invite_ids(session_id, ids);
+    LLCoros::instance().launch("inviteConferenceCoro",
+        boost::bind(&inviteConferenceCoro, url, session_id, agents));
+}
 
 
 bool LLSessionTimeoutTimer::tick()
@@ -615,6 +690,33 @@ void startConferenceCoro(std::string url,
         //but the error string were unneeded here previously
         //and it is not worth the effort switching over all
         //the possible different language translations
+    }
+}
+
+static void inviteConferenceCoro(std::string url, LLUUID sessionId, LLSD agents)
+{
+    LLCore::HttpRequest::policy_t httpPolicy(LLCore::HttpRequest::DEFAULT_POLICY_ID);
+    LLCoreHttpUtil::HttpCoroutineAdapter::ptr_t
+        httpAdapter(new LLCoreHttpUtil::HttpCoroutineAdapter("ConferenceInviteStart", httpPolicy));
+    LLCore::HttpRequest::ptr_t httpRequest(new LLCore::HttpRequest);
+
+    LLSD postData;
+    postData["method"] = "invite";
+    postData["session-id"] = sessionId;
+    postData["params"] = agents;
+
+    LLSD result = httpAdapter->postAndSuspend(httpRequest, url, postData);
+
+    LLSD httpResults = result[LLCoreHttpUtil::HttpCoroutineAdapter::HTTP_RESULTS];
+    LLCore::HttpStatus status = LLCoreHttpUtil::HttpCoroutineAdapter::getStatusFromLLSD(httpResults);
+
+    if (!status)
+    {
+        LL_WARNS("LLIMModel") << "Failed to invite to conference session " << sessionId << LL_ENDL;
+        if (status == LLCore::HttpStatus(HTTP_NOT_FOUND))
+        {
+            restart_conference_if_stale(sessionId);
+        }
     }
 }
 
@@ -4047,6 +4149,12 @@ LLUUID LLIMMgr::addSession(
         session->initVoiceChannel(voiceChannelInfo);
         std::string session_name = LLIMModel::getInstance()->getName(session_id);
         LLIMMgr::getInstance()->notifyObserverSessionActivated(session_id, session_name, other_participant_id);
+
+        if (dialog == IM_SESSION_CONFERENCE_START)
+        {
+            FSCommon::report_to_nearby_chat("Reusing conference chat");
+            invite_conference_participants(session_id, ids);
+        }
     }
 
     //we don't need to show notes about online/offline, mute/unmute users' statuses for existing sessions
@@ -4966,10 +5074,16 @@ public:
 
         if ( !success )
         {
+            const std::string error = body["error"].asString();
+            if (error == "session_does_not_exist_error")
+            {
+                restart_conference_if_stale(session_id);
+            }
+
             //throw an error dialog
             gIMMgr->showSessionEventError(
                 body["event"].asString(),
-                body["error"].asString(),
+                error,
                 session_id);
         }
     }
