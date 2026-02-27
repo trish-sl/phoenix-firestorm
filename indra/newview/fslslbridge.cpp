@@ -33,9 +33,11 @@
 
 #include "apr_base64.h" // For getScriptInfo()
 #include "llagent.h"
+#include "aoengine.h"
 #include "llappearancemgr.h"
 #include "llattachmentsmgr.h"
 #include "llavatarappearance.h"
+#include "llfloaterreg.h"
 #include "llinventoryfunctions.h"
 #include "llmaniptranslate.h"
 #include "llnotificationsutil.h"
@@ -47,6 +49,8 @@
 #include "llviewerassetupload.h"
 #include "llviewercontrol.h"
 #include "llviewerregion.h"
+#include "lluri.h"
+#include "ao.h"
 
 #if OPENSIM
 #include "llviewernetwork.h"
@@ -55,10 +59,51 @@
 static const std::string FS_BRIDGE_FOLDER = "#LSL Bridge";
 static const std::string FS_BRIDGE_CONTAINER_FOLDER = "Landscaping";
 static const U32 FS_BRIDGE_MAJOR_VERSION = 2;
-static const U32 FS_BRIDGE_MINOR_VERSION = 29;
+static const U32 FS_BRIDGE_MINOR_VERSION = 30;
 static const U32 FS_MAX_MINOR_VERSION = 99;
 static const std::string UPLOAD_SCRIPT_CURRENT = "EBEDD1D2-A320-43f5-88CF-DD47BBCA5DFB.lsltxt";
 static const std::string FS_STATE_ATTRIBUTE = "state=";
+static const std::string FS_NAME_ATTRIBUTE = "name=";
+static const std::string FS_REQUESTER_ATTRIBUTE = "requester=";
+
+static bool get_tag_attribute(std::string_view message, std::string_view attribute, std::string& out_value)
+{
+    size_t valuepos = message.find(attribute);
+    if (valuepos == std::string::npos)
+    {
+        return false;
+    }
+
+    size_t start = valuepos + attribute.size();
+    if (start >= message.size())
+    {
+        return false;
+    }
+
+    if (message[start] == '"')
+    {
+        size_t end = message.find('"', start + 1);
+        if (end == std::string::npos || end <= start + 1)
+        {
+            return false;
+        }
+        out_value = static_cast<std::string>(message.substr(start + 1, end - start - 1));
+        return true;
+    }
+
+    size_t end = message.find_first_of(" >", start);
+    if (end == std::string::npos)
+    {
+        end = message.size();
+    }
+    if (end <= start)
+    {
+        return false;
+    }
+
+    out_value = static_cast<std::string>(message.substr(start, end - start));
+    return true;
+}
 static const std::string FS_ERROR_ATTRIBUTE = "error=";
 
 class NameCollectFunctor : public LLInventoryCollectFunctor
@@ -391,6 +436,65 @@ bool FSLSLBridge::lslToViewer(std::string_view message, const LLUUID& fromID, co
             }
             // </FS:Zi>
         }
+    }
+    else if (tag == "<bridgeAOSet ")
+    {
+        status = true;
+        std::string raw_name;
+        if (get_tag_attribute(message, FS_NAME_ATTRIBUTE, raw_name))
+        {
+            LLStringUtil::trim(raw_name);
+
+            std::string ao_name = LLURI::unescape(raw_name);
+            LLStringUtil::trim(ao_name);
+            if (!ao_name.empty())
+            {
+                AOSet* set = AOEngine::instance().selectSetByName(ao_name);
+                if (!set)
+                {
+                    for (AOSet* candidate : AOEngine::instance().getSetList())
+                    {
+                        if (LLStringUtil::compareInsensitive(candidate->getName(), ao_name) == 0)
+                        {
+                            AOEngine::instance().selectSet(candidate);
+                            set = candidate;
+                            break;
+                        }
+                    }
+                }
+                if (!set)
+                {
+                    LL_WARNS("FSLSLBridge") << "AO set not found for name '" << ao_name << "'" << LL_ENDL;
+                }
+                if (auto floater = LLFloaterReg::findTypedInstance<FloaterAO>("animation_overrider"))
+                {
+                    floater->updateList();
+                }
+            }
+        }
+    }
+    else if (tag == "<bridgeAOGet ")
+    {
+        status = true;
+        LLUUID requester;
+        std::string requester_str;
+        if (get_tag_attribute(message, FS_REQUESTER_ATTRIBUTE, requester_str))
+        {
+            LLStringUtil::trim(requester_str);
+            requester.set(requester_str);
+        }
+
+        bool ao_on = gSavedPerAccountSettings.getBOOL("UseAO") && !gSavedPerAccountSettings.getBOOL("PauseAO");
+        std::string ao_name;
+        if (ao_on)
+        {
+            ao_name = AOEngine::instance().getCurrentSetName();
+        }
+
+        viewerToLSL(llformat("AOCurrent|%s|%s|%s",
+            ao_on ? "on" : "off",
+            LLURI::escape(ao_name).c_str(),
+            requester.asString().c_str()));
     }
     //</FS:TS> FIRE-962
 
