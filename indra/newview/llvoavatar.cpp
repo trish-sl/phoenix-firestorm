@@ -8971,10 +8971,11 @@ void LLVOAvatar::sitDown(bool bSitting)
         }
 // [/RLVa:KB]
 
-        // <FS:PP> Refresh movelock position after sitting down to prevent pulling avatar back to previous one after standing up
-        if (bSitting && gSavedPerAccountSettings.getBOOL("UseMoveLock") && gSavedPerAccountSettings.getBOOL("RelockMoveLockAfterMovement"))
+        // <FS:PP> Prevent movelock from snapping back after standing up from a moving seat/vehicle.
+        // Pause movelock while seated, then re-enable on stand to lock the current position.
+        if (gSavedPerAccountSettings.getBOOL("UseMoveLock") && gSavedPerAccountSettings.getBOOL("RelockMoveLockAfterMovement"))
         {
-            FSLSLBridge::instance().viewerToLSL("UseMoveLock|1|noreport");
+            FSLSLBridge::instance().viewerToLSL(bSitting ? "UseMoveLock|0|noreport" : "UseMoveLock|1|noreport");
         }
         // </FS:PP>
     }
