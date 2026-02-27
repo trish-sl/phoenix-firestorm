@@ -7,7 +7,7 @@
 //
 
 // Bridge platform
-string BRIDGE_VERSION = "2.29"; // This should match fslslbridge.cpp
+string BRIDGE_VERSION = "2.31"; // This should match fslslbridge.cpp
 string gLatestURL;
 integer gViewerIsFirestorm;
 integer gTryHandshakeOnce = TRUE;
@@ -39,6 +39,14 @@ integer AO_CHANNEL_LM = -8888;
 integer gAO_ListenerOC;
 integer gAO_ListenerLM;
 key gAO_CollarKey;
+
+// Firestorm AO script interface, independent of the collar protocols above.
+// Channel: owner key's first 8 hex digits XOR 0x46534130, made negative.
+// Commands from objects owned by the wearer:
+//   FS_AO|GET          -> reply FS_AO_CURRENT|<on/off>|<set name>
+//   FS_AO|SET|<name>   -> select the AO set by name, then reply as for GET
+integer gAO_ChannelFS;
+integer gAO_ListenerFS;
 
 //
 // Bridge platform helper functions
@@ -208,6 +216,19 @@ default
             {
                 gAO_ChannelOC = -gAO_ChannelOC;
             }
+
+            // Set the channel for the Firestorm AO script interface and always listen on it
+            gAO_ChannelFS = (integer)("0x" + llGetSubString((string)gOwner, 0, 7)) ^ 0x46534130;
+            if (gAO_ChannelFS > 0)
+            {
+                gAO_ChannelFS = -gAO_ChannelFS;
+            }
+            else if (gAO_ChannelFS == 0)
+            {
+                gAO_ChannelFS = -0x46534130;
+            }
+            llListenRemove(gAO_ListenerFS);
+            gAO_ListenerFS = llListen(gAO_ChannelFS, "", NULL_KEY, "");
 
             // Remove previous AO listeners if present
             integrationCheckOC();
@@ -578,6 +599,18 @@ default
                 gViewerIsFirestorm = TRUE;
             }
 
+            else if (cmd == "AOCurrent")
+            {
+                // AOCurrent|<requester>|<on/off>|<escaped set name>; the name is last because it can be empty
+                key requester = llList2Key(commandList, 1);
+                string aoState = llList2String(commandList, 2);
+                string aoName = llUnescapeURL(llList2String(commandList, 3));
+                if (requester != NULL_KEY)
+                {
+                    llRegionSayTo(requester, gAO_ChannelFS, "FS_AO_CURRENT|" + aoState + "|" + aoName);
+                }
+            }
+
             else if (cmd == "DetachBridge")
             {
                 // HTTP request from the viewer to immediately detach LSL-Client Bridge
@@ -595,8 +628,30 @@ default
     listen(integer fromChan, string senderName, key senderID, string msg)
     {
 
+        // Firestorm AO script interface listen handler
+        if (fromChan == gAO_ChannelFS)
+        {
+            if (llGetOwnerKey(senderID) != gOwner)
+            {
+                return;
+            }
+            if (msg == "FS_AO|GET")
+            {
+                llOwnerSay("<bridgeAOGet requester=" + (string)senderID + ">");
+            }
+            else if (llSubStringIndex(msg, "FS_AO|SET|") == 0)
+            {
+                // Everything after the command is the set name, so names may contain "|"
+                string setName = llGetSubString(msg, 10, -1);
+                if (setName != "")
+                {
+                    llOwnerSay("<bridgeAOSet requester=" + (string)senderID + " name=" + llEscapeURL(setName) + ">");
+                }
+            }
+        }
+
         // OpenCollar AO interface listen handler
-        if (fromChan == gAO_ChannelOC)
+        else if (fromChan == gAO_ChannelOC)
         {
             integer zhaoPos;
             if ((gAO_CollarKey == NULL_KEY) &&    // No collar paired yet
