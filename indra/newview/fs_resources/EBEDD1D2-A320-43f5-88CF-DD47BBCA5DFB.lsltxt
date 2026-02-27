@@ -7,7 +7,7 @@
 //
 
 // Bridge platform
-string BRIDGE_VERSION = "2.29"; // This should match fslslbridge.cpp
+string BRIDGE_VERSION = "2.30"; // This should match fslslbridge.cpp
 string gLatestURL;
 integer gViewerIsFirestorm;
 integer gTryHandshakeOnce = TRUE;
@@ -578,6 +578,17 @@ default
                 gViewerIsFirestorm = TRUE;
             }
 
+            else if (cmd == "AOCurrent")
+            {
+                string aoState = llList2String(commandList, 1);
+                string aoName = llUnescapeURL(llList2String(commandList, 2));
+                key requester = llList2Key(commandList, 3);
+                if (requester != NULL_KEY)
+                {
+                    llRegionSayTo(requester, gAO_ChannelOC, "FS_AO_CURRENT|" + aoState + "|" + aoName);
+                }
+            }
+
             else if (cmd == "DetachBridge")
             {
                 // HTTP request from the viewer to immediately detach LSL-Client Bridge
@@ -598,6 +609,29 @@ default
         // OpenCollar AO interface listen handler
         if (fromChan == gAO_ChannelOC)
         {
+            if (llSubStringIndex(msg, "FS_AO|") == 0)
+            {
+                if (llGetOwnerKey(senderID) != gOwner)
+                {
+                    return;
+                }
+                list parts = llParseStringKeepNulls(msg, ["|"], []);
+                string subcmd = llList2String(parts, 1);
+                if (subcmd == "GET")
+                {
+                    llOwnerSay("<bridgeAOGet requester=" + (string)senderID + ">");
+                }
+                else if (subcmd == "SET")
+                {
+                    string setName = llList2String(parts, 2);
+                    if (setName != "")
+                    {
+                        llOwnerSay("<bridgeAOSet name=" + llEscapeURL(setName) + ">");
+                    }
+                }
+                return;
+            }
+
             integer zhaoPos;
             if ((gAO_CollarKey == NULL_KEY) &&    // No collar paired yet
                 (msg == "OpenCollar=Yes"))      // A collar is saying hello
