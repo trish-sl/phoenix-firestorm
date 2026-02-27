@@ -64,6 +64,9 @@ class FloaterAO
         void updateList();
         void updateSetParameters();
         void updateAnimationList();
+        // <FS:Trish> Show a set activated from outside the floater (LSL bridge) without re-selecting the old one
+        void showActiveSet(AOSet* set);
+        // </FS:Trish>
 
         bool handleDragAndDrop(S32 x, S32 y, MASK mask, bool drop, EDragAndDropType cargo_type, void* cargo_data,
                                   EAcceptance* accept, std::string& tooltip_msg) override;

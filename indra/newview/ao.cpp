@@ -167,6 +167,26 @@ void FloaterAO::updateAnimationList()
     onSelectState();
 }
 
+// <FS:Trish> Show a set activated from outside the floater (LSL bridge) without re-selecting the old one.
+// updateList() would read the old selector label and switch the engine back to it.
+void FloaterAO::showActiveSet(AOSet* set)
+{
+    if (!set || mSetList.empty())
+    {
+        return;
+    }
+
+    mSetSelector->setSimple(set->getName());
+    mSetSelectorSmall->setSimple(set->getName());
+    if (mSelectedSet != set)
+    {
+        mSelectedSet = set;
+        updateSetParameters();
+        updateAnimationList();
+    }
+}
+// </FS:Trish>
+
 void FloaterAO::updateList()
 {
     mReloadButton->setEnabled(true);
