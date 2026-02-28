@@ -38,6 +38,7 @@
 #include "lldrawpool.h"
 #include "llglheaders.h"
 #include "llhttpnode.h"
+#include "llframetimer.h"
 #include "llregionhandle.h"
 #include "llsky.h"
 #include "llsurface.h"
@@ -1125,6 +1126,10 @@ void LLWorld::updateRegions(F32 max_update_time)
     LLTimer update_timer;
     mNumOfActiveCachedObjects = 0;
 
+    static LLFrameTimer sAvatarPositionRefreshTimer;
+    static LLCachedControl<F32> sAvatarPositionRefreshInterval(
+        gSavedSettings, "FSAvatarPositionRefreshIntervalSeconds", 180.0f);
+
     if(LLViewerCamera::getInstance()->isChanged())
     {
         LLViewerRegion::sLastCameraUpdated = LLViewerOctreeEntryData::getCurrentFrame() + 1;
@@ -1140,6 +1145,36 @@ void LLWorld::updateRegions(F32 max_update_time)
     LLViewerRegion* self_regionp = gAgent.getRegion();
     if(self_regionp)
     {
+        if (sAvatarPositionRefreshInterval > 0.0f &&
+            sAvatarPositionRefreshTimer.getElapsedTimeF32() >= sAvatarPositionRefreshInterval)
+        {
+            bool requested = false;
+            for (LLCharacter* character : LLCharacter::sInstances)
+            {
+                LLVOAvatar* avatar = static_cast<LLVOAvatar*>(character);
+                if (!avatar->isDead() &&
+                    !avatar->isSelf() &&
+                    !avatar->mIsDummy &&
+                    !avatar->isOrphaned() &&
+                    !avatar->isControlAvatar() &&
+                    avatar->getRegion() == self_regionp)
+                {
+                    const U32 local_id = avatar->getLocalID();
+                    if (local_id != 0)
+                    {
+                        self_regionp->addCacheMissFull(local_id);
+                        requested = true;
+                    }
+                }
+            }
+
+            if (requested)
+            {
+                self_regionp->requestCacheMisses();
+            }
+            sAvatarPositionRefreshTimer.reset();
+        }
+
         self_regionp->idleUpdate(max_time);
     }
 
