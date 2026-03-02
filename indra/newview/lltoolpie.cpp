@@ -89,6 +89,31 @@ static void handle_click_action_play();
 static void handle_click_action_open_media(LLPointer<LLViewerObject> objectp);
 static ECursorType cursor_from_parcel_media(U8 click_action);
 
+static bool is_avatar_or_attachment(LLViewerObject* object)
+{
+    if (!object)
+    {
+        return false;
+    }
+
+    if (object->isAvatar() || object->isAttachment())
+    {
+        return true;
+    }
+
+    LLViewerObject* parent = (LLViewerObject*)object->getParent();
+    while (parent)
+    {
+        if (parent->isAvatar() || parent->isAttachment())
+        {
+            return true;
+        }
+        parent = (LLViewerObject*)parent->getParent();
+    }
+
+    return false;
+}
+
 LLToolPie::LLToolPie()
 :   LLTool(std::string("Pie")),
     mMouseButtonDown( false ),
@@ -198,14 +223,55 @@ bool LLToolPie::handleMouseDown(S32 x, S32 y, MASK mask)
 bool LLToolPie::handleRightMouseDown(S32 x, S32 y, MASK mask)
 {
     bool pick_reflection_probe = gSavedSettings.getBOOL("SelectReflectionProbes");
+    bool allow_transparent = gSavedSettings.getBOOL("FSEnableRightclickOnTransparentObjects");
+    const bool pick_rigged = true;
 
     // don't pick transparent so users can't "pay" transparent objects
     mPick = gViewerWindow->pickImmediate(x, y,
-                                         /*bool pick_transparent*/ gSavedSettings.getBOOL("FSEnableRightclickOnTransparentObjects"), // false, // <FS:Ansariel> FIRE-1396: Allow selecting transparent objects
-                                         /*bool pick_rigged*/ true,
+                                         /*bool pick_transparent*/ allow_transparent, // false, // <FS:Ansariel> FIRE-1396: Allow selecting transparent objects
+                                         /*bool pick_rigged*/ pick_rigged,
                                          /*bool pick_particle*/ true,
                                          /*bool pick_unselectable*/ true,
                                          pick_reflection_probe);
+    if (!is_avatar_or_attachment(mPick.getObject()))
+    {
+        LLPickInfo nonrigged_pick = gViewerWindow->pickImmediate(x, y,
+                                         /*bool pick_transparent*/ allow_transparent,
+                                         /*bool pick_rigged*/ false,
+                                         /*bool pick_particle*/ true,
+                                         /*bool pick_unselectable*/ true,
+                                         pick_reflection_probe);
+        if (is_avatar_or_attachment(nonrigged_pick.getObject()))
+        {
+            mPick = nonrigged_pick;
+        }
+    }
+    if (!allow_transparent)
+    {
+        LLPickInfo transparent_pick = gViewerWindow->pickImmediate(x, y,
+                                         /*bool pick_transparent*/ true,
+                                         /*bool pick_rigged*/ pick_rigged,
+                                         /*bool pick_particle*/ true,
+                                         /*bool pick_unselectable*/ true,
+                                         pick_reflection_probe);
+        if (!is_avatar_or_attachment(mPick.getObject()) && is_avatar_or_attachment(transparent_pick.getObject()))
+        {
+            mPick = transparent_pick;
+        }
+        if (!is_avatar_or_attachment(mPick.getObject()))
+        {
+            LLPickInfo transparent_nonrigged_pick = gViewerWindow->pickImmediate(x, y,
+                                         /*bool pick_transparent*/ true,
+                                         /*bool pick_rigged*/ false,
+                                         /*bool pick_particle*/ true,
+                                         /*bool pick_unselectable*/ true,
+                                         pick_reflection_probe);
+            if (is_avatar_or_attachment(transparent_nonrigged_pick.getObject()))
+            {
+                mPick = transparent_nonrigged_pick;
+            }
+        }
+    }
     mPick.mKeyMask = mask;
 
     // claim not handled so UI focus stays same
