@@ -2518,8 +2518,20 @@ void RlvBehaviourToggleHandler<RLV_BHVR_SETENV>::onCommandToggle(ERlvBehaviour e
         // Usurp the 'edit' environment for RLVa locking so TPV tools like quick prefs and phototools are automatically locked out as well
         // (these needed per-feature awareness of RLV in the previous implementation which often wasn't implemented)
         LLEnvironment* pEnv = LLEnvironment::getInstance();
-        LLSettingsSky::ptr_t pRlvSky = pEnv->getEnvironmentFixedSky(LLEnvironment::ENV_LOCAL, true)->buildClone();
-        pEnv->setEnvironment(LLEnvironment::ENV_EDIT, pRlvSky);
+        const bool hasLocalOverride = pEnv->hasEnvironment(LLEnvironment::ENV_LOCAL) || pEnv->hasEnvironment(LLEnvironment::ENV_PUSH);
+        LLEnvironment::DayInstance::ptr_t pSharedEnv = pEnv->getSharedEnvironmentInstance();
+        LLSettingsDay::ptr_t pSharedDay = (pSharedEnv) ? pSharedEnv->getDayCycle() : LLSettingsDay::ptr_t();
+        if (!hasLocalOverride && pSharedDay)
+        {
+            // Preserve shared day cycle so time continues to advance while environment is locked.
+            pEnv->setEnvironment(LLEnvironment::ENV_EDIT, pSharedDay->buildClone(), pSharedEnv->getDayLength(), pSharedEnv->getDayOffset());
+        }
+        else
+        {
+            // Fall back to a fixed sky snapshot when no shared day cycle is available.
+            LLSettingsSky::ptr_t pRlvSky = pEnv->getEnvironmentFixedSky(LLEnvironment::ENV_LOCAL, true)->buildClone();
+            pEnv->setEnvironment(LLEnvironment::ENV_EDIT, pRlvSky);
+        }
         pEnv->setSelectedEnvironment(LLEnvironment::ENV_EDIT, LLEnvironment::TRANSITION_INSTANT);
         pEnv->updateEnvironment(LLEnvironment::TRANSITION_INSTANT);
     }
