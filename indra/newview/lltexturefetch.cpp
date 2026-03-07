@@ -29,6 +29,7 @@
 #include <iostream>
 #include <map>
 #include <algorithm>
+#include <memory>
 #include <atomic>
 
 #include "lltexturefetch.h"
@@ -251,17 +252,6 @@ static const S32 CAP_MISSING_EXPIRATION_DELAY = 1; // seconds
 //////////////////////////////////////////////////////////////////////////////
 namespace
 {
-    // The NoOpDeletor is used when passing certain objects (the LLTextureFetchWorker)
-    // in a smart pointer below for passage into
-    // the LLCore::Http libararies. When the smart pointer is destroyed,  no
-    // action will be taken since we do not in these cases want the object to
-    // be destroyed at the end of the call.
-    //
-    // *NOTE$: Yes! It is "Deletor"
-    // http://english.stackexchange.com/questions/4733/what-s-the-rule-for-adding-er-vs-or-when-nouning-a-verb
-    // "delete" derives from Latin "deletus"
-    void NoOpDeletor(LLCore::HttpHandler *)
-    { /*NoOp*/ }
 }
 
 static const char* e_state_name[] =
@@ -465,6 +455,8 @@ private:
     // Locks:  Mw
     void resetFormattedData();
 
+    bool retryLimitExceeded() const;
+
     // get the relative priority of this worker (should map to max virtual size)
     F32 getImagePriority() const;
 
@@ -572,6 +564,7 @@ private:
     LLTimer mDecodeTimer;
     LLTimer mCacheWriteTimer;
     LLTimer mFetchTimer;
+    LLTimer mHttpRequestTimer;       // Tracks elapsed time of an in-flight HTTP request
     LLTimer mStateTimer;
     F32 mCacheReadTime; // time for cache read only
     F32 mDecodeTime;    // time for decode only
@@ -894,6 +887,42 @@ const std::set<S32> LOGGED_STATES = { LLTextureFetchWorker::LOAD_FROM_TEXTURE_CA
 // static
 volatile bool LLTextureFetch::svMetricsDataBreak(true); // Start with a data break
 
+namespace
+{
+    // Keep the HTTP handler lifetime independent of the worker lifetime.
+    // A canceled/timeout request can still deliver a completion callback,
+    // so avoid passing raw worker pointers as the handler.
+    class LLTextureFetchHttpHandler final : public LLCore::HttpHandler
+    {
+    public:
+        LLTextureFetchHttpHandler(LLTextureFetch* fetcher, const LLUUID& id)
+            : mFetcher(fetcher),
+              mID(id)
+        {
+        }
+
+        void onCompleted(LLCore::HttpHandle handle, LLCore::HttpResponse* response) override
+        {
+            if (!mFetcher)
+            {
+                return;
+            }
+
+            LLTextureFetchWorker* worker = mFetcher->getWorker(mID);
+            if (!worker)
+            {
+                return;
+            }
+
+            worker->onCompleted(handle, response);
+        }
+
+    private:
+        LLTextureFetch* mFetcher;
+        LLUUID mID;
+    };
+}
+
 // called from MAIN THREAD
 
 LLTextureFetchWorker::LLTextureFetchWorker(LLTextureFetch* fetcher,
@@ -1118,6 +1147,13 @@ void LLTextureFetchWorker::resetFormattedData()
     mHttpReplySize = 0;
     mHttpReplyOffset = 0;
     mHaveAllData = false;
+}
+
+bool LLTextureFetchWorker::retryLimitExceeded() const
+{
+    static LLCachedControl<S32> tex_max_retries(gSavedSettings, "TextureFetchMaxRetries", 0);
+    S32 limit = tex_max_retries;
+    return (limit > 0 && mRetryAttempt >= limit);
 }
 
 F32 LLTextureFetchWorker::getImagePriority() const
@@ -1562,6 +1598,16 @@ bool LLTextureFetchWorker::doWork(S32 param)
     if (mState == WAIT_HTTP_RESOURCE2)
     {
         LL_PROFILE_ZONE_NAMED_CATEGORY_TEXTURE("tfwdw - WAIT_HTTP_RESOURCE2"); //<FS:Beq/> fix incorrect category
+        // Defensive: a worker in WAIT_HTTP_RESOURCE2 is expected to be present
+        // in the fetcher's waiter set so releaseHttpWaiters() can advance it.
+        // If that association is lost (e.g. race/cancel edge), the worker can
+        // otherwise idle here forever and contribute to an apparent "HTI jam".
+        if (!mFetcher->isHttpWaiter(mID))
+        {
+            mFetcher->addHttpWaiter(mID);
+            ++mResourceWaitCount;
+        }
+
         // Just idle it if we make it to the head...
         return false;
     }
@@ -1663,7 +1709,7 @@ bool LLTextureFetchWorker::doWork(S32 param)
                                                              mUrl,
                                                              options,
                                                              mFetcher->mHttpHeaders,
-                                                             LLCore::HttpHandler::ptr_t(this, &NoOpDeletor));
+                                                             std::make_shared<LLTextureFetchHttpHandler>(mFetcher, mID));
         }
         else
         {
@@ -1675,7 +1721,7 @@ bool LLTextureFetchWorker::doWork(S32 param)
                                                                       : mRequestedSize,
                                                                       options,
                                                                       mFetcher->mHttpHeaders,
-                                                                      LLCore::HttpHandler::ptr_t(this, &NoOpDeletor));
+                                                                      std::make_shared<LLTextureFetchHttpHandler>(mFetcher, mID));
         }
         if (LLCORE_HTTP_HANDLE_INVALID == mHttpHandle)
         {
@@ -1690,6 +1736,7 @@ bool LLTextureFetchWorker::doWork(S32 param)
         }
 
         mHttpActive = true;
+        mHttpRequestTimer.reset();
         mFetcher->addToHTTPQueue(mID);
         recordTextureStart(true);
         setState(WAIT_HTTP_REQ);
@@ -1700,6 +1747,50 @@ bool LLTextureFetchWorker::doWork(S32 param)
     if (mState == WAIT_HTTP_REQ)
     {
         LL_PROFILE_ZONE_NAMED_CATEGORY_TEXTURE("tfwdw - WAIT_HTTP_REQ"); //<FS:Beq/> fix incorrect category
+        static LLCachedControl<F32> tex_request_timeout(gSavedSettings, "TextureFetchRequestTimeout", 0.0f);
+        static LLCachedControl<F32> tex_request_timeout_when_blocked(gSavedSettings, "TextureFetchRequestTimeoutWhenBlocked", 120.0f);
+        F32 timeout = tex_request_timeout;
+
+        // If the explicit per-request timeout is disabled, keep a conservative
+        // failsafe timeout when the HTTP pipeline is blocked (waiters exist).
+        // This prevents a small number of stalled transfers from holding
+        // semaphore slots indefinitely and leaving everything else in HTI.
+        if (timeout <= 0.f && tex_request_timeout_when_blocked > 0.f && mFetcher->getHttpWaitersCount() > 0)
+        {
+            timeout = tex_request_timeout_when_blocked;
+        }
+
+        if (timeout > 0.f)
+        {
+            F32 elapsed = mHttpRequestTimer.getElapsedTimeF32();
+            if (elapsed > timeout)
+            {
+                // Cancel and restart to free the semaphore slot
+                if (mHttpActive)
+                {
+                    mFetcher->getHttpRequest().requestCancel(mHttpHandle, LLCore::HttpHandler::ptr_t());
+                    mHttpActive = false;
+                }
+                mFetcher->removeFromHTTPQueue(mID, S32Bytes(0));
+                releaseHttpSemaphore();
+                mHttpHandle = LLCORE_HTTP_HANDLE_INVALID;
+                resetFormattedData();
+                mLoaded = false;
+                mHttpReplySize = 0;
+                mHttpReplyOffset = 0;
+                mRetryAttempt++;
+                if (retryLimitExceeded())
+                {
+                    LL_WARNS(LOG_TXT) << mID << " HTTP request timed out and reached retry limit; aborting" << LL_ENDL;
+                    setState(DONE);
+                    return true;
+                }
+                LL_WARNS(LOG_TXT) << mID << " HTTP request timed out after " << elapsed
+                                  << "s, retrying" << LL_ENDL;
+                setState(INIT);
+                return false;
+            }
+        }
         // *NOTE:  As stated above, all transitions out of this state should
         // call releaseHttpSemaphore().
         if (mLoaded)
@@ -1732,6 +1823,13 @@ bool LLTextureFetchWorker::doWork(S32 param)
                             // cap failure? try on new region.
                             mUrl.clear();
                             ++mRetryAttempt;
+                            if (retryLimitExceeded())
+                            {
+                                releaseHttpSemaphore();
+                                setState(DONE);
+                                LL_WARNS(LOG_TXT) << mID << " reached retry limit after 404; aborting" << LL_ENDL;
+                                return true;
+                            }
                             mLastRegionId.setNull();
                             setState(INIT);
                             return false;
@@ -1766,6 +1864,13 @@ bool LLTextureFetchWorker::doWork(S32 param)
                             // try on new region.
                             mUrl.clear();
                             ++mRetryAttempt;
+                            if (retryLimitExceeded())
+                            {
+                                releaseHttpSemaphore();
+                                setState(DONE);
+                                LL_WARNS(LOG_TXT) << mID << " reached retry limit after 503; aborting" << LL_ENDL;
+                                return true;
+                            }
                             mLastRegionId.setNull();
                             setState(INIT);
                             return false;
@@ -2035,6 +2140,12 @@ bool LLTextureFetchWorker::doWork(S32 param)
                     llassert_always(mDecodeHandle == 0);
                     mFormattedImage = NULL;
                     ++mRetryAttempt;
+                    if (retryLimitExceeded())
+                    {
+                        LL_WARNS(LOG_TXT) << mID << " reached retry limit after decode failure; aborting" << LL_ENDL;
+                        setState(DONE);
+                        return true;
+                    }
                     setState(INIT);
                     //return false;
                     return doWork(param);
@@ -4435,4 +4546,3 @@ void LLTextureFetchTester::updateStats(const std::map<S32, F32> state_timers, co
     mSkippedStatesTime = skipped_states_time;
     outputTestResults();
 }
-
