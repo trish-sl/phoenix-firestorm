@@ -163,6 +163,7 @@ protected:
     void setStateCycleTimer(const AOSet::AOState* state);
 
     void stopAllStandVariants();
+    void stopAllWalkVariants();
     void stopAllSitVariants();
 
     bool            foreignAnimations() const;
