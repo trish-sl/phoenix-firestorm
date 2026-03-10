@@ -183,6 +183,17 @@ void AOEngine::stopAllStandVariants()
     gAgentAvatarp->LLCharacter::stopMotion(ANIM_AGENT_STAND_4);
 }
 
+void AOEngine::stopAllWalkVariants()
+{
+    LL_DEBUGS("AOEngine") << "stopping all WALK variants." << LL_ENDL;
+    gAgent.sendAnimationRequest(ANIM_AGENT_WALK_NEW, ANIM_REQUEST_STOP);
+    gAgent.sendAnimationRequest(ANIM_AGENT_FEMALE_WALK, ANIM_REQUEST_STOP);
+    gAgent.sendAnimationRequest(ANIM_AGENT_FEMALE_WALK_NEW, ANIM_REQUEST_STOP);
+    gAgentAvatarp->LLCharacter::stopMotion(ANIM_AGENT_WALK_NEW);
+    gAgentAvatarp->LLCharacter::stopMotion(ANIM_AGENT_FEMALE_WALK);
+    gAgentAvatarp->LLCharacter::stopMotion(ANIM_AGENT_FEMALE_WALK_NEW);
+}
+
 void AOEngine::stopAllSitVariants()
 {
     LL_DEBUGS("AOEngine") << "stopping all SIT variants." << LL_ENDL;
@@ -705,6 +716,29 @@ LLUUID AOEngine::override(const LLUUID& motion, bool start)
         {
             setLastOverriddenMotion(motion);
             LL_DEBUGS("AOEngine") << "(enabled AO) setting last overridden motion id to " <<  gAnimLibrary.animationName(mLastOverriddenMotion) << LL_ENDL;
+        }
+
+        // Avoid blending walk/run overrides with in-place turn animations.
+        if (motion == ANIM_AGENT_TURNLEFT || motion == ANIM_AGENT_TURNRIGHT)
+        {
+            auto stop_state_override = [](AOSet::AOState* ao_state)
+            {
+                if (ao_state && ao_state->mCurrentAnimationID.notNull())
+                {
+                    gAgent.sendAnimationRequest(ao_state->mCurrentAnimationID, ANIM_REQUEST_STOP);
+                    gAgentAvatarp->LLCharacter::stopMotion(ao_state->mCurrentAnimationID);
+                    ao_state->mCurrentAnimationID.setNull();
+                }
+            };
+
+            stop_state_override(mCurrentSet->getState(AOSet::Walking));
+            stop_state_override(mCurrentSet->getState(AOSet::Running));
+            stop_state_override(mCurrentSet->getState(AOSet::CrouchWalking));
+            stopAllWalkVariants();
+            gAgent.sendAnimationRequest(ANIM_AGENT_RUN_NEW, ANIM_REQUEST_STOP);
+            gAgent.sendAnimationRequest(ANIM_AGENT_FEMALE_RUN_NEW, ANIM_REQUEST_STOP);
+            gAgentAvatarp->LLCharacter::stopMotion(ANIM_AGENT_RUN_NEW);
+            gAgentAvatarp->LLCharacter::stopMotion(ANIM_AGENT_FEMALE_RUN_NEW);
         }
 
         // do not remember typing as set-wide motion
