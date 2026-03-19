@@ -1255,6 +1255,8 @@ private:
     bool            mIsSitting;
     // position backup in case of missing data
     LLVector3       mLastRootPos;
+    // Follow-cam sources belonging to the current seat, retained for missing-parent recovery.
+    std::vector<LLUUID> mSitFollowCamSources;
 
 /**                    Hierarchy
  **                                                                            **
@@ -1438,4 +1440,3 @@ void dump_sequential_xml(const std::string outprefix, const LLSD& content);
 void dump_visual_param(apr_file_t* file, LLVisualParam* viewer_param, F32 value);
 
 #endif // LL_VOAVATAR_H
-
