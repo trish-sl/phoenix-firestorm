@@ -89,6 +89,7 @@ const F32 CAMERA_FUDGE_FROM_OBJECT = 16.f;
 const F32 MAX_CAMERA_SMOOTH_DISTANCE = 50.0f;
 
 const F32 HEAD_BUFFER_SIZE = 0.3f;
+const F64 FOLLOW_CAM_PARAM_LOSS_GRACE_PERIOD = 3.0;
 
 const F32 CUSTOMIZE_AVATAR_CAMERA_ANIM_SLOP = 0.1f;
 
@@ -162,6 +163,7 @@ LLAgentCamera::LLAgentCamera() :
 
     mFocusOnAvatar(true),
     mAllowChangeToFollow(false),
+    mLastValidFollowCamParamsTime(0.0),
     mFocusGlobal(),
     mFocusTargetGlobal(),
     mFocusObject(NULL),
@@ -379,21 +381,26 @@ void LLAgentCamera::resetView(bool reset_camera, bool change_camera, bool moveme
     if (reset_camera && !freeze_time)
     // </FS:PP>
     {
-        if (!gViewerWindow->getLeftMouseDown() && cameraThirdPerson())
+        const bool scripted_followcam_active = LLFollowCamMgr::getInstance()->getActiveFollowCamParams() != nullptr;
+        // Scripted followcam pitch should survive avatar-movement resets while the followcam is active.
+        if (!(movement && (mCameraMode == CAMERA_MODE_FOLLOW || scripted_followcam_active)))
         {
-            // leaving mouse-steer mode
-            LLVector3 agent_at_axis = gAgent.getAtAxis();
-            agent_at_axis -= projected_vec(agent_at_axis, gAgent.getReferenceUpVector());
-            agent_at_axis.normalize();
-            gAgent.resetAxes(lerp(gAgent.getAtAxis(), agent_at_axis, LLSmoothInterpolation::getInterpolant(0.3f)));
-        }
+            if (!gViewerWindow->getLeftMouseDown() && cameraThirdPerson())
+            {
+                // leaving mouse-steer mode
+                LLVector3 agent_at_axis = gAgent.getAtAxis();
+                agent_at_axis -= projected_vec(agent_at_axis, gAgent.getReferenceUpVector());
+                agent_at_axis.normalize();
+                gAgent.resetAxes(lerp(gAgent.getAtAxis(), agent_at_axis, LLSmoothInterpolation::getInterpolant(0.3f)));
+            }
 
-        setFocusOnAvatar(true, ANIMATE);
+            setFocusOnAvatar(true, ANIMATE);
 
-        mCameraFOVZoomFactor = 0.f;
+            mCameraFOVZoomFactor = 0.f;
 // <FS:Chanayane> Camera roll (from Alchemy)
-        resetCameraRoll();
+            resetCameraRoll();
 // </FS:Chanayane>
+        }
     }
     resetPanDiff();
     resetOrbitDiff();
@@ -1486,11 +1493,25 @@ void LLAgentCamera::updateCamera()
                 mFollowCam.copyParams(*current_cam);
                 mFollowCam.setSubjectPositionAndRotation( gAgentAvatarp->getRenderPosition(), avatarRotationForFollowCam );
                 mFollowCam.update();
+                mLastValidFollowCamParamsTime = LLFrameTimer::getTotalSeconds();
                 LLViewerJoystick::getInstance()->setCameraNeedsUpdate(true);
             }
             else
             {
-                changeCameraToThirdPerson(true);
+                const F64 now = LLFrameTimer::getTotalSeconds();
+                if (mLastValidFollowCamParamsTime > 0.0 &&
+                    (now - mLastValidFollowCamParamsTime) < FOLLOW_CAM_PARAM_LOSS_GRACE_PERIOD)
+                {
+                    // Keep the last valid scripted follow-cam briefly to avoid temp source drops (like parcel visibility handoff at borders).
+                    mFollowCam.setSubjectPositionAndRotation(gAgentAvatarp->getRenderPosition(), avatarRotationForFollowCam);
+                    mFollowCam.update();
+                    LLViewerJoystick::getInstance()->setCameraNeedsUpdate(true);
+                }
+                else
+                {
+                    mLastValidFollowCamParamsTime = 0.0;
+                    changeCameraToThirdPerson(true);
+                }
             }
         }
     }
@@ -2387,10 +2408,9 @@ void LLAgentCamera::handleScrollWheel(S32 clicks)
         LLObjectSelectionHandle selection = LLSelectMgr::getInstance()->getSelection();
         const F32 ROOT_ROOT_TWO = sqrt(F_SQRT2);
 
-        // Block if camera is animating
         if (mCameraAnimating)
         {
-            return;
+            stopCameraAnimation();
         }
 
         if (selection->getObjectCount() && selection->getSelectType() == SELECT_TYPE_HUD)
@@ -2498,6 +2518,7 @@ void LLAgentCamera::changeCameraToMouselook(bool animate)
 
     // visibility changes at end of animation
     gViewerWindow->getWindow()->resetBusyCount();
+    mLastValidFollowCamParamsTime = 0.0;
 
     // Menus should not remain open on switching to mouselook...
     LLMenuGL::sMenuContainer->hideMenus();
@@ -2581,6 +2602,7 @@ void LLAgentCamera::changeCameraToFollow(bool animate)
 
     if(mCameraMode != CAMERA_MODE_FOLLOW)
     {
+        mLastValidFollowCamParamsTime = 0.0;
         if (mCameraMode == CAMERA_MODE_MOUSELOOK)
         {
             animate = false;
@@ -2637,6 +2659,7 @@ void LLAgentCamera::changeCameraToThirdPerson(bool animate)
     }
 
     gViewerWindow->getWindow()->resetBusyCount();
+    mLastValidFollowCamParamsTime = 0.0;
 
     mCameraZoomFraction = INITIAL_ZOOM_FRACTION;
 
@@ -3241,6 +3264,19 @@ void LLAgentCamera::lookAtLastChat()
 bool LLAgentCamera::isfollowCamLocked()
 {
     return mFollowCam.getPositionLocked();
+}
+
+void LLAgentCamera::notifyFollowCamParamsCleared()
+{
+    mLastValidFollowCamParamsTime = 0.0;
+}
+
+void LLAgentCamera::resetFollowCamZoom()
+{
+    if (mCameraMode == CAMERA_MODE_FOLLOW)
+    {
+        mFollowCam.resetZoom();
+    }
 }
 
 bool LLAgentCamera::setPointAt(EPointAtType target_type, LLViewerObject *object, LLVector3 position)
