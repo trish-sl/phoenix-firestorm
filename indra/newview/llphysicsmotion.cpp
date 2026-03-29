@@ -115,7 +115,8 @@ public:
                 mParamControllers(controllers),
                 mCharacter(character),
                 mLastTime(0),
-                mLastSkeletonSerialNum(0)
+                mLastSkeletonSerialNum(0),
+                mLastAttachmentCount(-1)
         {
                 mJointState = new LLJointState;
 
@@ -205,6 +206,7 @@ private:
         LLVisualParam* mParamCache[NUM_PARAMS];
 
         U32 mLastSkeletonSerialNum;
+        S32 mLastAttachmentCount;
 
         static default_controller_map_t sDefaultController;
 };
@@ -503,40 +505,47 @@ bool LLPhysicsMotion::onUpdate(F32 time)
             : 0.f;
 
         LLJoint* joint = mJointState->getJoint();
+        const auto reset_integrator_state = [this, time, position_user_local, joint]()
+        {
+                mLastTime = time;
+                if (joint)
+                {
+                        mPosition_world = joint->getWorldPosition();
+                }
+                mVelocity_local = 0.f;
+                mVelocityJoint_local = 0.f;
+                mAccelerationJoint_local = 0.f;
+                mPosition_local = llclamp(position_user_local, 0.0f, 1.0f);
+                mPositionLastUpdate_local = mPosition_local;
+                return false;
+        };
+
+        if (LLVOAvatarSelf* self_avatar = dynamic_cast<LLVOAvatarSelf*>(mCharacter))
+        {
+                const S32 attachment_count = self_avatar->getAttachmentCount();
+                if (attachment_count != mLastAttachmentCount)
+                {
+                        mLastAttachmentCount = attachment_count;
+                        // Attachment changes (including HUD attach/detach) can introduce a
+                        // discontinuous pose update. Re-seed state to avoid a visible kick.
+                        return reset_integrator_state();
+                }
+        }
+
         const U32 skeleton_serial = mCharacter ? mCharacter->getSkeletonSerialNum() : 0;
         if (skeleton_serial != mLastSkeletonSerialNum)
         {
                 mLastSkeletonSerialNum = skeleton_serial;
-                mLastTime = time;
                 // The skeleton changed (often due to wearables/shape updates). Treat this as a discontinuity and
                 // re-seed the physics integrator to the user/rest position to avoid a one-frame kick.
-                if (joint)
-                {
-                        mPosition_world = joint->getWorldPosition();
-                }
-                mVelocity_local = 0.f;
-                mVelocityJoint_local = 0.f;
-                mAccelerationJoint_local = 0.f;
-                mPosition_local = llclamp(position_user_local, 0.0f, 1.0f);
-                mPositionLastUpdate_local = mPosition_local;
-                return false;
+                return reset_integrator_state();
         }
 
         if (!mLastTime || mLastTime >= time)
         {
-                mLastTime = time;
                 // Initialize state on first update (or after a motion restart) to avoid an artificial velocity spike
                 // from an unset/old last position, which can show up as a "bounce" when clothing/attachments change.
-                if (joint)
-                {
-                        mPosition_world = joint->getWorldPosition();
-                }
-                mVelocity_local = 0.f;
-                mVelocityJoint_local = 0.f;
-                mAccelerationJoint_local = 0.f;
-                mPosition_local = llclamp(position_user_local, 0.0f, 1.0f);
-                mPositionLastUpdate_local = mPosition_local;
-                return false;
+                return reset_integrator_state();
         }
 
         ////////////////////////////////////////////////////////////////////////////////
