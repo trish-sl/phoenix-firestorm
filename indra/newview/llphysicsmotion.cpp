@@ -102,15 +102,21 @@ public:
                         const LLVector3 &motion_direction_vec,
                         const controller_map_t &controllers) :
                 mParamDriverName(param_driver_name),
-                mJointName(joint_name),
+                mParamControllerName(),
                 mMotionDirectionVec(motion_direction_vec),
+                mJointName(joint_name),
+                mPosition_local(0),
+                mVelocityJoint_local(0),
+                mAccelerationJoint_local(0),
+                mVelocity_local(0),
+                mPositionLastUpdate_local(0),
+                mPosition_world(0.f, 0.f, 0.f),
                 mParamDriver(NULL),
                 mParamControllers(controllers),
                 mCharacter(character),
                 mLastTime(0),
-                mPosition_local(0),
-                mVelocityJoint_local(0),
-                mPositionLastUpdate_local(0)
+                mLastSkeletonSerialNum(0),
+                mLastAttachmentCount(-1)
         {
                 mJointState = new LLJointState;
 
@@ -198,6 +204,9 @@ private:
         F32 mLastTime;
 
         LLVisualParam* mParamCache[NUM_PARAMS];
+
+        U32 mLastSkeletonSerialNum;
+        S32 mLastAttachmentCount;
 
         static default_controller_map_t sDefaultController;
 };
@@ -490,10 +499,53 @@ bool LLPhysicsMotion::onUpdate(F32 time)
         if (!mParamDriver)
                 return false;
 
-        if (!mLastTime || mLastTime >= time)
+        const F32 param_weight_range = (mParamDriver->getMaxWeight() - mParamDriver->getMinWeight());
+        const F32 position_user_local = (param_weight_range != 0.f)
+            ? (mParamDriver->getWeight() - mParamDriver->getMinWeight()) / param_weight_range
+            : 0.f;
+
+        LLJoint* joint = mJointState->getJoint();
+        const auto reset_integrator_state = [this, time, position_user_local, joint]()
         {
                 mLastTime = time;
+                if (joint)
+                {
+                        mPosition_world = joint->getWorldPosition();
+                }
+                mVelocity_local = 0.f;
+                mVelocityJoint_local = 0.f;
+                mAccelerationJoint_local = 0.f;
+                mPosition_local = llclamp(position_user_local, 0.0f, 1.0f);
+                mPositionLastUpdate_local = mPosition_local;
                 return false;
+        };
+
+        if (LLVOAvatarSelf* self_avatar = dynamic_cast<LLVOAvatarSelf*>(mCharacter))
+        {
+                const S32 attachment_count = self_avatar->getAttachmentCount();
+                if (attachment_count != mLastAttachmentCount)
+                {
+                        mLastAttachmentCount = attachment_count;
+                        // Attachment changes (including HUD attach/detach) can introduce a
+                        // discontinuous pose update. Re-seed state to avoid a visible kick.
+                        return reset_integrator_state();
+                }
+        }
+
+        const U32 skeleton_serial = mCharacter ? mCharacter->getSkeletonSerialNum() : 0;
+        if (skeleton_serial != mLastSkeletonSerialNum)
+        {
+                mLastSkeletonSerialNum = skeleton_serial;
+                // The skeleton changed (often due to wearables/shape updates). Treat this as a discontinuity and
+                // re-seed the physics integrator to the user/rest position to avoid a one-frame kick.
+                return reset_integrator_state();
+        }
+
+        if (!mLastTime || mLastTime >= time)
+        {
+                // Initialize state on first update (or after a motion restart) to avoid an artificial velocity spike
+                // from an unset/old last position, which can show up as a "bounce" when clothing/attachments change.
+                return reset_integrator_state();
         }
 
         ////////////////////////////////////////////////////////////////////////////////
@@ -517,8 +569,6 @@ bool LLPhysicsMotion::onUpdate(F32 time)
                 return true;
         }
 
-        LLJoint *joint = mJointState->getJoint();
-
         const F32 behavior_mass = getParamValue(MASS);
         const F32 behavior_gravity = getParamValue(GRAVITY);
         const F32 behavior_spring = getParamValue(SPRING);
@@ -536,7 +586,7 @@ bool LLPhysicsMotion::onUpdate(F32 time)
     // We have to use normalized values because there may be more than one driven param,
     // and each of these driven params may have its own range.
     // This means we'll do all our calculations in normalized [0,1] local coordinates.
-    const F32 position_user_local = (mParamDriver->getWeight() - mParamDriver->getMinWeight()) / (mParamDriver->getMaxWeight() - mParamDriver->getMinWeight());
+    // position_user_local calculated above
 
     //
     // End parameters and settings
@@ -550,6 +600,26 @@ bool LLPhysicsMotion::onUpdate(F32 time)
     const F32 joint_local_factor = 30.0;
     const F32 velocity_joint_local = calculateVelocity_local(time_delta * joint_local_factor);
     const F32 acceleration_joint_local = calculateAcceleration_local(velocity_joint_local, time_delta * joint_local_factor);
+
+    // Filter out one-frame spikes that can happen when the avatar pose/skeleton is discontinuously updated
+    // (e.g. outfit/attachment changes while sitting). These spikes are not "real" motion and can kick the
+    // integrator into a visible bounce.
+    const F32 velocity_change_local = llabs(velocity_joint_local - mVelocityJoint_local);
+    const F32 max_velocity_change_local = 12.0f;
+    if (velocity_change_local > max_velocity_change_local)
+    {
+            mLastTime = time;
+            if (joint)
+            {
+                    mPosition_world = joint->getWorldPosition();
+            }
+            mVelocity_local = 0.f;
+            mVelocityJoint_local = velocity_joint_local;
+            mAccelerationJoint_local = 0.f;
+            mPosition_local = llclamp(position_user_local, 0.0f, 1.0f);
+            mPositionLastUpdate_local = mPosition_local;
+            return false;
+    }
 
     //
     // End velocity and acceleration
@@ -657,12 +727,19 @@ bool LLPhysicsMotion::onUpdate(F32 time)
             llisnan(mVelocity_local) ||
             llisnan(position_new_local))
         {
-            position_new_local = 0.f;
+            position_new_local = llclamp(position_user_local, 0.0f, 1.0f);
             mVelocity_local = 0.f;
             mVelocityJoint_local = 0.f;
             mAccelerationJoint_local = 0.f;
-            mPosition_local = 0.f;
-            mPosition_world = LLVector3(0.f,0.f,0.f);
+            mPosition_local = position_new_local;
+            if (joint)
+            {
+                mPosition_world = joint->getWorldPosition();
+            }
+            else
+            {
+                mPosition_world = LLVector3(0.f,0.f,0.f);
+            }
         }
 
         const F32 position_new_local_clamped = llclamp(position_new_local,
