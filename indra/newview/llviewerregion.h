@@ -288,6 +288,7 @@ public:
 
     // Get/set named capability URLs for this region.
     void setSeedCapability(const std::string& url);
+    void refreshSeedCapabilities(const std::string& url);
     S32 getNumSeedCapRetries();
     void setCapability(const std::string& name, const std::string& url);
     void setCapabilityDebug(const std::string& name, const std::string& url);
@@ -551,6 +552,8 @@ public:
     void resetInterestList();
 
   private:
+    void requestSeedCapabilities();
+
     static S32  sNewObjectCreationThrottle;
     LLViewerRegionImpl * mImpl;
     LLFrameTimer         mRegionTimer;
