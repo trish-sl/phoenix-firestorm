@@ -1916,6 +1916,8 @@ bool LLOfferInfo::inventory_offer_callback(const LLSD& notification, const LLSD&
 
     // accept goes to proper folder, decline gets accepted to trash, muted gets declined
     bool accept_to_trash = true;
+    const bool is_group_notice_offer = (mIM == IM_GROUP_NOTICE || mIM == IM_GROUP_NOTICE_REQUESTED);
+    const bool can_respond_to_group_notice = !is_group_notice_offer || mTransactionID.notNull();
 
     LLNotificationFormPtr modified_form(notification_ptr ? new LLNotificationForm(*notification_ptr->getForm()) : new LLNotificationForm());
 
@@ -1975,8 +1977,15 @@ bool LLOfferInfo::inventory_offer_callback(const LLSD& notification, const LLSD&
             break;
         case IM_GROUP_NOTICE:
         case IM_GROUP_NOTICE_REQUESTED:
-            opener = new LLOpenTaskGroupOffer;
-            sendReceiveResponse(true, mFolderID);
+            if (can_respond_to_group_notice)
+            {
+                opener = new LLOpenTaskGroupOffer;
+                sendReceiveResponse(true, mFolderID);
+            }
+            else
+            {
+                LL_WARNS("Messaging") << "Cannot accept group notice attachment without transaction id." << LL_ENDL;
+            }
             break;
         case IM_TASK_INVENTORY_OFFERED:
             // This is an offer from a task or group.
@@ -1999,7 +2008,7 @@ bool LLOfferInfo::inventory_offer_callback(const LLSD& notification, const LLSD&
     case IOR_ACCEPT:
     case IOR_ACCEPT_SILENT: // <FS:Ansariel> FIRE-3832: Silent accept/decline of inventory offers
         //don't spam them if they are getting flooded
-        if (check_offer_throttle(mFromName, true))
+        if (check_offer_throttle(mFromName, true) && can_respond_to_group_notice)
         {
             // <FS:Ansariel> This breaks object owner name parsing
             //log_message = "<nolink>" + chatHistory_string + "</nolink> " + LLTrans::getString("InvOfferGaveYou") + " " + getSanitizedDescription() + LLTrans::getString(".");
@@ -2028,10 +2037,17 @@ bool LLOfferInfo::inventory_offer_callback(const LLSD& notification, const LLSD&
         }
 
         // <FS:Ansariel> FIRE-3832: Silent accept/decline of inventory offers
-        if (mIM == IM_GROUP_NOTICE || mIM == IM_GROUP_NOTICE_REQUESTED)
+        if (is_group_notice_offer)
         {
-            opener = new LLOpenTaskGroupOffer;
-            sendReceiveResponse(true, mFolderID);
+            if (can_respond_to_group_notice)
+            {
+                opener = new LLOpenTaskGroupOffer;
+                sendReceiveResponse(true, mFolderID);
+            }
+            else
+            {
+                LL_WARNS("Messaging") << "Cannot accept group notice attachment without transaction id." << LL_ENDL;
+            }
         }
         else if (mIM == IM_INVENTORY_OFFERED)
         {
