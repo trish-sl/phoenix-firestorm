@@ -2612,7 +2612,28 @@ void LLIMProcessing::requestOfflineMessagesCoro(std::string url)
         }
 
         EInstantMessage dialog = static_cast<EInstantMessage>(message_data["dialog"].asInteger());
+        // ReadOfflineMsgs payloads are not fully consistent across server versions.
         LLUUID session_id = message_data["transaction-id"].asUUID();
+        if (session_id.isNull())
+        {
+            session_id = message_data["transaction_id"].asUUID();
+        }
+        if (session_id.isNull())
+        {
+            session_id = message_data["session-id"].asUUID();
+        }
+        if (session_id.isNull())
+        {
+            session_id = message_data["session_id"].asUUID();
+        }
+        if (session_id.isNull())
+        {
+            session_id = message_data["id"].asUUID();
+        }
+        if (session_id.isNull())
+        {
+            session_id = message_data["im_session_id"].asUUID();
+        }
         if (session_id.isNull() && dialog == IM_FROM_TASK)
         {
             session_id = message_data["asset_id"].asUUID();
