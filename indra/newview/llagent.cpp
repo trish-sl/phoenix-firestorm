@@ -4578,7 +4578,7 @@ void LLAgent::processScriptControlChange(LLMessageSystem *msg, void **)
             msg->getBOOL("Data", "PassToAgent", passon, block_index );
             for (i = 0; i < TOTAL_CONTROLS; i++)
             {
-                if (controls & ( 1 << i))
+                if (controls & (U32(1) << i))
                 {
                     if (passon)
                     {
@@ -4598,7 +4598,7 @@ void LLAgent::processScriptControlChange(LLMessageSystem *msg, void **)
             msg->getBOOL("Data", "PassToAgent", passon, block_index );
             for (i = 0; i < TOTAL_CONTROLS; i++)
             {
-                if (controls & ( 1 << i))
+                if (controls & (U32(1) << i))
                 {
                     if (passon)
                     {
