@@ -15667,56 +15667,17 @@ Change of this parameter will affect the layout of buttons in notification toast
       <key>Value</key>
       <real>2.0</real>
     </map>
-    <key>TextureFetchFakeFailureRate</key>
-    <map>
-      <key>Comment</key>
-      <string>Simulate HTTP fetch failures for some server bake textures.</string>
-      <key>Persist</key>
-      <integer>1</integer>
-      <key>Type</key>
-      <string>F32</string>
-      <key>Value</key>
-      <real>0.0</real>
-    </map>
-    <key>TextureFetchRequestTimeout</key>
-    <map>
-      <key>Comment</key>
-      <string>Optional timeout (seconds) for individual HTTP texture requests. 0 disables.</string>
-      <key>Persist</key>
-      <integer>1</integer>
-      <key>Type</key>
-      <string>F32</string>
-      <key>Value</key>
-      <real>0.0</real>
-      <key>Backup</key>
-      <integer>0</integer>
-    </map>
-    <key>TextureFetchRequestTimeoutWhenBlocked</key>
-    <map>
-      <key>Comment</key>
-      <string>Failsafe timeout (seconds) for HTTP texture requests when there are WAIT_HTTP_RESOURCE2 (HTI) waiters. Used only when TextureFetchRequestTimeout is 0. 0 disables.</string>
-      <key>Persist</key>
-      <integer>1</integer>
-      <key>Type</key>
-      <string>F32</string>
-      <key>Value</key>
-      <real>120.0</real>
-      <key>Backup</key>
-      <integer>0</integer>
-    </map>
-    <key>TextureFetchMaxRetries</key>
-    <map>
-      <key>Comment</key>
-      <string>Maximum retries per texture before aborting. 0 = unlimited.</string>
-      <key>Persist</key>
-      <integer>1</integer>
-      <key>Type</key>
-      <string>S32</string>
-      <key>Value</key>
-      <integer>0</integer>
-      <key>Backup</key>
-      <integer>0</integer>
-    </map>
+  <key>TextureFetchFakeFailureRate</key>
+  <map>
+    <key>Comment</key>
+    <string>Simulate HTTP fetch failures for some server bake textures.</string>
+    <key>Persist</key>
+    <integer>1</integer>
+    <key>Type</key>
+    <string>F32</string>
+    <key>Value</key>
+    <real>0.0</real>
+  </map>
     <key>TextureFetchUpdateMinCount</key>
     <map>
       <key>Comment</key>

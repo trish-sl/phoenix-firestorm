@@ -121,25 +121,11 @@ void HttpOperation::visitNotifier(HttpRequest *)
     if (mUserHandler)
     {
         HttpResponse * response = new HttpResponse();
-        // Hold an extra reference across the callback so a misbehaving handler
-        // that calls release() can't delete the response out from under us.
-        response->addRef();
 
         response->setStatus(mStatus);
         mUserHandler->onCompleted(getHandle(), response);
 
-        const bool last_ref = response->isLastRef();
-        if (last_ref)
-        {
-            LL_WARNS_ONCE(LOG_CORE) << "HttpResponse refcount dropped during callback; handler likely called release()."
-                                    << " handle=" << getHandle()
-                                    << LL_ENDL;
-        }
         response->release();
-        if (!last_ref)
-        {
-            response->release();
-        }
     }
 }
 
