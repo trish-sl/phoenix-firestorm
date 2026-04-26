@@ -718,8 +718,19 @@ void LLFloaterInspect::getObjectTextureMemory(LLViewerObject* object, U32& objec
 void LLFloaterInspect::calculateTextureMemory(LLViewerTexture* texture, uuid_vec_t& object_texture_list, U32& object_texture_memory, U32& object_vram_memory)
 {
     const LLUUID uuid = texture->getID();
-    U32 vram_memory = (texture->getFullHeight() * texture->getFullWidth() * 32 / 8);
+    const U32 estimated_vram_memory = (texture->getFullHeight() * texture->getFullWidth() * 32 / 8);
     U32 texture_memory = (texture->getFullHeight() * texture->getFullWidth() * texture->getComponents());
+    U32 vram_memory = estimated_vram_memory;
+
+    // Use actual GL memory instead of a fixed RGBA32 estimate if possible.
+    if (texture->hasGLTexture())
+    {
+        const S32 vram_bytes = texture->getTextureMemory().value();
+        if (vram_bytes > 0)
+        {
+            vram_memory = static_cast<U32>(vram_bytes);
+        }
+    }
 
     if (std::find(mTextureList.begin(), mTextureList.end(), uuid) == mTextureList.end())
     {
