@@ -677,6 +677,23 @@ LLUUID AOEngine::override(const LLUUID& motion, bool start)
         setLastMotion(motion);
         LL_DEBUGS("AOEngine") << "(enabled AO) setting last motion id to " <<  gAnimLibrary.animationName(mLastMotion) << LL_ENDL;
 
+        // Ensure turn motions do not linger when returning to stand.
+        if (motion == ANIM_AGENT_STAND)
+        {
+            auto stop_state_override = [](AOSet::AOState* ao_state)
+            {
+                if (ao_state && ao_state->mCurrentAnimationID.notNull())
+                {
+                    gAgent.sendAnimationRequest(ao_state->mCurrentAnimationID, ANIM_REQUEST_STOP);
+                    gAgentAvatarp->LLCharacter::stopMotion(ao_state->mCurrentAnimationID);
+                    ao_state->mCurrentAnimationID.setNull();
+                }
+            };
+
+            stop_state_override(mCurrentSet->getState(AOSet::TurningRight));
+            stop_state_override(mCurrentSet->getState(AOSet::TurningLeft));
+        }
+
         // Disable start stands in Mouselook
         if (mCurrentSet->getMouselookStandDisable() &&
             motion == ANIM_AGENT_STAND &&
@@ -2680,3 +2697,4 @@ void AOTimerCollection::updateTimers()
         mEventTimer.start();
     }
 }
+
