@@ -159,10 +159,16 @@ void LLReflectionMapManager::initCubeFree()
 
 struct CompareProbeDistance
 {
-    LLReflectionMap* mDefaultProbe;
-
-    bool operator()(const LLPointer<LLReflectionMap>& lhs, const LLPointer<LLReflectionMap>& rhs)
+    bool operator()(const LLPointer<LLReflectionMap>& lhs, const LLPointer<LLReflectionMap>& rhs) const
     {
+        // Keep manual probes ahead of automatic probes
+        const bool lhs_manual = lhs->mViewerObject.notNull() && !lhs->mViewerObject->isDead();
+        const bool rhs_manual = rhs->mViewerObject.notNull() && !rhs->mViewerObject->isDead();
+        if (lhs_manual != rhs_manual)
+        {
+            return lhs_manual;
+        }
+
         return lhs->mDistance < rhs->mDistance;
     }
 };
@@ -338,7 +344,26 @@ void LLReflectionMapManager::update()
         doProbeUpdate();
     }
 
-    // update distance to camera for all probes
+    // update distance to camera for all probes before sorting by distance
+    for (U32 i = 1; i < mProbes.size(); ++i)
+    {
+        LLReflectionMap* probe = mProbes[i];
+        if (probe == nullptr)
+        {
+            continue;
+        }
+
+        if (probe->mViewerObject)
+        {
+            // Make sure manual probes track their owning object before sorting.
+            probe->mOrigin.load3(probe->mViewerObject->getPositionAgent().mV);
+        }
+
+        LLVector4a d;
+        d.setSub(camera_pos, probe->mOrigin);
+        probe->mDistance = d.getLength3().getF32() - probe->mRadius;
+    }
+
     std::sort(mProbes.begin()+1, mProbes.end(), CompareProbeDistance());
     llassert(mProbes[0] == mDefaultProbe);
     llassert(mProbes[0]->mCubeArray == mTexture);
