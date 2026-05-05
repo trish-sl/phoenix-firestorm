@@ -1880,16 +1880,26 @@ void LLPanelProfileSecondLife::updateButtons()
 {
     if (getSelfProfile())
     {
-        mShowInSearchCheckbox->setVisible(true);
-        mShowInSearchCheckbox->setEnabled(true);
+        mShowInSearchCheckbox->setVisible(mAllowEdit);
+        mShowInSearchCheckbox->setEnabled(mAllowEdit);
 // <AS:Chanayane> Preview button
-        mPreviewButton->setVisible(true);
-        mPreviewButton->setEnabled(true);
+        mPreviewButton->setVisible(mAllowEdit);
+        mPreviewButton->setEnabled(mAllowEdit);
 // </AS:Chanayane>
-        mDescriptionEdit->setEnabled(true);
+        mDescriptionEdit->setEnabled(mAllowEdit);
+        mDisplayNameButton->setVisible(mAllowEdit);
+        mDisplayNameButton->setEnabled(mAllowEdit);
     }
     else
     {
+        mDisplayNameButton->setVisible(false);
+        mDisplayNameButton->setEnabled(false);
+        mShowInSearchCheckbox->setVisible(false);
+        mShowInSearchCheckbox->setEnabled(false);
+        mPreviewButton->setVisible(false);
+        mPreviewButton->setEnabled(false);
+        mDescriptionEdit->setEnabled(false);
+
         LLUUID av_id = getAvatarId();
         bool is_buddy_online = LLAvatarTracker::instance().isBuddyOnline(getAvatarId());
 
