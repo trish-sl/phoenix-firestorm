@@ -158,6 +158,11 @@ RlvBehaviourDictionary::RlvBehaviourDictionary()
     addEntry(new RlvBehaviourProcessor<RLV_BHVR_SHOWNAMETAGS>("shownametags", RlvBehaviourInfo::BHVR_STRICT));
     addModifier(RLV_BHVR_SHOWNAMETAGS, RLV_MODIFIER_SHOWNAMETAGSDIST, new RlvBehaviourModifierHandler<RLV_MODIFIER_SHOWNAMETAGSDIST>("Name Tags - Visible Distance", 0.0f, true, new RlvBehaviourModifierCompMin));
     addEntry(new RlvBehaviourGenericToggleProcessor<RLV_BHVR_SHOWNEARBY, RLV_OPTION_NONE>("shownearby", RlvBehaviourInfo::BHVR_EXPERIMENTAL));
+    // <FS:Trish> RLVa: Register Firestorm-specific visibility and floater restrictions.
+    addEntry(new RlvBehaviourGenericProcessor<RLV_OPTION_NONE>("showareasearch", RLV_BHVR_AREASEARCH));
+    addEntry(new RlvBehaviourGenericProcessor<RLV_OPTION_NONE>("showlookat", RLV_BHVR_LOOKAT));
+    addEntry(new RlvBehaviourGenericProcessor<RLV_OPTION_NONE>("showfavwear", RLV_BHVR_FAVWEAR));
+    // </FS:Trish>
     addEntry(new RlvBehaviourGenericToggleProcessor<RLV_BHVR_SHOWSELF, RLV_OPTION_NONE, RlvBehaviourShowSelfToggleHandler>("showself", RlvBehaviourInfo::BHVR_EXPERIMENTAL));
     addEntry(new RlvBehaviourGenericToggleProcessor<RLV_BHVR_SHOWSELFHEAD, RLV_OPTION_NONE, RlvBehaviourShowSelfToggleHandler>("showselfhead", RlvBehaviourInfo::BHVR_EXPERIMENTAL));
     addEntry(new RlvBehaviourGenericProcessor<RLV_OPTION_NONE>("showworldmap", RLV_BHVR_SHOWWORLDMAP));
