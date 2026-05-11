@@ -378,6 +378,7 @@
            control_name="MainChatbarVisible"
            />
 
+  <!-- <FS:Trish> RLVa: Disable Area Search command while @areasearch is active. -->
   <command name="areasearch"
            available_in_toybox="true"
            icon="areasearch"
@@ -385,6 +386,8 @@
            tooltip_ref="Command_Areasearch_Tooltip"
            execute_function="Floater.Toggle"
            execute_parameters="area_search"
+           is_enabled_function="RLV.EnableIfNot"
+           is_enabled_parameters="areasearch"
            is_running_function="Floater.IsOpen"
            is_running_parameters="area_search"
            />
@@ -605,6 +608,7 @@
            is_running_function="Floater.IsOpen"
            is_running_parameters="fs_group_titles"
            />
+  <!-- <FS:Trish> RLVa: Disable Favorite Wearables command while @favwear is active. -->
   <command name="wearable_favorites"
            available_in_toybox="true"
            icon="Wearable_Favorites_Icon"
@@ -612,6 +616,8 @@
            tooltip_ref="Command_Wearable_Favorites_Tooltip"
            execute_function="Floater.Toggle"
            execute_parameters="fs_wearable_favorites"
+           is_enabled_function="RLV.EnableIfNot"
+           is_enabled_parameters="favwear"
            is_running_function="Floater.IsOpen"
            is_running_parameters="fs_wearable_favorites"
            />
