@@ -3149,7 +3149,7 @@ bool LLAgentCamera::setLookAt(ELookAtType target_type, LLViewerObject *object, L
     static LLCachedControl<bool> isLocalPrivate(gSavedSettings, "PrivateLocalLookAtTarget", false);
 
     // AO, set to absolutely nothing if local lookats are disabled.
-    if(isLocalPrivate)
+    if(isLocalPrivate && !gRlvHandler.hasBehaviour(RLV_BHVR_SENDLOOKAT))
     {
             position.clearVec();
             target_type = LOOKAT_TARGET_NONE;
