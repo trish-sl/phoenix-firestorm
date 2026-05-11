@@ -300,6 +300,8 @@ enum ERlvBehaviourModifier
     RLV_MODIFIER_SHOWNAMETAGSDIST,      // Distance at which name tags will still be shown
     RLV_MODIFIER_SITTPDIST,
     RLV_MODIFIER_TPLOCALDIST,
+    RLV_MODIFIER_WORLDSOUNDSDIST,       // Maximum distance at which restricted world sounds remain audible
+    RLV_MODIFIER_SOUNDOTHERSDIST,       // Maximum distance at which restricted sounds from other avatars remain audible
 
     RLV_MODIFIER_COUNT,
     RLV_MODIFIER_UNKNOWN
@@ -332,7 +334,8 @@ enum ERlvBehaviourOptionType
     RLV_OPTION_EXCEPTION,           // Behaviour requires an exception as a parameter
     RLV_OPTION_NONE_OR_EXCEPTION,   // Behaviour takes either no parameters or an exception
     RLV_OPTION_MODIFIER,            // Behaviour requires a modifier as a parameter
-    RLV_OPTION_NONE_OR_MODIFIER     // Behaviour takes either no parameters or a modifier
+    RLV_OPTION_NONE_OR_MODIFIER,    // Behaviour takes either no parameters or a modifier
+    RLV_OPTION_NONE_OR_EXCEPTION_OR_MODIFIER // Behaviour takes no parameters, an exception or a modifier
 };
 
 enum ERlvParamType {
