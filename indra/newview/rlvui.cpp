@@ -16,6 +16,7 @@
 
 #include "llviewerprecompiledheaders.h"
 #include "llagent.h"
+#include "llagentcamera.h"
 #include "llavataractions.h"            // LLAvatarActions::profileVisible()
 #include "llchatmentionhelper.h"
 #include "llfloatersidepanelcontainer.h"
@@ -29,6 +30,8 @@
 #include "llteleporthistory.h"
 #include "llviewerparcelmgr.h"
 #include "llviewerregion.h"
+#include "llviewerobjectlist.h"
+#include "llviewerwindow.h"
 #include "llvoavatar.h"
 #include "roles_constants.h"            // Group "powers"
 
