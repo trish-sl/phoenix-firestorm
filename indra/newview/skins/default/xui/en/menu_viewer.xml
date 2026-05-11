@@ -88,6 +88,10 @@
             <menu_item_check.on_check
              function="Floater.Visible"
              parameter="fs_wearable_favorites" />
+            <!-- <FS:Trish> RLVa: Disable Favorite Wearables menu item while @favwear is active. -->
+            <menu_item_check.on_enable
+             function="RLV.EnableIfNot"
+             parameter="favwear" />
         </menu_item_check>
 
       <menu_item_call
@@ -1671,6 +1675,10 @@
         <menu_item_call.on_click
           function="Floater.Toggle"
           parameter="area_search" />
+        <!-- <FS:Trish> RLVa: Disable Area Search menu item while @areasearch is active. -->
+        <menu_item_call.on_enable
+          function="RLV.EnableIfNot"
+          parameter="areasearch" />
       </menu_item_call>
       <menu_item_call
         label="Sound Explorer"
