@@ -85,6 +85,8 @@ protected:
      * Helper functions
      */
 public:
+    void refreshSoundRestrictions();
+
     static bool canViewParcelProperties();                              // showloc
     static bool canViewRegionProperties();                              // showloc
     static bool hasOpenIM(const LLUUID& idAgent);                       // shownames
