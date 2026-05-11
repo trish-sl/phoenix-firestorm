@@ -23,9 +23,12 @@
 #include "llfloatersidepanelcontainer.h"
 #include "llhudtext.h"                  // LLHUDText::refreshAllObjectText()
 #include "llimview.h"                   // LLIMMgr::computeSessionID()
+#include "lllayoutstack.h"
 #include "llmoveview.h"                 // Movement panel (contains "Stand" and "Stop Flying" buttons)
 #include "llnavigationbar.h"            // Navigation bar
 #include "llparcel.h"
+#include "lltabcontainer.h"
+#include "lltoolbarview.h"
 // <FS:Zi> We don't use the mini location panel in Firestorm
 // #include "llpaneltopinfobar.h"
 #include "llteleporthistory.h"
