@@ -208,6 +208,38 @@ static bool gltf_blend_has_transparency(const LLGLTFMaterial* mat)
     return mat->mTextureId[LLGLTFMaterial::GLTF_TEXTURE_INFO_BASE_COLOR].notNull();
 }
 
+// RLVa @setcam_textures hides world textures.
+// For GLTF materials, treat as hidden to maintain pre v7-viewer behavior.
+static LLGLTFMaterial* get_visible_gltf_material(const LLTextureEntry* te, const LLViewerObject* vobj)
+{
+    if (!te)
+    {
+        return nullptr;
+    }
+
+    if (RlvActions::hasBehaviour(RLV_BHVR_SETCAM_TEXTURES) && vobj && !vobj->isAttachment())
+    {
+        return nullptr;
+    }
+
+    return te->getGLTFRenderMaterial();
+}
+
+static LLMaterial* get_visible_material_params(const LLTextureEntry* te, const LLViewerObject* vobj)
+{
+    if (!te)
+    {
+        return nullptr;
+    }
+
+    if (RlvActions::hasBehaviour(RLV_BHVR_SETCAM_TEXTURES) && vobj && !vobj->isAttachment())
+    {
+        return nullptr;
+    }
+
+    return te->getMaterialParams().get();
+}
+
 // Implementation class of LLMediaDataClientObject.  See llmediadataclient.h
 class LLMediaDataClientObjectImpl : public LLMediaDataClientObject
 {
@@ -1055,7 +1087,7 @@ void LLVOVolume::updateTextureVirtualSize(bool forced)
         LLViewerTexture *imagep = nullptr;
         U32 ch_min;
         U32 ch_max;
-        if (!te->getGLTFRenderMaterial())
+        if (!get_visible_gltf_material(te, this))
         {
             ch_min = LLRender::DIFFUSE_MAP;
             ch_max = LLRender::SPECULAR_MAP;
@@ -5584,9 +5616,9 @@ bool can_batch_texture(LLFace* facep)
     const auto te = facep->getTextureEntry();
     if ( LLPipeline::sRenderDeferred && te )
     {
-        auto mat = te->getMaterialParams();
+        LLMaterial* mat = get_visible_material_params(te, facep->getViewerObject());
         // if(mat.notNull() && (mat->getNormalID() != LLUUID::null || mat->getSpecularID() != LLUUID::null || (te->getAlpha() >0.f && te->getAlpha() < 1.f ) ) )
-        if( mat.notNull() && ( !mat->isEmpty() || ( (te->getAlpha() >0.f &&  te->getAlpha() < 1.f ) && mat->getDiffuseAlphaMode() != LLMaterial::DIFFUSE_ALPHA_MODE_BLEND) ) )
+        if( mat && ( !mat->isEmpty() || ( (te->getAlpha() >0.f &&  te->getAlpha() < 1.f ) && mat->getDiffuseAlphaMode() != LLMaterial::DIFFUSE_ALPHA_MODE_BLEND) ) )
         {
             // we have a materials block but we cannot batch materials.
             // however, materials blocks can and do exist due to alpha masking and those are batchable,
@@ -5607,7 +5639,7 @@ bool can_batch_texture(LLFace* facep)
         return false;
     }
 
-    if (facep->getTextureEntry()->getGLTFRenderMaterial() != nullptr)
+    if (get_visible_gltf_material(facep->getTextureEntry(), facep->getViewerObject()) != nullptr)
     { // PBR materials break indexed texture batching
         return false;
     }
@@ -5794,8 +5826,9 @@ void LLVolumeGeometryManager::registerFace(LLSpatialGroup* group, LLFace* facep,
 
     LLUUID mat_id;
 
-    auto* gltf_mat = (LLFetchedGLTFMaterial*)te->getGLTFRenderMaterial();
-    llassert(gltf_mat == nullptr || dynamic_cast<LLFetchedGLTFMaterial*>(te->getGLTFRenderMaterial()) != nullptr);
+    LLGLTFMaterial* render_gltf_mat = get_visible_gltf_material(te, facep->getViewerObject());
+    auto* gltf_mat = dynamic_cast<LLFetchedGLTFMaterial*>(render_gltf_mat);
+    llassert(render_gltf_mat == nullptr || gltf_mat != nullptr);
 
     if (gltf_mat != nullptr)
     {
@@ -5807,7 +5840,7 @@ void LLVolumeGeometryManager::registerFace(LLSpatialGroup* group, LLFace* facep,
     }
     else
     {
-        mat = te->getMaterialParams().get();
+        mat = get_visible_material_params(te, facep->getViewerObject());
         if (mat)
         {
             mat_id = te->getMaterialParams()->getHash();
@@ -6234,7 +6267,9 @@ void LLVolumeGeometryManager::rebuildGeom(LLSpatialGroup* group)
                 const LLTextureEntry* te = facep->getTextureEntry();
                 if (te)
                 {
-                    gltf_mat = (LLFetchedGLTFMaterial*)te->getGLTFRenderMaterial();
+                    LLGLTFMaterial* render_gltf_mat = get_visible_gltf_material(te, vobj);
+                    gltf_mat = dynamic_cast<LLFetchedGLTFMaterial*>(render_gltf_mat);
+                    llassert(render_gltf_mat == nullptr || gltf_mat != nullptr);
                 } // if not te, continue?
                 bool is_pbr = gltf_mat != nullptr;
 
@@ -6409,9 +6444,10 @@ void LLVolumeGeometryManager::rebuildGeom(LLSpatialGroup* group)
 
                         if (te)
                         {
-                            LLGLTFMaterial* gltf_mat = te->getGLTFRenderMaterial();
+                            LLGLTFMaterial* gltf_mat = get_visible_gltf_material(te, vobj);
 
-                            if (gltf_mat != nullptr || (te->getMaterialParams().notNull()))
+                            LLMaterial* mat = get_visible_material_params(te, vobj);
+                            if (gltf_mat != nullptr || (mat != nullptr))
                             {
                                 if (gltf_mat != nullptr)
                                 {
@@ -6435,7 +6471,6 @@ void LLVolumeGeometryManager::rebuildGeom(LLSpatialGroup* group)
                                 }
                                 else
                                 {
-                                    LLMaterial* mat = te->getMaterialParams().get();
                                     if (mat->getNormalID().notNull() || // <-- has a normal map, needs tangents
                                         (te->getBumpmap() && (te->getBumpmap() < 18))) // <-- has an emboss bump map, needs tangents
                                     {
@@ -7016,7 +7051,7 @@ U32 LLVolumeGeometryManager::genDrawInfo(LLSpatialGroup* group, U32 mask, LLFace
             }
 
             const LLTextureEntry* te = facep->getTextureEntry();
-            LLGLTFMaterial* gltf_mat = te->getGLTFRenderMaterial();
+            LLGLTFMaterial* gltf_mat = get_visible_gltf_material(te, facep->getViewerObject());
 
             if (hud_group && gltf_mat == nullptr)
             { //all hud attachments are fullbright
@@ -7033,7 +7068,7 @@ U32 LLVolumeGeometryManager::genDrawInfo(LLSpatialGroup* group, U32 mask, LLFace
             // ignore traditional material if GLTF material is present
             if (gltf_mat == nullptr)
             {
-                mat = te->getMaterialParams().get();
+                mat = get_visible_material_params(te, facep->getViewerObject());
 
                 can_be_shiny = true;
                 if (mat)
