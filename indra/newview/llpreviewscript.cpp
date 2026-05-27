@@ -2854,6 +2854,8 @@ void LLLiveLSLEditor::loadAsset()
                     mScriptEd->setScriptText(getString("not_allowed"), false);
                     mScriptEd->mEditor->makePristine();
                     mScriptEd->enableSave(false);
+                    mMonoCheckbox->set(false);
+                    mMonoCheckbox->setEnabled(false);
                     mAssetStatus = PREVIEW_ASSET_LOADED;
                 }
                 else if(copyManipulate || isGodlike)
@@ -3361,7 +3363,7 @@ void LLLiveLSLEditor::processScriptRunningReply(LLMessageSystem* msg, void**)
 void LLLiveLSLEditor::onMonoCheckboxClicked(LLUICtrl*, void* userdata)
 {
     LLLiveLSLEditor* self = static_cast<LLLiveLSLEditor*>(userdata);
-    self->mMonoCheckbox->setEnabled(have_script_upload_cap(self->mObjectUUID));
+    self->mMonoCheckbox->setEnabled(self->getIsModifiable() && have_script_upload_cap(self->mObjectUUID));
     self->mScriptEd->enableSave(self->getIsModifiable());
 }
 
