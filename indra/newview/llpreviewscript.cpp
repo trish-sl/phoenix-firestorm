@@ -3135,6 +3135,7 @@ void LLLiveLSLEditor::loadAsset()
                     mScriptEd->setScriptText(getString("not_allowed"), false);
                     mScriptEd->mEditor->makePristine();
                     mScriptEd->enableSave(false);
+                    mScriptEd->mCompileTarget->setEnabled(false);
                     mAssetStatus = PREVIEW_ASSET_LOADED;
                 }
                 else if(copyManipulate || isGodlike)
@@ -3677,7 +3678,7 @@ void LLLiveLSLEditor::processScriptRunningReply(LLMessageSystem* msg, void**)
 
 void LLLiveLSLEditor::onCompileTargetChanged()
 {
-    mScriptEd->mCompileTarget->setEnabled(have_script_upload_cap(mObjectUUID));
+    mScriptEd->mCompileTarget->setEnabled(getIsModifiable() && have_script_upload_cap(mObjectUUID));
     mScriptEd->enableSave(getIsModifiable());
     bool is_lua = mScriptEd->mCompileTarget->getValue().asString() == "luau";
     mScriptEd->mEditor->setLuauLanguage(is_lua);
