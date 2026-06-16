@@ -417,11 +417,14 @@ void LLFollowCam::update()
         //--------------------------------------------------------------------
         // don't let the camera get farther than its official max distance
         //--------------------------------------------------------------------
-        if ( distanceFromCameraToSubject > mMaxCameraDistantFromSubject )
+        // <FS:Trish> Fix Followcam zoom being stuck at max distance while in motion
+        const F32 target_camera_distance = llmin(mSimulatedDistance, mMaxCameraDistantFromSubject);
+        if ( distanceFromCameraToSubject > target_camera_distance )
         {
             LLVector3 directionFromCameraToSubject = vectorFromCameraToSubject / distanceFromCameraToSubject;
-            simulated_pos_agent = offsetSubjectPosition - directionFromCameraToSubject * mMaxCameraDistantFromSubject;
+            simulated_pos_agent = offsetSubjectPosition - directionFromCameraToSubject * target_camera_distance;
         }
+        // </FS:Trish> 
 
         ////-------------------------------------------------------------------------------------------------
         //// The following method takes mSimulatedPositionGlobal and resets it so that it stays "behind" the subject,
