@@ -179,7 +179,10 @@ public:
     const LLVector3& getCameraUpVector() const { return mCameraUpVector; }
 private:
     LLVector3       getAvatarRootPosition();
-
+    // <FS:Trish> FIRE-33677: Fix followcam constraints
+    void            applyCameraCollidePlane(LLVector3d& camera_position_global,
+                                            const LLVector3d& reference_global) const;
+    //</FS:Trish>
     F32             mCurrentCameraDistance;         // Current camera offset from avatar
     F32             mTargetCameraDistance;          // Target camera offset from avatar
     F32             mCameraFOVZoomFactor;           // Amount of fov zoom applied to camera when zeroing in on an object

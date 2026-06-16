@@ -114,6 +114,60 @@ static bool isDisableCameraConstraints()
     return sDisableCameraConstraints;
 }
 
+// <FS:Trish> FIRE-33677: Fix followcam constraints
+void LLAgentCamera::applyCameraCollidePlane(LLVector3d& camera_position_global,
+                                            const LLVector3d& reference_global) const
+{
+    if (isDisableCameraConstraints() ||
+        mCameraCollidePlane.isExactlyZero() ||
+        (isAgentAvatarValid() && gAgentAvatarp->isSitting()))
+    {
+        return;
+    }
+
+    LLVector3 plane_normal;
+    plane_normal.setVec(mCameraCollidePlane.mV);
+
+    const LLVector3 reference_agent = gAgent.getPosAgentFromGlobal(reference_global);
+    LLVector3 local_camera_offset = gAgent.getPosAgentFromGlobal(camera_position_global) - reference_agent;
+
+    F32 offset_dot_norm = local_camera_offset * plane_normal;
+    if (llabs(offset_dot_norm) < 0.001f)
+    {
+        offset_dot_norm = 0.001f;
+    }
+
+    F32 camera_distance = local_camera_offset.normalize();
+    if (camera_distance <= 0.f)
+    {
+        return;
+    }
+
+    F32 pos_dot_norm = reference_agent * plane_normal;
+
+    // if agent is outside the colliding half-plane
+    if (pos_dot_norm > mCameraCollidePlane.mV[VW])
+    {
+        // check to see if camera is on the opposite side (inside) the half-plane
+        if (offset_dot_norm + pos_dot_norm < mCameraCollidePlane.mV[VW])
+        {
+            // diminish offset by factor to push it back outside the half-plane
+            camera_distance *= (pos_dot_norm - mCameraCollidePlane.mV[VW] - CAMERA_COLLIDE_EPSILON) / -offset_dot_norm;
+        }
+    }
+    else
+    {
+        if (offset_dot_norm + pos_dot_norm > mCameraCollidePlane.mV[VW])
+        {
+            camera_distance *= (mCameraCollidePlane.mV[VW] - pos_dot_norm - CAMERA_COLLIDE_EPSILON) / offset_dot_norm;
+        }
+    }
+
+    local_camera_offset *= camera_distance;
+    camera_position_global = gAgent.getPosGlobalFromAgent(reference_agent + local_camera_offset);
+}
+// </FS:Trish>
+
 // The agent instance.
 LLAgentCamera gAgentCamera;
 
@@ -1943,7 +1997,10 @@ LLVector3d LLAgentCamera::calcCameraPositionTargetGlobal(bool *hit_limit)
 
     if (mCameraMode == CAMERA_MODE_FOLLOW && mFocusOnAvatar)
     {
-        camera_position_global = gAgent.getPosGlobalFromAgent(mFollowCam.getSimulatedPosition());
+        camera_position_global = gAgent.getPosGlobalFromAgent(mFollowCam.getSimulatedPosition());   
+        // <FS:Trish> FIRE-33677: Fix followcam constraints
+        applyCameraCollidePlane(camera_position_global, frame_center_global + head_offset);
+        // </FS:Trish>
     }
     else if (mCameraMode == CAMERA_MODE_MOUSELOOK)
     {
