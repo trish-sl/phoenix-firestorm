@@ -143,6 +143,9 @@ public:
     // that it will immediately try to adjust these values according to its attributes.
     //-----------------------------------------------------------------------------------
     void reset( const LLVector3 position, const LLVector3 focus, const LLVector3 upVector );
+    // <FS:Trish> Reset followcam zoom when resetting the camera view
+    void resetZoom();
+    // </FS:Trish> 
 
     void setMaxCameraDistantFromSubject ( F32 m ); // this should be determined by llAgent
     bool isZoomedToMinimumDistance();

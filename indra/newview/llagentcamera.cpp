@@ -442,6 +442,13 @@ void LLAgentCamera::resetView(bool reset_camera, bool change_camera, bool moveme
 
         setFocusOnAvatar(true, ANIMATE);
 
+        // <FS:Trish> Reset followcam zoom when resetting the camera view
+        if (mCameraMode == CAMERA_MODE_FOLLOW)
+        {
+            mFollowCam.resetZoom();
+        }
+        // </FS:Trish>
+
         mCameraFOVZoomFactor = 0.f;
 // <FS:Chanayane> Camera roll (from Alchemy)
         resetCameraRoll();
@@ -2426,6 +2433,13 @@ void LLAgentCamera::handleScrollWheel(S32 clicks)
         }
         // </FS:Ansariel>
 
+        // <FS:Trish> Reset followcam zoom when resetting the camera view. (Don't continue animation from a stale session.)
+        if (mCameraAnimating)
+        {
+            stopCameraAnimation();
+        }
+        // </FS:Trish>
+
         if (!mFollowCam.getPositionLocked()) // not if the followCam position is locked in place
         {
             mFollowCam.zoom(clicks);
@@ -2649,6 +2663,10 @@ void LLAgentCamera::changeCameraToFollow(bool animate)
         // bang-in the current focus, position, and up vector of the follow cam
         const LLViewerCamera& camera = LLViewerCamera::instance();
         mFollowCam.reset(camera.getOrigin(), camera.getPointOfInterest(), LLVector3::z_axis);
+        
+        // <FS:Trish> Reset followcam zoom when resetting the camera view
+        mFollowCam.resetZoom();
+        // </FS:Trish>
 
         if (gBasicToolset)
         {
