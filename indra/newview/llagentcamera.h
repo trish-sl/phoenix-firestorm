@@ -201,6 +201,7 @@ private:
     //--------------------------------------------------------------------
 public:
     bool            isfollowCamLocked();
+    void            resetFollowCamZoom();
 private:
     LLFollowCam     mFollowCam;             // Ventrella
     F64             mLastValidFollowCamParamsTime;

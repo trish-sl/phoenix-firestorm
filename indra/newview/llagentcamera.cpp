@@ -401,65 +401,56 @@ void LLAgentCamera::resetView(bool reset_camera, bool change_camera, bool moveme
     {
     // </FS:CR>
 
-    if (change_camera && !gSavedSettings.getBOOL("FreezeTime"))
-    {
-        changeCameraToDefault();
-
-        if (LLViewerJoystick::getInstance()->getOverrideCamera())
+        if (change_camera && !gSavedSettings.getBOOL("FreezeTime"))
         {
-            handle_toggle_flycam();
-        }
+            changeCameraToDefault();
 
-        // reset avatar mode from eventual residual motion
-        if (LLToolMgr::getInstance()->inBuildMode())
+            if (LLViewerJoystick::getInstance()->getOverrideCamera())
+            {
+                handle_toggle_flycam();
+            }
+
+            // reset avatar mode from eventual residual motion
+            if (LLToolMgr::getInstance()->inBuildMode())
+            {
+                LLViewerJoystick::getInstance()->moveAvatar(true);
+            }
+
+            //Camera Tool is needed for Free Camera Control Mode
+            if (!LLFloaterCamera::inFreeCameraMode())
+            {
+                LLFloaterReg::hideInstance("build");
+
+                // Switch back to basic toolset
+                LLToolMgr::getInstance()->setCurrentToolset(gBasicToolset);
+            }
+
+            gViewerWindow->showCursor();
+        }
+        
+
+        if (reset_camera && !gSavedSettings.getBOOL("FreezeTime"))
         {
-            LLViewerJoystick::getInstance()->moveAvatar(true);
-        }
+            if (!gViewerWindow->getLeftMouseDown() && cameraThirdPerson())
+            {
+                // leaving mouse-steer mode
+                LLVector3 agent_at_axis = gAgent.getAtAxis();
+                agent_at_axis -= projected_vec(agent_at_axis, gAgent.getReferenceUpVector());
+                agent_at_axis.normalize();
+                gAgent.resetAxes(lerp(gAgent.getAtAxis(), agent_at_axis, LLSmoothInterpolation::getInterpolant(0.3f)));
+            }
 
-        //Camera Tool is needed for Free Camera Control Mode
-        if (!LLFloaterCamera::inFreeCameraMode())
-        {
-            LLFloaterReg::hideInstance("build");
+            setFocusOnAvatar(true, ANIMATE);
 
-            // Switch back to basic toolset
-            LLToolMgr::getInstance()->setCurrentToolset(gBasicToolset);
-        }
-
-        gViewerWindow->showCursor();
-    }
-
-
-    if (reset_camera && !gSavedSettings.getBOOL("FreezeTime"))
-    {
-        if (!gViewerWindow->getLeftMouseDown() && cameraThirdPerson())
-        {
-            // leaving mouse-steer mode
-            LLVector3 agent_at_axis = gAgent.getAtAxis();
-            agent_at_axis -= projected_vec(agent_at_axis, gAgent.getReferenceUpVector());
-            agent_at_axis.normalize();
-            gAgent.resetAxes(lerp(gAgent.getAtAxis(), agent_at_axis, LLSmoothInterpolation::getInterpolant(0.3f)));
-        }
-
-        setFocusOnAvatar(true, ANIMATE);
-
-        // <FS:Trish> Reset followcam zoom when resetting the camera view
-        if (mCameraMode == CAMERA_MODE_FOLLOW)
-        {
-            mFollowCam.resetZoom();
-        }
-        // </FS:Trish>
-
-        mCameraFOVZoomFactor = 0.f;
+            mCameraFOVZoomFactor = 0.f;
 // <FS:Chanayane> Camera roll (from Alchemy)
-        resetCameraRoll();
+            resetCameraRoll();
 // </FS:Chanayane>
+        }
+        resetPanDiff();
+        resetOrbitDiff();
+        mHUDTargetZoom = 1.f;
     }
-    resetPanDiff();
-    resetOrbitDiff();
-    mHUDTargetZoom = 1.f;
-// <FS:CR> FIRE-8798: Option to prevent camera reset on movement
-    }
-// </FS:CR>
 
     if (LLSelectMgr::getInstance()->mAllowSelectAvatar)
     {
@@ -2663,10 +2654,6 @@ void LLAgentCamera::changeCameraToFollow(bool animate)
         // bang-in the current focus, position, and up vector of the follow cam
         const LLViewerCamera& camera = LLViewerCamera::instance();
         mFollowCam.reset(camera.getOrigin(), camera.getPointOfInterest(), LLVector3::z_axis);
-        
-        // <FS:Trish> Reset followcam zoom when resetting the camera view
-        mFollowCam.resetZoom();
-        // </FS:Trish>
 
         if (gBasicToolset)
         {
@@ -3314,6 +3301,14 @@ void LLAgentCamera::lookAtLastChat()
 bool LLAgentCamera::isfollowCamLocked()
 {
     return mFollowCam.getPositionLocked();
+}
+
+void LLAgentCamera::resetFollowCamZoom()
+{
+    if (mCameraMode == CAMERA_MODE_FOLLOW)
+    {
+        mFollowCam.resetZoom();
+    }
 }
 
 bool LLAgentCamera::setPointAt(EPointAtType target_type, LLViewerObject *object, LLVector3 position)
