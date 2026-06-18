@@ -172,6 +172,11 @@ static bool is_legacy_compile_target(const std::string& target)
     return target == "lsl2" || target == "mono";
 }
 
+static bool uses_preprocessor_compile_target(const std::string& target)
+{
+    return target != "luau";
+}
+
 static LLScriptAssetUpload::TargetType_t compile_target_to_upload_type(const std::string& target)
 {
     if (target == "mono")
@@ -1114,9 +1119,9 @@ void LLScriptEdCore::setScriptText(const std::string& text, bool is_valid)
     {
         // NaCl - LSL Preprocessor
         std::string ntext = text;
-        // Only legacy LSL targets use the preprocessor; Lua and the newer
-        // LSL VM should stay on the raw text path.
-        const bool use_preprocessor = gSavedSettings.getBOOL("_NACL_LSLPreprocessor") && mLSLProc && is_legacy_compile_target(getCompileTarget());
+        // Only pure Luau skips the preprocessor; legacy LSL and LSL: 2025 VM
+        // still go through the preprocessing path.
+        const bool use_preprocessor = gSavedSettings.getBOOL("_NACL_LSLPreprocessor") && mLSLProc && uses_preprocessor_compile_target(getCompileTarget());
         if (use_preprocessor)
         {
             if (mPostEditor)
@@ -1140,7 +1145,7 @@ void LLScriptEdCore::setScriptText(const std::string& text, bool is_valid)
 // NaCl - LSL Preprocessor
 std::string LLScriptEdCore::getScriptText()
 {
-    if (gSavedSettings.getBOOL("_NACL_LSLPreprocessor") && mPostEditor && is_legacy_compile_target(getCompileTarget()))
+    if (gSavedSettings.getBOOL("_NACL_LSLPreprocessor") && mPostEditor && uses_preprocessor_compile_target(getCompileTarget()))
     {
         //return mPostEditor->getText();
         return mPostScript;
@@ -1298,7 +1303,7 @@ void LLScriptEdCore::sync()
         if (LLFile::stat(tmp_file, &s) == 0) // file exists
         {
             mLiveFile->ignoreNextUpdate();
-            const bool write_unprocessed = !gSavedSettings.getBOOL("_NACL_LSLPreprocessor") || !is_legacy_compile_target(getCompileTarget());
+            const bool write_unprocessed = !gSavedSettings.getBOOL("_NACL_LSLPreprocessor") || !uses_preprocessor_compile_target(getCompileTarget());
             writeToFile(tmp_file, write_unprocessed);
         }
     }
@@ -1727,7 +1732,7 @@ void LLScriptEdCore::doSave(bool close_after_save, bool sync /*= true*/)
 
     updateIndicators(true, false); //<FS:Kadah> Compile Indicators
 
-    if (gSavedSettings.getBOOL("_NACL_LSLPreprocessor") && mLSLProc && is_legacy_compile_target(getCompileTarget()))
+    if (gSavedSettings.getBOOL("_NACL_LSLPreprocessor") && mLSLProc && uses_preprocessor_compile_target(getCompileTarget()))
     {
         LL_INFOS() << "passing to preproc" << LL_ENDL;
         mLSLProc->preprocess_script(close_after_save, sync);
@@ -1792,7 +1797,7 @@ void LLScriptEdCore::openInExternalEditor()
     std::string filename = mContainer->getTmpFileName(script_name);
 
     // Save the script to a temporary file.
-    const bool write_unprocessed = !gSavedSettings.getBOOL("_NACL_LSLPreprocessor") || !is_legacy_compile_target(getCompileTarget());
+    const bool write_unprocessed = !gSavedSettings.getBOOL("_NACL_LSLPreprocessor") || !uses_preprocessor_compile_target(getCompileTarget());
     if (!writeToFile(filename, write_unprocessed))
     {
         // In case some characters from script name are forbidden
@@ -2740,7 +2745,7 @@ void LLPreviewLSL::saveIfNeeded(bool sync /*= true*/)
         {
             //<FS:KC> Script Preprocessor
             // std::string buffer(mScriptEd->mEditor->getText());
-            std::string buffer((gSavedSettings.getBOOL("_NACL_LSLPreprocessor") && is_legacy_compile_target(compile_target)) ? mScriptEd->getScriptText() : mScriptEd->mEditor->getText());
+            std::string buffer((gSavedSettings.getBOOL("_NACL_LSLPreprocessor") && uses_preprocessor_compile_target(compile_target)) ? mScriptEd->getScriptText() : mScriptEd->mEditor->getText());
             //</FS:KC> Script Preprocessor
 
             LLUUID old_asset_id = inv_item->getAssetUUID().isNull() ? mScriptEd->getAssetID() : inv_item->getAssetUUID();
@@ -3404,7 +3409,7 @@ void LLLiveLSLEditor::saveIfNeeded(bool sync /*= true*/)
         //<FS:KC> Script Preprocessor
         // std::string buffer(mScriptEd->mEditor->getText());
         std::string compile_target = mScriptEd->getCompileTarget();
-        std::string buffer((gSavedSettings.getBOOL("_NACL_LSLPreprocessor") && is_legacy_compile_target(compile_target)) ? mScriptEd->getScriptText() : mScriptEd->mEditor->getText());
+        std::string buffer((gSavedSettings.getBOOL("_NACL_LSLPreprocessor") && uses_preprocessor_compile_target(compile_target)) ? mScriptEd->getScriptText() : mScriptEd->mEditor->getText());
         //</FS:KC> Script Preprocessor
         LLUUID old_asset_id = mScriptEd->getAssetID();
 
