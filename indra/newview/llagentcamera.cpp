@@ -431,25 +431,29 @@ void LLAgentCamera::resetView(bool reset_camera, bool change_camera, bool moveme
 
         if (reset_camera && !gSavedSettings.getBOOL("FreezeTime"))
         {
-            if (!gViewerWindow->getLeftMouseDown() && cameraThirdPerson())
+            // Scripted followcam pitch should survive avatar-movement resets.
+            if (!(movement && mCameraMode == CAMERA_MODE_FOLLOW))
             {
-                // leaving mouse-steer mode
-                LLVector3 agent_at_axis = gAgent.getAtAxis();
-                agent_at_axis -= projected_vec(agent_at_axis, gAgent.getReferenceUpVector());
-                agent_at_axis.normalize();
-                gAgent.resetAxes(lerp(gAgent.getAtAxis(), agent_at_axis, LLSmoothInterpolation::getInterpolant(0.3f)));
-            }
+                if (!gViewerWindow->getLeftMouseDown() && cameraThirdPerson())
+                {
+                    // leaving mouse-steer mode
+                    LLVector3 agent_at_axis = gAgent.getAtAxis();
+                    agent_at_axis -= projected_vec(agent_at_axis, gAgent.getReferenceUpVector());
+                    agent_at_axis.normalize();
+                    gAgent.resetAxes(lerp(gAgent.getAtAxis(), agent_at_axis, LLSmoothInterpolation::getInterpolant(0.3f)));
+                }
 
-            setFocusOnAvatar(true, ANIMATE);
+                setFocusOnAvatar(true, ANIMATE);
 
-            mCameraFOVZoomFactor = 0.f;
+                mCameraFOVZoomFactor = 0.f;
 // <FS:Chanayane> Camera roll (from Alchemy)
-            resetCameraRoll();
+                resetCameraRoll();
 // </FS:Chanayane>
+            }
+            resetPanDiff();
+            resetOrbitDiff();
+            mHUDTargetZoom = 1.f;
         }
-        resetPanDiff();
-        resetOrbitDiff();
-        mHUDTargetZoom = 1.f;
     }
 
     if (LLSelectMgr::getInstance()->mAllowSelectAvatar)
