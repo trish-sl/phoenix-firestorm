@@ -55,6 +55,7 @@
 #include "lltooldraganddrop.h"
 #include "llfilesystem.h"
 #include "llpanelobjectinventory.h"
+#include <regex>
 
 #include "llagent.h"
 #include "llmenugl.h"
@@ -134,6 +135,63 @@ static bool have_script_upload_cap(LLUUID& object_id)
 {
     LLViewerObject* object = gObjectList.findObject(object_id);
     return object && (! object->getRegion()->getCapability("UpdateScriptTask").empty());
+}
+
+static bool have_lua_enabled(const LLUUID& object_id)
+{
+    LLViewerRegion* region = nullptr;
+    LLViewerObject* object = gObjectList.findObject(object_id);
+    if (object)
+    {
+        region = object->getRegion();
+    }
+    else
+    {
+        region = gAgent.getRegion();
+    }
+
+    if (region && region->simulatorFeaturesReceived())
+    {
+        LLSD simulatorFeatures;
+        region->getSimulatorFeatures(simulatorFeatures);
+        return simulatorFeatures["LuaScriptsEnabled"].asBoolean();
+    }
+
+    return false;
+}
+
+static bool is_lua_script(const std::string& code)
+{
+    // Temporary heuristic until runtime metadata is persisted with the item.
+    std::regex lsl_pattern("\\s*default\\s*\\{");
+    return !std::regex_search(code, lsl_pattern);
+}
+
+static bool is_legacy_compile_target(const std::string& target)
+{
+    return target == "lsl2" || target == "mono";
+}
+
+static LLScriptAssetUpload::TargetType_t compile_target_to_upload_type(const std::string& target)
+{
+    if (target == "mono")
+    {
+        return LLScriptAssetUpload::MONO;
+    }
+    if (target == "lsl-luau")
+    {
+        return LLScriptAssetUpload::LSL_LUAU;
+    }
+    if (target == "luau")
+    {
+        return LLScriptAssetUpload::LUAU;
+    }
+    return LLScriptAssetUpload::LSL2;
+}
+
+static const char* compile_target_file_extension(const std::string& target)
+{
+    return (target == "luau") ? ".luau" : ".lsl";
 }
 
 // [SL:KB] - Patch: Build-ScriptRecover | Checked: 2011-11-23 (Catznip-3.2.0) | Added: Catznip-3.2.0
@@ -455,6 +513,8 @@ LLScriptEdCore::LLScriptEdCore(
     mHasScriptData(false),
     mScriptRemoved(false),
     mSaveDialogShown(false)
+    , mCompileTarget(NULL)
+    , mSavedCompileTarget(gSavedSettings.getBOOL("FSSaveInventoryScriptsAsMono") ? "mono" : "lsl2")
 {
     setFollowsAll();
     setBorderVisible(false);
@@ -586,6 +646,23 @@ bool LLScriptEdCore::postBuild()
     mErrorList = getChild<LLScrollListCtrl>("lsl errors");
 
     mFunctions = getChild<LLComboBox>("Insert...");
+    mCompileTarget = getChild<LLComboBox>("compile_target");
+
+    const bool lua_scripts_enabled = have_lua_enabled(LLUUID::null);
+    if (mCompileTarget)
+    {
+        if (LLScrollListItem* luau_item = mCompileTarget->getItemByValue("luau"))
+        {
+            luau_item->setEnabled(lua_scripts_enabled);
+        }
+        if (LLScrollListItem* lsl_luau_item = mCompileTarget->getItemByValue("lsl-luau"))
+        {
+            lsl_luau_item->setEnabled(lua_scripts_enabled);
+        }
+
+        setCompileTarget(mSavedCompileTarget);
+        setCompileTargetPristine();
+    }
 
     childSetCommitCallback("Insert...", &LLScriptEdCore::onBtnInsertFunction, this);
 
@@ -1037,13 +1114,21 @@ void LLScriptEdCore::setScriptText(const std::string& text, bool is_valid)
     {
         // NaCl - LSL Preprocessor
         std::string ntext = text;
-        if (gSavedSettings.getBOOL("_NACL_LSLPreprocessor") && mLSLProc)
+        // Only legacy LSL targets use the preprocessor; Lua and the newer
+        // LSL VM should stay on the raw text path.
+        const bool use_preprocessor = gSavedSettings.getBOOL("_NACL_LSLPreprocessor") && mLSLProc && is_legacy_compile_target(getCompileTarget());
+        if (use_preprocessor)
         {
             if (mPostEditor)
             {
                 mPostEditor->setText(ntext);
             }
             ntext = mLSLProc->decode(ntext);
+        }
+        else if (mPostEditor)
+        {
+            mPostEditor->setText(ntext);
+            mPostScript = ntext;
         }
         LLStringUtil::replaceTabsWithSpaces(ntext, mEditor->spacesPerTab());
         // NaCl End
@@ -1055,7 +1140,7 @@ void LLScriptEdCore::setScriptText(const std::string& text, bool is_valid)
 // NaCl - LSL Preprocessor
 std::string LLScriptEdCore::getScriptText()
 {
-    if (gSavedSettings.getBOOL("_NACL_LSLPreprocessor") && mPostEditor)
+    if (gSavedSettings.getBOOL("_NACL_LSLPreprocessor") && mPostEditor && is_legacy_compile_target(getCompileTarget()))
     {
         //return mPostEditor->getText();
         return mPostScript;
@@ -1074,6 +1159,56 @@ void LLScriptEdCore::makeEditorPristine()
     {
         mEditor->makePristine();
     }
+}
+
+void LLScriptEdCore::setCompileTarget(const std::string& target)
+{
+    if (mCompileTarget)
+    {
+        if (LLScrollListItem* item = mCompileTarget->getItemByValue(LLSD(target)))
+        {
+            const bool was_enabled = item->getEnabled();
+            if (!was_enabled)
+            {
+                item->setEnabled(true);
+            }
+
+            mCompileTarget->setValue(target);
+
+            if (!was_enabled)
+            {
+                item->setEnabled(false);
+            }
+        }
+        else
+        {
+            mCompileTarget->setValue(target);
+        }
+    }
+}
+
+std::string LLScriptEdCore::getCompileTarget() const
+{
+    if (mCompileTarget)
+    {
+        const std::string target = mCompileTarget->getValue().asString();
+        if (!target.empty())
+        {
+            return target;
+        }
+    }
+
+    return mSavedCompileTarget;
+}
+
+void LLScriptEdCore::setCompileTargetPristine()
+{
+    mSavedCompileTarget = getCompileTarget();
+}
+
+bool LLScriptEdCore::compileTargetChanged() const
+{
+    return getCompileTarget() != mSavedCompileTarget;
 }
 
 bool LLScriptEdCore::loadScriptText(const std::string& filename)
@@ -1163,7 +1298,8 @@ void LLScriptEdCore::sync()
         if (LLFile::stat(tmp_file, &s) == 0) // file exists
         {
             mLiveFile->ignoreNextUpdate();
-            writeToFile(tmp_file, gSavedSettings.getBOOL("_NACL_LSLPreprocessor"));
+            const bool write_unprocessed = !gSavedSettings.getBOOL("_NACL_LSLPreprocessor") || !is_legacy_compile_target(getCompileTarget());
+            writeToFile(tmp_file, write_unprocessed);
         }
     }
 }
@@ -1173,7 +1309,7 @@ bool LLScriptEdCore::hasChanged() const
     if (!mEditor)
         return false;
 
-    return ((!mEditor->isPristine() || mEnableSave) && mHasScriptData);
+    return (((!mEditor->isPristine() || mEnableSave) || compileTargetChanged()) && mHasScriptData);
 }
 
 void LLScriptEdCore::draw()
@@ -1183,6 +1319,20 @@ void LLScriptEdCore::draw()
     //mSaveBtn->setEnabled(script_changed && !mScriptRemoved);
     updateButtonBar();
 // </FS:CR>
+
+    if (mCompileTarget)
+    {
+        const LLUUID region_id = mLive ? mContainer->mObjectUUID : LLUUID::null;
+        const bool lua_scripts_enabled = have_lua_enabled(region_id);
+        if (LLScrollListItem* luau_item = mCompileTarget->getItemByValue("luau"))
+        {
+            luau_item->setEnabled(lua_scripts_enabled);
+        }
+        if (LLScrollListItem* lsl_luau_item = mCompileTarget->getItemByValue("lsl-luau"))
+        {
+            lsl_luau_item->setEnabled(lua_scripts_enabled);
+        }
+    }
 
     if( mEditor->hasFocus() )
     {
@@ -1394,6 +1544,10 @@ void LLScriptEdCore::setEnableEditing(bool enable)
     mEditor->setEnabled(enable);
     getChildView("Edit_btn")->setEnabled(enable);
     getChildView("edit_btn_2")->setEnabled(enable); // <FS:Zi> support extra edit button
+    if (mCompileTarget)
+    {
+        mCompileTarget->setEnabled(enable);
+    }
 }
 
 bool LLScriptEdCore::handleSaveChangesDialog(const LLSD& notification, const LLSD& response )
@@ -1573,17 +1727,14 @@ void LLScriptEdCore::doSave(bool close_after_save, bool sync /*= true*/)
 
     updateIndicators(true, false); //<FS:Kadah> Compile Indicators
 
-    if (gSavedSettings.getBOOL("_NACL_LSLPreprocessor") && mLSLProc)
+    if (gSavedSettings.getBOOL("_NACL_LSLPreprocessor") && mLSLProc && is_legacy_compile_target(getCompileTarget()))
     {
         LL_INFOS() << "passing to preproc" << LL_ENDL;
         mLSLProc->preprocess_script(close_after_save, sync);
     }
     else
     {
-        if( mSaveCallback )
-        {
-            mSaveCallback( mUserdata, close_after_save, sync );
-        }
+        doSaveComplete(mUserdata, close_after_save, sync);
     }
     // NaCl End
 }
@@ -1641,14 +1792,15 @@ void LLScriptEdCore::openInExternalEditor()
     std::string filename = mContainer->getTmpFileName(script_name);
 
     // Save the script to a temporary file.
-    if (!writeToFile(filename, gSavedSettings.getBOOL("_NACL_LSLPreprocessor")))
+    const bool write_unprocessed = !gSavedSettings.getBOOL("_NACL_LSLPreprocessor") || !is_legacy_compile_target(getCompileTarget());
+    if (!writeToFile(filename, write_unprocessed))
     {
         // In case some characters from script name are forbidden
         // and not accounted for, name is too long or some other issue,
         // try file that doesn't include script name
         script_name.clear();
         filename = mContainer->getTmpFileName(script_name);
-        writeToFile(filename, gSavedSettings.getBOOL("_NACL_LSLPreprocessor"));
+        writeToFile(filename, write_unprocessed);
     }
 
         // Start watching file changes.
@@ -1667,7 +1819,11 @@ void LLScriptEdCore::openInExternalEditor()
 
 void LLScriptEdCore::onBtnUndoChanges()
 {
-    if( !mEditor->tryToRevertToPristineState() )
+    if( mEditor->tryToRevertToPristineState() )
+    {
+        setCompileTarget(mSavedCompileTarget);
+    }
+    else
     {
         LLNotificationsUtil::add("ScriptCannotUndo", LLSD(), LLSD(), boost::bind(&LLScriptEdCore::handleReloadFromServerDialog, this, _1, _2));
     }
@@ -2151,13 +2307,15 @@ std::string LLScriptEdContainer::getTmpFileName(const std::string& script_name)
     LLMD5 script_id_hash((const U8 *)script_id.c_str());
     script_id_hash.hex_digest(script_id_hash_str);
 
+    const std::string ext = compile_target_file_extension(mScriptEd ? mScriptEd->getCompileTarget() : std::string());
+
     if (script_name.empty())
     {
-        return std::string(LLFile::tmpdir()) + "sl_script_" + script_id_hash_str + ".lsl";
+        return std::string(LLFile::tmpdir()) + "sl_script_" + script_id_hash_str + ext;
     }
     else
     {
-        return std::string(LLFile::tmpdir()) + "sl_script_" + script_name + "_" + script_id_hash_str + ".lsl";
+        return std::string(LLFile::tmpdir()) + "sl_script_" + script_name + "_" + script_id_hash_str + ext;
     }
 }
 
@@ -2410,6 +2568,7 @@ void LLPreviewLSL::loadAsset()
             mScriptEd->setScriptText(mScriptEd->getString("can_not_view"), false);
             mScriptEd->mEditor->makePristine();
             mScriptEd->mFunctions->setEnabled(false);
+            mScriptEd->setEnableEditing(false);
             mAssetStatus = PREVIEW_ASSET_LOADED;
         }
         getChildView("lock")->setVisible( !is_modifiable);
@@ -2517,29 +2676,6 @@ bool LLPreviewLSL::failedLSLUpload(LLUUID itemId, LLUUID taskId, LLSD response, 
     return false;
 }
 
-// <FS:ND> Asset uploader that can be used for LSL and Mono
-class FSScriptAssetUpload: public LLScriptAssetUpload
-{
-    bool m_bMono;
-public:
-    FSScriptAssetUpload(LLUUID itemId, std::string buffer, invnUploadFinish_f finish, uploadFailed_f failure, bool a_bMono)
-    : LLScriptAssetUpload(itemId, buffer, finish, failure)
-    {
-        m_bMono = a_bMono;
-    }
-
-    virtual LLSD generatePostBody()
-    {
-        LLSD body = LLScriptAssetUpload::generatePostBody();
-        if (m_bMono)
-            body["target"] = "mono";
-        else
-            body["target"] = "lsl2";
-        return body;
-    }
-};
-// </FS:ND>
-
 // Save needs to compile the text in the buffer. If the compile
 // succeeds, then save both assets out to the database. If the compile
 // fails, go ahead and save the text anyway.
@@ -2571,9 +2707,10 @@ void LLPreviewLSL::saveIfNeeded(bool sync /*= true*/)
 
     // NaCL - LSL Preprocessor
     mScriptEd->enableSave(false); // Clear the enable save flag (FIRE-10173)
-    bool domono = gSavedSettings.getBOOL("FSSaveInventoryScriptsAsMono");
-    if (gSavedSettings.getBOOL("_NACL_LSLPreprocessor"))
+    std::string compile_target = mScriptEd->getCompileTarget();
+    if (gSavedSettings.getBOOL("_NACL_LSLPreprocessor") && is_legacy_compile_target(compile_target))
     {
+        bool domono = (compile_target == "mono");
         bool mono_directive = FSLSLPreprocessor::mono_directive(mScriptEd->getScriptText(), domono);
 
         if (mono_directive != domono)
@@ -2588,9 +2725,11 @@ void LLPreviewLSL::saveIfNeeded(bool sync /*= true*/)
                 message = LLTrans::getString("fs_preprocessor_lsl2_directive_override");
             }
             domono = mono_directive;
+            compile_target = domono ? "mono" : "lsl2";
             mScriptEd->mErrorList->addCommentText(message);
         }
     }
+    mScriptEd->setCompileTarget(compile_target);
     // NaCl End
 
     if(inv_item)
@@ -2601,24 +2740,20 @@ void LLPreviewLSL::saveIfNeeded(bool sync /*= true*/)
         {
             //<FS:KC> Script Preprocessor
             // std::string buffer(mScriptEd->mEditor->getText());
-            std::string buffer(mScriptEd->getScriptText());
+            std::string buffer((gSavedSettings.getBOOL("_NACL_LSLPreprocessor") && is_legacy_compile_target(compile_target)) ? mScriptEd->getScriptText() : mScriptEd->mEditor->getText());
             //</FS:KC> Script Preprocessor
 
             LLUUID old_asset_id = inv_item->getAssetUUID().isNull() ? mScriptEd->getAssetID() : inv_item->getAssetUUID();
 
-            //LLResourceUploadInfo::ptr_t uploadInfo(std::make_shared<LLScriptAssetUpload>(mItemUUID, buffer,
-            //    [old_asset_id](LLUUID itemId, LLUUID, LLUUID, LLSD response) {
-            //        LLFileSystem::removeFile(old_asset_id, LLAssetType::AT_LSL_TEXT);
-            //        LLPreviewLSL::finishedLSLUpload(itemId, response);
-            //    },
-            //LLPreviewLSL::failedLSLUpload));
-            LLResourceUploadInfo::ptr_t uploadInfo(std::make_shared<FSScriptAssetUpload>(mItemUUID, buffer,
+            LLResourceUploadInfo::ptr_t uploadInfo(std::make_shared<LLScriptAssetUpload>(mItemUUID, buffer,
                 [old_asset_id](LLUUID itemId, LLUUID, LLUUID, LLSD response) {
                     LLFileSystem::removeFile(old_asset_id, LLAssetType::AT_LSL_TEXT);
                     LLPreviewLSL::finishedLSLUpload(itemId, response);
                 },
-                LLPreviewLSL::failedLSLUpload, domono));
+                LLPreviewLSL::failedLSLUpload,
+                compile_target_to_upload_type(compile_target)));
 
+            mScriptEd->setCompileTargetPristine();
             LLViewerAssetUpload::EnqueueInventoryUpload(url, uploadInfo);
         }
     }
@@ -2644,7 +2779,10 @@ void LLPreviewLSL::onLoadComplete(const LLUUID& asset_uuid, LLAssetType::EType t
 
             // put a EOS at the end
             buffer[file_length] = 0;
+            const bool is_lua = is_lua_script(buffer.data());
+            preview->mScriptEd->setCompileTarget(is_lua ? "luau" : "lsl-luau");
             preview->mScriptEd->setScriptText(LLStringExplicit(&buffer[0]), true);
+            preview->mScriptEd->setCompileTargetPristine();
             preview->mScriptEd->mEditor->makePristine();
 
             std::string script_name = DEFAULT_SCRIPT_NAME;
@@ -2743,7 +2881,8 @@ bool LLLiveLSLEditor::postBuild()
 
     mMonoCheckbox = getChild<LLCheckBoxCtrl>("mono");
     childSetCommitCallback("mono", &LLLiveLSLEditor::onMonoCheckboxClicked, this);
-    getChildView("mono")->setEnabled(true);
+    mMonoCheckbox->setVisible(false);
+    getChildView("mono")->setEnabled(false);
 
     mScriptEd->mEditor->makePristine();
     mScriptEd->mEditor->setFocus(true);
@@ -2856,6 +2995,7 @@ void LLLiveLSLEditor::loadAsset()
                     mScriptEd->enableSave(false);
                     mMonoCheckbox->set(false);
                     mMonoCheckbox->setEnabled(false);
+                    mScriptEd->setEnableEditing(false);
                     mAssetStatus = PREVIEW_ASSET_LOADED;
                 }
                 else if(copyManipulate || isGodlike)
@@ -2892,6 +3032,7 @@ void LLLiveLSLEditor::loadAsset()
                 mScriptEd->mEditor->makePristine();
                 mAssetStatus = PREVIEW_ASSET_LOADED;
                 mIsModifiable = false;
+                mScriptEd->setEnableEditing(false);
             }
 
             refreshFromItem();
@@ -3011,7 +3152,10 @@ void LLLiveLSLEditor::loadScriptText(const LLUUID &uuid, LLAssetType::EType type
 
     buffer[file_length] = '\0';
 
+    const bool is_lua = is_lua_script(buffer.data());
+    mScriptEd->setCompileTarget(is_lua ? "luau" : "lsl-luau");
     mScriptEd->setScriptText(LLStringExplicit(&buffer[0]), true);
+    mScriptEd->setCompileTargetPristine();
     mScriptEd->makeEditorPristine();
 
     std::string script_name = DEFAULT_SCRIPT_NAME;
@@ -3113,6 +3257,10 @@ void LLLiveLSLEditor::draw()
             // correct after clicking on it.
             runningCheckbox->set(false);
             mMonoCheckbox->set(false);
+            if (mScriptEd->mCompileTarget)
+            {
+                mScriptEd->mCompileTarget->setEnabled(false);
+            }
         }
     }
     else if(!object)
@@ -3122,6 +3270,10 @@ void LLLiveLSLEditor::draw()
         setTitle(LLTrans::getString("ObjectOutOfRange"));
         runningCheckbox->setEnabled(false);
         mMonoCheckbox->setEnabled(false);
+        if (mScriptEd->mCompileTarget)
+        {
+            mScriptEd->mCompileTarget->setEnabled(false);
+        }
         // object may have fallen out of range.
         mHaveRunningInfo = false;
     }
@@ -3231,7 +3383,6 @@ void LLLiveLSLEditor::saveIfNeeded(bool sync /*= true*/)
 
     // save the script
     mScriptEd->enableSave(false);
-    mScriptEd->mEditor->makePristine();
     // <FS> FIRE-10172: Fix LSL editor error display
     //mScriptEd->mErrorList->deleteAllItems();
     mScriptEd->mEditor->makePristine();
@@ -3252,12 +3403,13 @@ void LLLiveLSLEditor::saveIfNeeded(bool sync /*= true*/)
     {
         //<FS:KC> Script Preprocessor
         // std::string buffer(mScriptEd->mEditor->getText());
-        std::string buffer(mScriptEd->getScriptText());
+        std::string compile_target = mScriptEd->getCompileTarget();
+        std::string buffer((gSavedSettings.getBOOL("_NACL_LSLPreprocessor") && is_legacy_compile_target(compile_target)) ? mScriptEd->getScriptText() : mScriptEd->mEditor->getText());
         //</FS:KC> Script Preprocessor
         LLUUID old_asset_id = mScriptEd->getAssetID();
 
         LLResourceUploadInfo::ptr_t uploadInfo(std::make_shared<LLScriptAssetUpload>(mObjectUUID, mItemUUID,
-                monoChecked() ? LLScriptAssetUpload::MONO : LLScriptAssetUpload::LSL2,
+                compile_target_to_upload_type(compile_target),
                 isRunning, mScriptEd->getAssociatedExperience(), buffer,
                 [isRunning, old_asset_id](LLUUID itemId, LLUUID taskId, LLUUID newAssetId, LLSD response) {
                         LLFileSystem::removeFile(old_asset_id, LLAssetType::AT_LSL_TEXT);
@@ -3265,6 +3417,7 @@ void LLLiveLSLEditor::saveIfNeeded(bool sync /*= true*/)
                 },
                 nullptr)); // needs failure handling?
 
+        mScriptEd->setCompileTargetPristine();
         LLViewerAssetUpload::EnqueueInventoryUpload(url, uploadInfo);
     }
 }
@@ -3355,6 +3508,28 @@ void LLLiveLSLEditor::processScriptRunningReply(LLMessageSystem* msg, void**)
         LLCheckBoxCtrl* monoCheckbox = instance->getChild<LLCheckBoxCtrl>("mono");
         monoCheckbox->setEnabled(instance->getIsModifiable() && have_script_upload_cap(object_id));
         monoCheckbox->set(mono);
+        // ScriptRunningReply only tells us the legacy Mono flag, so keep any
+        // already-selected Lua runtime instead of forcing it back to LSL2.
+        const std::string current_target = instance->mScriptEd->getCompileTarget();
+        if (is_legacy_compile_target(current_target))
+        {
+            instance->mScriptEd->setCompileTarget(mono ? "mono" : "lsl2");
+        }
+        instance->mScriptEd->setCompileTargetPristine();
+
+        bool lua_scripts_enabled = have_lua_enabled(object_id);
+        if (instance->mScriptEd->mCompileTarget)
+        {
+            if (LLScrollListItem* luau_item = instance->mScriptEd->mCompileTarget->getItemByValue("luau"))
+            {
+                luau_item->setEnabled(lua_scripts_enabled);
+            }
+            if (LLScrollListItem* lsl_luau_item = instance->mScriptEd->mCompileTarget->getItemByValue("lsl-luau"))
+            {
+                lsl_luau_item->setEnabled(lua_scripts_enabled);
+            }
+            instance->mScriptEd->mCompileTarget->setEnabled(instance->getIsModifiable() && have_script_upload_cap(object_id));
+        }
     }
 
     LLPanelObjectInventory::handleScriptRunningReply(object_id, item_id, running);
