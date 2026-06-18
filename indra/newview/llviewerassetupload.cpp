@@ -837,10 +837,27 @@ bool LLBufferedAssetUploadInfo::failedUpload(LLSD &result, std::string &reason)
 
 //=========================================================================
 
-LLScriptAssetUpload::LLScriptAssetUpload(LLUUID itemId, std::string buffer, invnUploadFinish_f finish, uploadFailed_f failed):
+static const char* scriptTargetTypeToString(LLScriptAssetUpload::TargetType_t target_type)
+{
+    switch (target_type)
+    {
+    case LLScriptAssetUpload::LSL2:
+        return "lsl2";
+    case LLScriptAssetUpload::MONO:
+        return "mono";
+    case LLScriptAssetUpload::LSL_LUAU:
+        return "lsl-luau";
+    case LLScriptAssetUpload::LUAU:
+        return "luau";
+    default:
+        return "mono";
+    }
+}
+
+LLScriptAssetUpload::LLScriptAssetUpload(LLUUID itemId, std::string buffer, invnUploadFinish_f finish, uploadFailed_f failed, TargetType_t targetType):
     LLBufferedAssetUploadInfo(itemId, LLAssetType::AT_LSL_TEXT, buffer, finish, failed),
     mExerienceId(),
-    mTargetType(MONO),
+    mTargetType(targetType),
     mIsRunning(false)
 {
 }
@@ -861,7 +878,7 @@ LLSD LLScriptAssetUpload::generatePostBody()
     if (getTaskId().isNull())
     {
         body["item_id"] = getItemId();
-        body["target"] = "mono";
+        body["target"] = scriptTargetTypeToString(getTargetType());
     }
     else
     {
@@ -871,7 +888,7 @@ LLSD LLScriptAssetUpload::generatePostBody()
         //body["is_script_running"] = getIsRunning();
         body["is_script_running"] = (S32)getIsRunning();
         // </FS:Ansariel>
-        body["target"] = (getTargetType() == MONO) ? "mono" : "lsl2";
+        body["target"] = scriptTargetTypeToString(getTargetType());
         body["experience"] = getExerienceId();
     }
 
@@ -1116,4 +1133,3 @@ void LLViewerAssetUpload::HandleUploadError(LLCore::HttpStatus status, LLSD &res
         }
     }
 }
-
