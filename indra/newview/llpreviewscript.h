@@ -126,6 +126,7 @@ public:
     void            doSaveComplete(void* userdata, bool close_after_save, bool sync);
     // NaCl End
     void            makeEditorPristine();
+    void            setCompileTarget(const std::string& target);
     bool            loadScriptText(const std::string& filename);
     bool            writeToFile(const std::string& filename, bool unprocessed);
     void            sync();
@@ -176,6 +177,10 @@ public:
     void selectAll() { mEditor->selectAll(); }
 
   private:
+    std::string     getCompileTarget() const;
+    void            setCompileTargetPristine();
+    bool            compileTargetChanged() const;
+
     // NaCl - LSL Preprocessor
     void        onToggleProc();
     boost::signals2::connection mTogglePreprocConnection;
@@ -249,6 +254,8 @@ private:
     LLUUID          mAssetID;
     LLTextBox*      mLineCol = nullptr;
     LLButton*       mSaveBtn = nullptr;
+    LLComboBox*     mCompileTarget = nullptr;
+    std::string     mSavedCompileTarget;
 
 // <FS:CR> Advanced Script Editor
     LLButton*       mSaveBtn2;  //  // <FS:Zi> support extra save button
