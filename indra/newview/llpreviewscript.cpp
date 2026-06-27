@@ -172,6 +172,12 @@ static bool is_legacy_compile_target(const std::string& target)
     return target == "lsl2" || target == "mono";
 }
 
+static std::string legacy_compile_target_for_region(const LLUUID& object_id)
+{
+    // Legacy scripts stay on Mono unless the region advertises Lua support.
+    return have_lua_enabled(object_id) ? "lsl-luau" : "mono";
+}
+
 static bool uses_preprocessor_compile_target(const std::string& target)
 {
     return target != "luau";
@@ -2785,7 +2791,7 @@ void LLPreviewLSL::onLoadComplete(const LLUUID& asset_uuid, LLAssetType::EType t
             // put a EOS at the end
             buffer[file_length] = 0;
             const bool is_lua = is_lua_script(buffer.data());
-            preview->mScriptEd->setCompileTarget(is_lua ? "luau" : "lsl-luau");
+            preview->mScriptEd->setCompileTarget(is_lua ? "luau" : legacy_compile_target_for_region(LLUUID::null));
             preview->mScriptEd->setScriptText(LLStringExplicit(&buffer[0]), true);
             preview->mScriptEd->setCompileTargetPristine();
             preview->mScriptEd->mEditor->makePristine();
@@ -3158,7 +3164,7 @@ void LLLiveLSLEditor::loadScriptText(const LLUUID &uuid, LLAssetType::EType type
     buffer[file_length] = '\0';
 
     const bool is_lua = is_lua_script(buffer.data());
-    mScriptEd->setCompileTarget(is_lua ? "luau" : "lsl-luau");
+    mScriptEd->setCompileTarget(is_lua ? "luau" : legacy_compile_target_for_region(LLUUID::null));
     mScriptEd->setScriptText(LLStringExplicit(&buffer[0]), true);
     mScriptEd->setCompileTargetPristine();
     mScriptEd->makeEditorPristine();
@@ -3499,6 +3505,9 @@ void LLLiveLSLEditor::processScriptRunningReply(LLMessageSystem* msg, void**)
 
     bool running = false;
     msg->getBOOLFast(_PREHASH_Script, _PREHASH_Running, running);
+    bool mono = false;
+    msg->getBOOLFast(_PREHASH_Script, "Mono", mono);
+    const bool lua_scripts_enabled = have_lua_enabled(object_id);
 
     LLSD floater_key;
     floater_key["taskid"] = object_id;
@@ -3508,21 +3517,17 @@ void LLLiveLSLEditor::processScriptRunningReply(LLMessageSystem* msg, void**)
         instance->mHaveRunningInfo = true;
         LLCheckBoxCtrl* runningCheckbox = instance->getChild<LLCheckBoxCtrl>("running");
         runningCheckbox->set(running);
-        bool mono;
-        msg->getBOOLFast(_PREHASH_Script, "Mono", mono);
         LLCheckBoxCtrl* monoCheckbox = instance->getChild<LLCheckBoxCtrl>("mono");
         monoCheckbox->setEnabled(instance->getIsModifiable() && have_script_upload_cap(object_id));
         monoCheckbox->set(mono);
-        // ScriptRunningReply only tells us the legacy Mono flag, so keep any
-        // already-selected Lua runtime instead of forcing it back to LSL2.
         const std::string current_target = instance->mScriptEd->getCompileTarget();
         if (is_legacy_compile_target(current_target))
         {
-            instance->mScriptEd->setCompileTarget(mono ? "mono" : "lsl2");
+            // Only select the LSL VM target when the region actually advertises Lua support.
+            instance->mScriptEd->setCompileTarget(mono ? "mono" : legacy_compile_target_for_region(object_id));
         }
         instance->mScriptEd->setCompileTargetPristine();
 
-        bool lua_scripts_enabled = have_lua_enabled(object_id);
         if (instance->mScriptEd->mCompileTarget)
         {
             if (LLScrollListItem* luau_item = instance->mScriptEd->mCompileTarget->getItemByValue("luau"))
