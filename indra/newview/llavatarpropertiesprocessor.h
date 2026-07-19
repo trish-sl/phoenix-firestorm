@@ -251,7 +251,7 @@ struct LLAvatarClassifiedInfo
 class LLAvatarPropertiesObserver
 {
 public:
-    virtual ~LLAvatarPropertiesObserver() {}
+    virtual ~LLAvatarPropertiesObserver();
     virtual void processProperties(void* data, EAvatarProcessorType type) = 0;
 };
 
@@ -265,6 +265,11 @@ public:
     void addObserver(const LLUUID& avatar_id, LLAvatarPropertiesObserver* observer);
 
     void removeObserver(const LLUUID& avatar_id, LLAvatarPropertiesObserver* observer);
+
+    // Remove every registration of this observer, regardless of avatar id.
+    // Called from ~LLAvatarPropertiesObserver so a destroyed observer can
+    // never be left dangling in mObservers.
+    void removeObserver(LLAvatarPropertiesObserver* observer);
 
     // Request various types of avatar data.  Duplicate requests will be
     // suppressed while waiting for a response from the network.
