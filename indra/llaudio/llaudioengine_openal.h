@@ -34,6 +34,7 @@
 #include "lllistener_openal.h"
 #include "llwindgen.h"
 #include "llatomic.h"
+#include "llframetimer.h" // <FS:Trish/> Output device recovery fallback
 
 class LLAudioEngine_OpenAL : public LLAudioEngine
 {
@@ -92,6 +93,13 @@ class LLAudioEngine_OpenAL : public LLAudioEngine
         // Set by onDeviceEventSOFT(), consumed by idle()
         LLAtomicBool mDefaultDeviceChanged;
 
+        // <FS:Trish> Output device recovery fallback, for drivers that don't send device events
+        void pollDeviceChanges();
+        std::string mDefaultDeviceSpecifier;
+        LLFrameTimer mDeviceCheckTimer;
+        F64 mNextRecoveryTime{ 0.0 };
+        // </FS:Trish>
+
         static void ALC_APIENTRY onDeviceEventSOFT(ALCenum eventType, ALCenum deviceType,
                                                      ALCdevice* device, ALCsizei length,
                                                      const ALCchar* message, void* userParam) noexcept;
@@ -108,6 +116,7 @@ class LLAudioChannelOpenAL : public LLAudioChannel
     public:
         LLAudioChannelOpenAL();
         virtual ~LLAudioChannelOpenAL();
+        void resumeAfterDeviceReopen(); // <FS:Trish/> Output device recovery fallback
     protected:
         /*virtual*/ void play();
         /*virtual*/ void playSynced(LLAudioChannel *channelp);
