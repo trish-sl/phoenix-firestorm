@@ -3931,6 +3931,41 @@
      visible="false">
         <menu
          create_jump_keys="true"
+         label="Region Lua Scripts"
+         name="Region Lua Scripts"
+         tear_off="true">
+            <menu_item_call
+             label="Recompile All My Scripts In Region to Lua"
+             name="Recompile All My Scripts In Region to Lua">
+                <menu_item_call.on_click
+                 function="Develop.RegionLuaScripts"
+                 parameter="recompile_owned" />
+            </menu_item_call>
+            <menu_item_call
+             label="Substitute My Scripts with Lua Scripts"
+             name="Substitute My Scripts with Lua Scripts">
+                <menu_item_call.on_click
+                 function="Develop.RegionLuaScripts"
+                 parameter="substitute_mine" />
+            </menu_item_call>
+            <menu_item_call
+             label="Substitute Other Scripts with Lua Scripts"
+             name="Substitute Other Scripts with Lua Scripts">
+                <menu_item_call.on_click
+                 function="Develop.RegionLuaScripts"
+                 parameter="substitute_others" />
+            </menu_item_call>
+            <menu_item_call
+             label="Substitute Other and My Scripts with Lua Scripts"
+             name="Substitute Other and My Scripts with Lua Scripts">
+                <menu_item_call.on_click
+                 function="Develop.RegionLuaScripts"
+                 parameter="substitute_all" />
+            </menu_item_call>
+        </menu>
+        <menu_item_separator />
+        <menu
+         create_jump_keys="true"
          label="Consoles"
          name="Consoles"
          tear_off="true">
