@@ -45,6 +45,7 @@ class LLAudioEngine_OpenAL : public LLAudioEngine
         virtual std::string getDriverName(bool verbose);
         virtual LLStreamingAudioInterface* createDefaultStreamingAudioImpl() const { return nullptr; }
         virtual void allocateListener();
+        virtual void idle();
 
         virtual void shutdown();
 
@@ -66,6 +67,8 @@ class LLAudioEngine_OpenAL : public LLAudioEngine
         // </FS:Ansariel>
 
     private:
+        bool reopenDevice();
+
         typedef F32 WIND_SAMPLE_T;
         LLWindGen<WIND_SAMPLE_T> *mWindGen;
         F32 *mWindBuf;
@@ -74,6 +77,11 @@ class LLAudioEngine_OpenAL : public LLAudioEngine
         U32 mWindBufBytes;
         ALuint mWindSource;
         int mNumEmptyWindALBuffers;
+
+        std::string mDefaultDeviceSpecifier;
+        std::string mDeviceList;
+        bool mDeviceReopenSupported;
+        LLFrameTimer mDeviceCheckTimer;
 
         static const int MAX_NUM_WIND_BUFFERS = 80;
         static const float WIND_BUFFER_SIZE_SEC; // 1/20th sec
@@ -92,6 +100,7 @@ class LLAudioChannelOpenAL : public LLAudioChannel
     public:
         LLAudioChannelOpenAL();
         virtual ~LLAudioChannelOpenAL();
+        void resumeAfterDeviceReopen();
     protected:
         /*virtual*/ void play();
         /*virtual*/ void playSynced(LLAudioChannel *channelp);
