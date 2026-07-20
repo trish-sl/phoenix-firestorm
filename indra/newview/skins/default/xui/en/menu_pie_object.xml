@@ -508,6 +508,17 @@
 
             <pie_slice
                 enabled="false"
+                label="Recompile as LSL VM"
+                name="Recompile as LSL VM">
+                <pie_slice.on_click
+                    function="Tools.SelectedScriptAction"
+                    parameter="compile lsl vm" />
+                <pie_slice.on_enable
+                    function="EditableSelected" />
+            </pie_slice>
+
+            <pie_slice
+                enabled="false"
                 label="Reset Scripts"
                 name="Object Reset Scripts">
                 <pie_slice.on_click
