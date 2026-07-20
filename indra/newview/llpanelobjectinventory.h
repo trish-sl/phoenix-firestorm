@@ -69,6 +69,9 @@ public:
     LLFolderViewModelInventory& getRootViewModel() { return mInventoryViewModel; }
 
     void doToSelected(const LLSD& userdata);
+    void stopScript();
+    void stopScripts();
+    bool canStopScripts() const;
 
     void refresh();
     const LLUUID& getTaskUUID() { return mTaskUUID;}
