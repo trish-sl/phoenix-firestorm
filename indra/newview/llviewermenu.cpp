@@ -10018,6 +10018,7 @@ void handle_selected_script_action(const std::string& action)
 // [/RLVa:KB]
 
     bool mono = false;
+    bool lsl_luau = false;
     std::string msg, name;
     std::string title;
     if (action == "compile mono")
@@ -10027,9 +10028,10 @@ void handle_selected_script_action(const std::string& action)
         msg = "Recompile";
         title = LLTrans::getString("CompileQueueTitle");
     }
-    if (action == "compile lsl")
+    else if (action == "compile lsl" || action == "compile lsl vm")
     {
         name = "compile_queue";
+        lsl_luau = (action == "compile lsl vm");
         msg = "Recompile";
         title = LLTrans::getString("CompileQueueTitle");
     }
@@ -10065,6 +10067,7 @@ void handle_selected_script_action(const std::string& action)
     if (queue)
     {
         queue->setMono(mono);
+        queue->setLSLLuau(lsl_luau);
         if (queue_actions(queue, msg))
         {
             queue->setTitle(title);
