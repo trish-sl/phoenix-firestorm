@@ -135,6 +135,15 @@
           <menu_item_call.on_enable
             function="EditableSelected" />
         </menu_item_call>
+        <menu_item_call
+          label="Recompile as LSL VM"
+          name="Recompile as LSL VM">
+          <menu_item_call.on_click
+            function="Tools.SelectedScriptAction"
+            parameter="compile lsl vm" />
+          <menu_item_call.on_enable
+            function="EditableSelected" />
+        </menu_item_call>
        <menu_item_call
           label="Reset Scripts"
           name="Object Reset Scripts">

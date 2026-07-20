@@ -77,6 +77,7 @@ public:
     /*virtual*/ bool postBuild();
 
     void setMono(bool mono) { mMono = mono; }
+    void setLSLLuau(bool lsl_luau) { mLSLLuau = lsl_luau; }
 
     // addObject() accepts an object id.
     void addObject(const LLUUID& id, std::string name);
@@ -120,6 +121,7 @@ protected:
 
     std::string mStartString;
     bool mMono;
+    bool mLSLLuau;
 
     typedef std::function<bool(const LLPointer<LLViewerObject> &, LLInventoryObject*, LLEventPump &)>   fnQueueAction_t;
     static void objectScriptProcessingQueueCoro(std::string action, LLHandle<LLFloaterScriptQueue> hfloater, object_data_list_t objectList, fnQueueAction_t func);
@@ -162,6 +164,7 @@ protected:
 
     //bool checkAssetId(const LLUUID &assetId);
     static void handleHTTPResponse(std::string pumpName, const LLSD &expresult);
+    static bool handleHTTPFailureResponse(std::string pumpName, LLSD response, std::string reason);
     static void handleScriptRetrieval(const LLUUID& assetId, LLAssetType::EType type, void* userData, S32 status, LLExtStat extStatus);
 
 private:
