@@ -49,6 +49,9 @@ protected:
     void onToggleShowNames();                                           // shownames
     void onToggleShowMinimap();                                         // showminimap
     void onToggleShowWorldMap();                                        // showworldmap
+    void onToggleShowContacts();                                        // showcontacts
+    void onToggleShowSearch();                                          // showsearch
+    void onToggleSoundRestrictions();                                   // worldsounds, soundothers and soundself
     void onToggleTp();                                                  // tploc and tplm
     void onToggleUnsit();                                               // unsit
     void onToggleViewXXX();                                             // viewnote, viewscript, viewtexture
@@ -81,6 +84,8 @@ protected:
      * Helper functions
      */
 public:
+    void refreshSoundRestrictions();
+
     static bool canViewParcelProperties();                              // showloc
     static bool canViewRegionProperties();                              // showloc
     static bool hasOpenIM(const LLUUID& idAgent);                       // shownames
