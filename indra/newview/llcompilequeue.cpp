@@ -142,9 +142,10 @@ class LLQueuedScriptAssetUpload : public LLScriptAssetUpload
 {
 public:
     LLQueuedScriptAssetUpload(LLUUID taskId, LLUUID itemId, LLUUID assetId, TargetType_t targetType,
-            bool isRunning, std::string scriptName, LLUUID queueId, LLUUID exerienceId, taskUploadFinish_f finish) :
+            bool isRunning, std::string scriptName, LLUUID queueId, LLUUID exerienceId,
+            taskUploadFinish_f finish, uploadFailed_f failed) :
         LLScriptAssetUpload(taskId, itemId, targetType, isRunning,
-            exerienceId, std::string(), finish, nullptr),
+            exerienceId, std::string(), finish, failed),
         mScriptName(scriptName),
         mQueueId(queueId)
     {
@@ -213,7 +214,8 @@ struct LLScriptQueueData
 LLFloaterScriptQueue::LLFloaterScriptQueue(const LLSD& key) :
     LLFloater(key),
     mDone(false),
-    mMono(false)
+    mMono(false),
+    mLSLLuau(false)
 {
 
 }
@@ -361,6 +363,21 @@ void LLFloaterCompileQueue::handleHTTPResponse(std::string pumpName, const LLSD 
     LLEventPumps::instance().post(pumpName, expresult);
 }
 
+// Upload failures normally result in a notification only. A compile queue
+// is also waiting on its event pump, so make sure HTTP-level compiler errors
+// wake that queue up instead of forcing it to wait for the inventory timeout.
+bool LLFloaterCompileQueue::handleHTTPFailureResponse(std::string pumpName, LLSD response, std::string reason)
+{
+    response["compiled"] = false;
+    if (!response.has("errors") || !response["errors"].isArray())
+    {
+        response["errors"] = LLSD::emptyArray();
+    }
+    response["errors"].append(reason);
+    LLEventPumps::instance().post(pumpName, response);
+    return true;
+}
+
 // *TODO: handleSCriptRetrieval is passed into the cache via a legacy C function pointer
 // future project would be to convert these to C++ callables (std::function<>) so that
 // we can use bind and remove the userData parameter.
@@ -462,6 +479,9 @@ bool LLFloaterCompileQueue::processScript(LLHandle<LLFloaterCompileQueue> hfloat
     // Dereferencing floater may fail. If they do they throw LLExeceptionStaleHandle.
     // which is caught in objectScriptProcessingQueueCoro
     bool monocompile = floater->mMono;
+    LLScriptAssetUpload::TargetType_t compile_target =
+        monocompile ? LLScriptAssetUpload::MONO :
+        (floater->mLSLLuau ? LLScriptAssetUpload::LSL_LUAU : LLScriptAssetUpload::LSL2);
 
     // Initial test to see if we can (or should) attempt to compile the script.
     LLInventoryItem *item = dynamic_cast<LLInventoryItem *>(inventory);
@@ -611,12 +631,13 @@ bool LLFloaterCompileQueue::processScript(LLHandle<LLFloaterCompileQueue> hfloat
         LLResourceUploadInfo::ptr_t uploadInfo = std::make_shared<LLQueuedScriptAssetUpload>(object->getID(),
             inventory->getUUID(),
             assetId,
-            monocompile ? LLScriptAssetUpload::MONO : LLScriptAssetUpload::LSL2,
+            compile_target,
             true,
             inventory->getName(),
-            LLUUID(),
+            floater->getKey().asUUID(),
             experienceId,
-            boost::bind(&LLFloaterCompileQueue::handleHTTPResponse, pump.getName(), _4));
+            boost::bind(&LLFloaterCompileQueue::handleHTTPResponse, pump.getName(), _4),
+            boost::bind(&LLFloaterCompileQueue::handleHTTPFailureResponse, pump.getName(), _3, _4));
 
         LLViewerAssetUpload::EnqueueInventoryUpload(url, uploadInfo);
     }
@@ -1138,7 +1159,8 @@ void LLFloaterCompileQueue::scriptPreprocComplete(LLScriptQueueData* data, LLAss
                 LLResourceUploadInfo::ptr_t uploadInfo( new LLScriptAssetUploadWithId(
                     data->mTaskId,
                     data->mItem->getUUID(),
-                    (queue->mMono) ? LLScriptAssetUpload::MONO : LLScriptAssetUpload::LSL2,
+                    queue->mMono ? LLScriptAssetUpload::MONO :
+                        (queue->mLSLLuau ? LLScriptAssetUpload::LSL_LUAU : LLScriptAssetUpload::LSL2),
                     is_running,
                     scriptName,
                     data->mQueueID,
