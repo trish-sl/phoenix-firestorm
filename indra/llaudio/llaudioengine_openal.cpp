@@ -34,8 +34,36 @@
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_generators.hpp>
 #include <boost/uuid/uuid_io.hpp>
+#include <cstring>
+
 
 const float LLAudioEngine_OpenAL::WIND_BUFFER_SIZE_SEC = 0.05f;
+
+namespace
+{
+    std::string getOpenALDeviceList(ALCdevice* device)
+    {
+        if (!device || alcIsExtensionPresent(device, "ALC_ENUMERATE_ALL_EXT") != ALC_TRUE)
+        {
+            return std::string();
+        }
+
+        const ALCchar* devices = alcGetString(nullptr, ALC_ALL_DEVICES_SPECIFIER);
+        if (!devices)
+        {
+            return std::string();
+        }
+
+        std::string result;
+        for (const ALCchar* device_name = devices; *device_name;
+            device_name += std::strlen(device_name) + 1)
+        {
+            result.append(device_name);
+            result.push_back('\n');
+        }
+        return result;
+    }
+}
 
 LLAudioEngine_OpenAL::LLAudioEngine_OpenAL()
     :
@@ -45,7 +73,10 @@ LLAudioEngine_OpenAL::LLAudioEngine_OpenAL()
     mWindBufSamples(0),
     mWindBufBytes(0),
     mWindSource(AL_NONE),
-    mNumEmptyWindALBuffers(MAX_NUM_WIND_BUFFERS)
+    mNumEmptyWindALBuffers(MAX_NUM_WIND_BUFFERS),
+    mDefaultDeviceSpecifier(),
+    mDeviceList(),
+    mDeviceReopenSupported(false)
 {
 }
 
@@ -95,9 +126,6 @@ bool LLAudioEngine_OpenAL::init(void* userdata, const std::string &app_title)
         << ll_safe_string(alcGetString(device,
                            ALC_DEFAULT_DEVICE_SPECIFIER))
         << LL_ENDL;
-
-    // <FS:Ansariel> Output device selection
-    setupDeviceEvents(device);
 
     return true;
 }
@@ -185,6 +213,99 @@ void LLAudioEngine_OpenAL::setInternalGain(F32 gain)
     alListenerf(AL_GAIN, gain);
 }
 
+bool LLAudioEngine_OpenAL::reopenDevice()
+{
+    ALCcontext *context = alcGetCurrentContext();
+    ALCdevice *device = context ? alcGetContextsDevice(context) : nullptr;
+    if (!device || !mDeviceReopenSupported)
+    {
+        return false;
+    }
+
+    LPALCREOPENDEVICESOFT reopen_device = reinterpret_cast<LPALCREOPENDEVICESOFT>(
+        alcGetProcAddress(device, "alcReopenDeviceSOFT"));
+    if (!reopen_device)
+    {
+        LL_WARNS("OpenAL") << "ALC_SOFT_reopen_device is advertised but alcReopenDeviceSOFT is unavailable" << LL_ENDL;
+        mDeviceReopenSupported = false;
+        return false;
+    }
+
+    if (reopen_device(device, nullptr, nullptr) != ALC_TRUE)
+    {
+        LL_WARNS("OpenAL") << "Unable to reopen the output device: "
+            << alcGetError(device) << LL_ENDL;
+        return false;
+    }
+
+    mDefaultDeviceSpecifier = ll_safe_string(alcGetString(nullptr, ALC_DEFAULT_DEVICE_SPECIFIER));
+    mDeviceList = getOpenALDeviceList(device);
+
+    for (LLAudioChannel* channel : mChannels)
+    {
+        if (auto openal_channel = dynamic_cast<LLAudioChannelOpenAL*>(channel))
+        {
+            openal_channel->resumeAfterDeviceReopen();
+        }
+    }
+
+    LL_INFOS("OpenAL") << "Output device reopened successfully" << LL_ENDL;
+    return true;
+}
+
+void LLAudioEngine_OpenAL::idle()
+{
+    if (mDeviceCheckTimer.checkExpirationAndReset(1.0f))
+    {
+        // OpenAL Soft marks the device disconnected when its endpoint is
+        // removed and does not reconnect it automatically.  Reopen the
+        // existing device so all OpenAL buffers and sources survive the swap.
+        std::unique_lock lock(gAudioDeviceMutex, std::chrono::seconds(1));
+        if (lock.owns_lock())
+        {
+            ALCcontext *context = alcGetCurrentContext();
+            ALCdevice *device = context ? alcGetContextsDevice(context) : nullptr;
+            bool device_lost = false;
+
+            if (device && alcIsExtensionPresent(device, "ALC_EXT_disconnect") == ALC_TRUE)
+            {
+                ALCint connected = ALC_TRUE;
+                alcGetIntegerv(device, ALC_CONNECTED, 1, &connected);
+                device_lost = connected == ALC_FALSE;
+            }
+
+            const char *default_device = device
+                ? alcGetString(nullptr, ALC_DEFAULT_DEVICE_SPECIFIER)
+                : nullptr;
+            const std::string current_default = ll_safe_string(default_device);
+            const bool default_device_changed = !current_default.empty() &&
+                current_default != mDefaultDeviceSpecifier;
+            const std::string current_device_list = getOpenALDeviceList(device);
+            const bool device_list_changed = current_device_list != mDeviceList;
+
+            if (device_lost || default_device_changed || device_list_changed)
+            {
+                LL_INFOS("OpenAL") << (device_lost
+                    ? "Output device disconnected"
+                    : (default_device_changed
+                        ? "Windows default output device changed"
+                        : "OpenAL device list changed"))
+                    << "; attempting recovery" << LL_ENDL;
+                // Leave the old snapshot in place when recovery fails so the
+                // next poll retries even if the device list has stopped
+                // changing while Windows is still bringing the endpoint back.
+                reopenDevice();
+            }
+            else
+            {
+                mDeviceList = current_device_list;
+            }
+        }
+    }
+
+    LLAudioEngine::idle();
+}
+
 LLAudioChannelOpenAL::LLAudioChannelOpenAL()
     :
     mALSource(AL_NONE),
@@ -197,6 +318,14 @@ LLAudioChannelOpenAL::~LLAudioChannelOpenAL()
 {
     cleanup();
     alDeleteSources(1, &mALSource);
+}
+
+void LLAudioChannelOpenAL::resumeAfterDeviceReopen()
+{
+    if (mCurrentSourcep && !isWaiting())
+    {
+        play();
+    }
 }
 
 void LLAudioChannelOpenAL::cleanup()
@@ -580,158 +709,3 @@ void LLAudioEngine_OpenAL::updateWind(LLVector3 wind_vec, F32 camera_altitude)
     }
 }
 
-// <FS:Ansariel> Output device selection
-static LLUUID generate_uuid_from_string(const std::string& str)
-{
-    // Setup standard DNS namespace
-    boost::uuids::string_generator string_generator;
-    boost::uuids::uuid dns_namespace = string_generator("6144c9de-e8f3-4603-b8f7-a195db46f0c0");
-
-    // Setup SHA1 name generator with the namespace
-    boost::uuids::name_generator_sha1 uuid_generator(dns_namespace);
-
-    // Generate deterministic UUID based on a string
-    boost::uuids::uuid deterministic_uuid = uuid_generator(str);
-
-    return LLUUID(boost::uuids::to_string(deterministic_uuid));
-}
-
-static void ALC_APIENTRY device_change_callback(ALCenum eventType, ALCenum deviceType, ALCdevice* device, ALCsizei length, const ALCchar* message, void* userParam) noexcept
-{
-    LLAudioEngine_OpenAL* audio_engine = (LLAudioEngine_OpenAL*)userParam;
-
-    if (!audio_engine)
-        return;
-
-    if (eventType == ALC_EVENT_TYPE_DEVICE_ADDED_SOFT || eventType == ALC_EVENT_TYPE_DEVICE_REMOVED_SOFT)
-    {
-        if (deviceType == ALC_PLAYBACK_DEVICE_SOFT)
-        {
-            LL_INFOS() << "LLAudioEngine_OpenAL:: Playback device list changed" << LL_ENDL;
-            audio_engine->mDeviceListChanged = true;
-            return;
-        }
-    }
-
-    if (eventType == ALC_EVENT_TYPE_DEFAULT_DEVICE_CHANGED_SOFT)
-    {
-        LL_INFOS() << "LLAudioEngine_OpenAL:: Default playback device changed" << LL_ENDL;
-        audio_engine->mDeviceListChanged = true;
-    }
-}
-
-void LLAudioEngine_OpenAL::setupDeviceEvents(ALCdevice* device)
-{
-    if (!alcIsExtensionPresent(device, "ALC_SOFT_system_events"))
-    {
-        LL_WARNS() << "LLAudioEngine_OpenAL:: ALC_SOFT_system_events not supported by backend" << LL_ENDL;
-        return;
-    }
-
-    auto alcEventCallbackSOFT = (LPALCEVENTCALLBACKSOFT)alcGetProcAddress(device, "alcEventCallbackSOFT");
-    auto alcEventControlSOFT = (LPALCEVENTCONTROLSOFT)alcGetProcAddress(device, "alcEventControlSOFT");
-    if (!alcEventCallbackSOFT || !alcEventControlSOFT)
-    {
-        LL_WARNS() << "LLAudioEngine_OpenAL:: ALC_SOFT_system_events functions not available" << LL_ENDL;
-        return;
-    }
-
-    // Register the callback function
-    alcEventCallbackSOFT(device_change_callback, this);
-
-    // Define which events we want to listen to
-    ALCenum events[] = {
-        ALC_EVENT_TYPE_DEVICE_ADDED_SOFT,
-        ALC_EVENT_TYPE_DEVICE_REMOVED_SOFT,
-        ALC_EVENT_TYPE_DEFAULT_DEVICE_CHANGED_SOFT
-    };
-
-    // Enable events
-    alcEventControlSOFT(3, events, AL_TRUE);
-}
-
-void LLAudioEngine_OpenAL::changeDevice()
-{
-    LPALCREOPENDEVICESOFT alcReopenDeviceSOFT = (LPALCREOPENDEVICESOFT)alcGetProcAddress(mCurrentDevice, "alcReopenDeviceSOFT");
-
-    if (!alcReopenDeviceSOFT || !alcIsExtensionPresent(mCurrentDevice, "ALC_SOFT_reopen_device"))
-    {
-        LL_WARNS() << "LLAudioEngine_OpenAL::setDevice(): Cannot change output device - OpenAL ALC_SOFT_reopen_device extension missing" << LL_ENDL;
-        return;
-    }
-
-    std::optional<std::string> device_name{};
-
-    if (mSelectedDeviceUUID.isNull())
-    {
-        LL_INFOS() << "LLAudioEngine_OpenAL::setDevice(): Setting new output to system default (" << mSelectedDeviceUUID.asString() << ")" << LL_ENDL;
-    }
-    else
-    {
-        for (const auto& [id, name] : getDevices())
-        {
-            if (id == mSelectedDeviceUUID)
-            {
-                LL_INFOS() << "LLAudioEngine_OpenAL::setDevice(): Setting new output " << name << " (" << id.asString() << ")" << LL_ENDL;
-                device_name = name;
-                break;
-            }
-        }
-
-        if (!device_name.has_value())
-        {
-            LL_WARNS() << "LLAudioEngine_OpenAL::setDevice(): Output device not found - falling back to system default" << LL_ENDL;
-        }
-    }
-
-    if (alcReopenDeviceSOFT(mCurrentDevice, device_name.has_value() ? device_name.value().c_str() : nullptr, nullptr))
-    {
-        alcMakeContextCurrent(mCurrentContext);
-    }
-    else
-    {
-        LL_WARNS() << "LLAudioEngine_OpenAL::setDevice() error: Reopen failed" << LL_ENDL;
-    }
-}
-
-LLAudioEngine_OpenAL::output_device_map_t LLAudioEngine_OpenAL::getDevices()
-{
-    if (!alcIsExtensionPresent(nullptr, "ALC_ENUMERATE_ALL_EXT"))
-    {
-        LL_WARNS() << "LLAudioEngine_OpenAL::getDevices(): Cannot determine playback devices - OpenAL ALC_ENUMERATE_ALL_EXT extension missing" << LL_ENDL;
-        return{};
-    }
-
-    const ALCchar* deviceList = alcGetString(nullptr, ALC_ALL_DEVICES_SPECIFIER);
-
-    output_device_map_t devices;
-    const ALCchar* nextDevice = deviceList;
-
-    // Parse double-null terminated string block
-    while (nextDevice && *nextDevice != '\0')
-    {
-        std::string device(nextDevice);
-        devices.emplace(generate_uuid_from_string(device), device);
-        nextDevice += strlen(nextDevice) + 1;
-    }
-
-    return devices;
-}
-
-void LLAudioEngine_OpenAL::setDevice(const LLUUID& device_uuid)
-{
-    mSelectedDeviceUUID = device_uuid;
-    changeDevice();
-}
-
-void LLAudioEngine_OpenAL::idle()
-{
-    if (mDeviceListChanged)
-    {
-        mDeviceListChanged = false;
-        changeDevice();
-        OnOutputDeviceListChanged(getDevices());
-    }
-
-    LLAudioEngine::idle();
-}
