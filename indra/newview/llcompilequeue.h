@@ -77,9 +77,13 @@ public:
     /*virtual*/ bool postBuild();
 
     void setMono(bool mono) { mMono = mono; }
+    void setLSLLuau(bool lsl_luau) { mLSLLuau = lsl_luau; }
+    void setLuaFallback(bool lua_fallback) { mLuaFallback = lua_fallback; }
+    void setReportFailuresToChat(bool report) { mReportFailuresToChat = report; }
+    void setConfirmScriptModify(bool confirm) { mConfirmScriptModify = confirm; }
 
     // addObject() accepts an object id.
-    void addObject(const LLUUID& id, std::string name);
+    void addObject(const LLUUID& id, std::string name, std::string link_name = std::string());
 
     // start() returns true if the queue has started, otherwise false.
     bool start();
@@ -93,6 +97,7 @@ protected:
     static void onCloseBtn(void* user_data);
 
     bool onScriptModifyConfirmation(const LLSD& notification, const LLSD& response);
+    bool startQueueConfirmed();
 
     // returns true if this is done
     bool isDone() const;
@@ -111,6 +116,7 @@ protected:
     {
         LLUUID mObjectId;
         std::string mObjectName;
+        std::string mLinkName;
     };
     typedef std::vector<ObjectData> object_data_list_t;
 
@@ -120,6 +126,10 @@ protected:
 
     std::string mStartString;
     bool mMono;
+    bool mLSLLuau;
+    bool mLuaFallback;
+    bool mReportFailuresToChat;
+    bool mConfirmScriptModify;
 
     typedef std::function<bool(const LLPointer<LLViewerObject> &, LLInventoryObject*, LLEventPump &)>   fnQueueAction_t;
     static void objectScriptProcessingQueueCoro(std::string action, LLHandle<LLFloaterScriptQueue> hfloater, object_data_list_t objectList, fnQueueAction_t func);
@@ -162,6 +172,7 @@ protected:
 
     //bool checkAssetId(const LLUUID &assetId);
     static void handleHTTPResponse(std::string pumpName, const LLSD &expresult);
+    static bool handleHTTPFailureResponse(std::string pumpName, LLSD response, std::string reason);
     static void handleScriptRetrieval(const LLUUID& assetId, LLAssetType::EType type, void* userData, S32 status, LLExtStat extStatus);
 
 private:
