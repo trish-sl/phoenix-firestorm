@@ -77,9 +77,17 @@ public:
     /*virtual*/ bool postBuild();
 
     void setCompileTarget(std::string target) { mCompileTarget = target; }
+    // <FS:Trish> Region Lua Scripts tool
+    void setLuaFallback(bool lua_fallback) { mLuaFallback = lua_fallback; }
+    void setReportFailuresToChat(bool report) { mReportFailuresToChat = report; }
+    void setConfirmScriptModify(bool confirm) { mConfirmScriptModify = confirm; }
+    // </FS:Trish>
 
     // addObject() accepts an object id.
-    void addObject(const LLUUID& id, std::string name);
+    // <FS:Trish> Region Lua Scripts tool: optional link name for failure reports
+    //void addObject(const LLUUID& id, std::string name);
+    void addObject(const LLUUID& id, std::string name, std::string link_name = std::string());
+    // </FS:Trish>
 
     // start() returns true if the queue has started, otherwise false.
     bool start();
@@ -93,6 +101,7 @@ protected:
     static void onCloseBtn(void* user_data);
 
     bool onScriptModifyConfirmation(const LLSD& notification, const LLSD& response);
+    bool startQueueConfirmed(); // <FS:Trish/> Region Lua Scripts tool
 
     // returns true if this is done
     bool isDone() const;
@@ -111,6 +120,7 @@ protected:
     {
         LLUUID mObjectId;
         std::string mObjectName;
+        std::string mLinkName; // <FS:Trish/> Region Lua Scripts tool
     };
     typedef std::vector<ObjectData> object_data_list_t;
 
@@ -120,6 +130,11 @@ protected:
 
     std::string mStartString;
     std::string mCompileTarget { "lsl2" };
+    // <FS:Trish> Region Lua Scripts tool
+    bool mLuaFallback { false };            // retry a failed lsl-luau compile as luau
+    bool mReportFailuresToChat { false };
+    bool mConfirmScriptModify { true };
+    // </FS:Trish>
 
     typedef std::function<bool(const LLPointer<LLViewerObject> &, LLInventoryObject*, LLEventPump &)>   fnQueueAction_t;
     static void objectScriptProcessingQueueCoro(std::string action, LLHandle<LLFloaterScriptQueue> hfloater, object_data_list_t objectList, fnQueueAction_t func);
@@ -161,6 +176,7 @@ protected:
 
     //bool checkAssetId(const LLUUID &assetId);
     static void handleHTTPResponse(std::string pumpName, const LLSD &expresult);
+    static bool handleHTTPFailureResponse(std::string pumpName, LLSD response, std::string reason); // <FS:Trish/> Region Lua Scripts tool
     static void handleScriptRetrieval(const LLUUID& assetId, LLAssetType::EType type, void* userData, S32 status, LLExtStat extStatus);
 
 private:
