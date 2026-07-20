@@ -57,6 +57,7 @@
 #include "llattachmentsmgr.h"
 // [/SL:KB]
 #include "llcompilequeue.h"
+#include "fsregionluascripts.h"
 #include "llconsole.h"
 #include "lldebugview.h"
 #include "lldiskcache.h"
@@ -10032,6 +10033,7 @@ void handle_selected_script_action(const std::string& action)
 // [/RLVa:KB]
 
     bool mono = false;
+    bool lsl_luau = false;
     std::string msg, name;
     std::string title;
     if (action == "compile mono")
@@ -10041,9 +10043,10 @@ void handle_selected_script_action(const std::string& action)
         msg = "Recompile";
         title = LLTrans::getString("CompileQueueTitle");
     }
-    if (action == "compile lsl")
+    else if (action == "compile lsl" || action == "compile lsl vm")
     {
         name = "compile_queue";
+        lsl_luau = (action == "compile lsl vm");
         msg = "Recompile";
         title = LLTrans::getString("CompileQueueTitle");
     }
@@ -10079,6 +10082,7 @@ void handle_selected_script_action(const std::string& action)
     if (queue)
     {
         queue->setMono(mono);
+        queue->setLSLLuau(lsl_luau);
         if (queue_actions(queue, msg))
         {
             queue->setTitle(title);
@@ -13260,6 +13264,8 @@ void initialize_menus()
 
     //Develop (clear cache immediately)
     commit.add("Develop.ClearCache", boost::bind(&handle_cache_clear_immediately) );
+    commit.add("Develop.RegionLuaScripts",
+        boost::bind(&FSRegionLuaScripts::handleMenuAction, &FSRegionLuaScripts::instance(), _2));
 
     // Develop (Fonts debugging)
     commit.add("Develop.Fonts.Dump", boost::bind(&LLFontGL::dumpFonts));
