@@ -2,16 +2,16 @@
 <llsd xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
   xsi:noNamespaceSchemaLocation="llsd.xsd">
 <map>
- <key>FSMouseLookPassonFix</key>
+  <key>FSMouseLookPassonFix</key>
   <map>
-      <key>Comment</key>
-      <string>Fixes touch in mouselook while cam is controlled by scripted object. Can break some weapons and scripts relying on the bug this toggle fixes.</string>
-      <key>Persist</key>
-      <integer>1</integer>
-      <key>Type</key>
-      <string>Boolean</string>
-      <key>Value</key>
-      <integer>1</integer>
+    <key>Comment</key>
+    <string>DEBUG: Allow passed-on mouselook controls to reach viewer picking and HUD touch. Disable to restore legacy behavior.</string>
+    <key>Persist</key>
+    <integer>1</integer>
+    <key>Type</key>
+    <string>Boolean</string>
+    <key>Value</key>
+    <integer>1</integer>
   </map>
   <key>FSLandmarkCreatedNotification</key>
   <map>

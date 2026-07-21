@@ -4118,27 +4118,28 @@ void LLAgent::initOriginGlobal(const LLVector3d &origin_global)
 
 bool LLAgent::leftButtonGrabbed() const
 {
+    const bool camera_mouse_look = gAgentCamera.cameraMouselook();
+    return (!camera_mouse_look && mControlsTakenCount[CONTROL_LBUTTON_DOWN_INDEX] > 0)
+        || (camera_mouse_look && mControlsTakenCount[CONTROL_ML_LBUTTON_DOWN_INDEX] > 0)
+        || (!camera_mouse_look && mControlsTakenPassedOnCount[CONTROL_LBUTTON_DOWN_INDEX] > 0)
+        || (camera_mouse_look && mControlsTakenPassedOnCount[CONTROL_ML_LBUTTON_DOWN_INDEX] > 0);
+}
 
-    static LLCachedControl<bool> fSMouseLookPassonFix(gSavedSettings, "FSMouseLookPassonFix");
-    if (fSMouseLookPassonFix)
+bool LLAgent::leftButtonBlocked() const
+{
+    static LLCachedControl<bool> mouselook_passon_fix(gSavedSettings, "FSMouseLookPassonFix");
+    const bool camera_mouse_look = gAgentCamera.cameraMouselook();
+    const bool button_taken = (!camera_mouse_look && mControlsTakenCount[CONTROL_LBUTTON_DOWN_INDEX] > 0)
+        || (camera_mouse_look && mControlsTakenCount[CONTROL_ML_LBUTTON_DOWN_INDEX] > 0);
+
+    if (!mouselook_passon_fix)
     {
-        if (gAgentCamera.cameraMouselook())
-        {
-            return mControlsTakenCount[CONTROL_ML_LBUTTON_DOWN_INDEX] > 0;
-        }
-        else
-        {
-            return mControlsTakenCount[CONTROL_LBUTTON_DOWN_INDEX] > 0;
-        }
-    } else {
-
-        const bool camera_mouse_look = gAgentCamera.cameraMouselook();
-        return (!camera_mouse_look && mControlsTakenCount[CONTROL_LBUTTON_DOWN_INDEX] > 0)
-            || (camera_mouse_look && mControlsTakenCount[CONTROL_ML_LBUTTON_DOWN_INDEX] > 0)
+        return button_taken
             || (!camera_mouse_look && mControlsTakenPassedOnCount[CONTROL_LBUTTON_DOWN_INDEX] > 0)
             || (camera_mouse_look && mControlsTakenPassedOnCount[CONTROL_ML_LBUTTON_DOWN_INDEX] > 0);
     }
 
+    return button_taken;
 }
 
 bool LLAgent::rotateGrabbed() const
