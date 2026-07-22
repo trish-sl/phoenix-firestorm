@@ -3644,19 +3644,43 @@ void LLViewerRegion::setSeedCapability(const std::string& url)
 
     setCapabilitiesReceived(false);
     mImpl->mSeedCapAttempts = 0;
+    mImpl->mSecondCapabilitiesTracker.clear();
     mImpl->mCapabilities.clear();
     setCapability("Seed", url);
+
+    requestSeedCapabilities();
+}
+
+void LLViewerRegion::refreshSeedCapabilities(const std::string& url)
+{
+    if (getCapability("Seed") != url)
+    {
+        setSeedCapability(url);
+        return;
+    }
+
+    // Keep the currently usable capability map and event poll alive while
+    // the replacement request is in flight. This avoids making inventory
+    // unavailable during recovery or a reconnect to an existing region.
+    mImpl->mSeedCapAttempts = 0;
+    mImpl->mSecondCapabilitiesTracker.clear();
+    requestSeedCapabilities();
+}
+
+void LLViewerRegion::requestSeedCapabilities()
+{
+    // Make any earlier in-flight request stale before starting the refresh.
+    ++mImpl->mHttpResponderID;
 
     std::string coroname =
         LLCoros::instance().launch("LLViewerRegionImpl::requestBaseCapabilitiesCoro",
         boost::bind(&LLViewerRegionImpl::requestBaseCapabilitiesCoro, getHandle()));
 
-    // setSeedCapability can be called from other coros,
-    // launch() acts like a suspend()
-    // Make sure we are still good to do
+    // Seed capability requests can be launched from other coroutines,
+    // and launch() acts like a suspend(). Make sure we are still good to do.
     LLCoros::checkStop();
 
-    LL_INFOS("AppInit", "Capabilities") << "Launching " << coroname << " requesting seed capabilities from " << url << " for region " << getRegionID() << LL_ENDL;
+    LL_INFOS("AppInit", "Capabilities") << "Launching " << coroname << " requesting seed capabilities for region " << getRegionID() << LL_ENDL;
 }
 
 S32 LLViewerRegion::getNumSeedCapRetries()
