@@ -3862,9 +3862,9 @@ void process_teleport_finish(LLMessageSystem* msg, void**)
     gAgent.setTeleportState( LLAgent::TELEPORT_MOVING );
     gAgent.setTeleportMessage(LLAgent::sTeleportProgressMessages["contacting"]);
 
-    LL_DEBUGS("CrossingCaps") << "Calling setSeedCapability(). Seed cap == "
+    LL_DEBUGS("CrossingCaps") << "Calling refreshSeedCapabilities(). Seed cap == "
             << seedCap << LL_ENDL;
-    regionp->setSeedCapability(seedCap);
+    regionp->refreshSeedCapabilities(seedCap);
 
     // Don't send camera updates to the new region until we're
     // actually there...
@@ -4235,9 +4235,9 @@ void process_crossed_region(LLMessageSystem* msg, void**)
     //LLViewerRegion* regionp = LLWorld::getInstance()->addRegion(region_handle, sim_host);
     LLViewerRegion* regionp = LLWorld::getInstance()->addRegion(region_handle, sim_host, region_size_x, region_size_y);
 // </FS:CR> Aurora Sim
-    LL_DEBUGS("CrossingCaps") << "Calling setSeedCapability from process_crossed_region(). Seed cap == "
+    LL_DEBUGS("CrossingCaps") << "Calling refreshSeedCapabilities from process_crossed_region(). Seed cap == "
             << seedCap << LL_ENDL;
-    regionp->setSeedCapability(seedCap);
+    regionp->refreshSeedCapabilities(seedCap);
 }
 
 
@@ -6525,7 +6525,7 @@ static void try_recover_inventory_connection(const std::string& notification_id)
         if (!seed_url.empty())
         {
             LL_WARNS("Inventory") << "Refreshing region seed capabilities for recovery." << LL_ENDL;
-            region->setSeedCapability(seed_url);
+            region->refreshSeedCapabilities(seed_url);
         }
         else
         {
