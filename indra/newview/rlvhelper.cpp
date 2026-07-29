@@ -161,6 +161,8 @@ RlvBehaviourDictionary::RlvBehaviourDictionary()
     // <FS:Trish> RLVa: Register Firestorm-specific visibility and floater restrictions.
     addEntry(new RlvBehaviourGenericProcessor<RLV_OPTION_NONE>("showareasearch", RLV_BHVR_AREASEARCH));
     addEntry(new RlvBehaviourGenericProcessor<RLV_OPTION_NONE>("showlookat", RLV_BHVR_LOOKAT));
+    // @sendlookat=n forces the real LookAt target to be transmitted.
+    addEntry(new RlvBehaviourGenericProcessor<RLV_OPTION_NONE>("sendlookat", RLV_BHVR_SENDLOOKAT));
     addEntry(new RlvBehaviourGenericProcessor<RLV_OPTION_NONE>("showfavwear", RLV_BHVR_FAVWEAR));
     addEntry(new RlvBehaviourGenericProcessor<RLV_OPTION_NONE>("showcontacts", RLV_BHVR_SHOWCONTACTS));
     addEntry(new RlvBehaviourGenericProcessor<RLV_OPTION_NONE>("showsearch", RLV_BHVR_SHOWSEARCH));
