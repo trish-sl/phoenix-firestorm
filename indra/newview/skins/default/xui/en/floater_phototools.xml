@@ -2321,7 +2321,7 @@
 				</text>
 				<combo_box
 				 control_name="RenderTonemapType"
-				 enabled_control="VertexShaderEnable"
+				 enabled_control="RenderDisableVintageMode"
 				 height="20"
 				 layout="topleft"
 				 left_pad="0"
