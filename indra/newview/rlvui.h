@@ -51,6 +51,7 @@ protected:
     void onToggleShowWorldMap();                                        // showworldmap
     void onToggleShowContacts();                                        // showcontacts
     void onToggleShowSearch();                                          // showsearch
+    void onToggleSendLookAt();                                          // sendlookat
     void onToggleSoundRestrictions();                                   // worldsounds, soundothers and soundself
     void onToggleTp();                                                  // tploc and tplm
     void onToggleUnsit();                                               // unsit

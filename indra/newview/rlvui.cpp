@@ -16,6 +16,7 @@
 
 #include "llviewerprecompiledheaders.h"
 #include "llagent.h"
+#include "llagentcamera.h"
 #include "llavataractions.h"            // LLAvatarActions::profileVisible()
 #include "llchatmentionhelper.h"
 #include "llcallingcard.h"
@@ -34,6 +35,7 @@
 #include "llviewerparcelmgr.h"
 #include "llviewerregion.h"
 #include "llviewerobjectlist.h"
+#include "llviewerwindow.h"
 #include "llvoavatar.h"
 #include "roles_constants.h"            // Group "powers"
 
@@ -72,6 +74,7 @@ RlvUIEnabler::RlvUIEnabler()
     m_Handlers.insert(std::pair<ERlvBehaviour, behaviour_handler_t>(RLV_BHVR_SHOWWORLDMAP, boost::bind(&RlvUIEnabler::onToggleShowWorldMap, this)));
     m_Handlers.insert(std::pair<ERlvBehaviour, behaviour_handler_t>(RLV_BHVR_SHOWCONTACTS, boost::bind(&RlvUIEnabler::onToggleShowContacts, this)));
     m_Handlers.insert(std::pair<ERlvBehaviour, behaviour_handler_t>(RLV_BHVR_SHOWSEARCH, boost::bind(&RlvUIEnabler::onToggleShowSearch, this)));
+    m_Handlers.insert(std::pair<ERlvBehaviour, behaviour_handler_t>(RLV_BHVR_SENDLOOKAT, boost::bind(&RlvUIEnabler::onToggleSendLookAt, this)));
     m_Handlers.insert(std::pair<ERlvBehaviour, behaviour_handler_t>(RLV_BHVR_WORLDSOUNDS, boost::bind(&RlvUIEnabler::onToggleSoundRestrictions, this)));
     m_Handlers.insert(std::pair<ERlvBehaviour, behaviour_handler_t>(RLV_BHVR_SOUNDOTHERS, boost::bind(&RlvUIEnabler::onToggleSoundRestrictions, this)));
     m_Handlers.insert(std::pair<ERlvBehaviour, behaviour_handler_t>(RLV_BHVR_SOUNDSELF, boost::bind(&RlvUIEnabler::onToggleSoundRestrictions, this)));
@@ -301,6 +304,14 @@ void RlvUIEnabler::onToggleShowSearch()
     // The same search command can also be placed on a user toolbar.
     if (gToolBarView)
         gToolBarView->setCommandVisible(LLCommandId("search"), fEnable);
+}
+
+void RlvUIEnabler::onToggleSendLookAt()
+{
+    if (gViewerWindow)
+    {
+        gAgentCamera.updateLookAt(gViewerWindow->getCurrentMouseX(), gViewerWindow->getCurrentMouseY());
+    }
 }
 
 void RlvUIEnabler::onToggleShowContacts()

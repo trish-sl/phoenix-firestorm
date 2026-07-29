@@ -141,9 +141,10 @@ enum ERlvBehaviour {
     RLV_BHVR_SHOWNAMES,             // "shownames"
     RLV_BHVR_SHOWNAMETAGS,          // "shownametags"
     RLV_BHVR_SHOWNEARBY,
-    // <FS:Trish> RLVa: Add Firestorm-specific restrictions for Area Search, LookAt rendering, and Favorite Wearables.
+    // <FS:Trish> RLVa: Add Firestorm-specific restrictions for Area Search, LookAt rendering/transmission, and Favorite Wearables.
     RLV_BHVR_AREASEARCH,            // "areasearch"
     RLV_BHVR_LOOKAT,                // "lookat"
+    RLV_BHVR_SENDLOOKAT,            // "sendlookat"
     RLV_BHVR_FAVWEAR,               // "favwear"
     RLV_BHVR_SHOWCONTACTS,          // "showcontacts"
     RLV_BHVR_SHOWSEARCH,            // "showsearch"

@@ -303,18 +303,19 @@ void LLHUDEffectLookAt::packData(LLMessageSystem *mesgsys)
     bool is_self = source_avatar && source_avatar->isSelf();
     static LLCachedControl<bool> is_private(gSavedSettings, "PrivateLookAtTarget", false);
     static LLCachedControl<bool> isLocalPrivate(gSavedSettings, "PrivateLocalLookAtTarget", false);
+    const bool force_send = gRlvHandler.hasBehaviour(RLV_BHVR_SENDLOOKAT);
     if (!is_self) //AW: TODO: find out why this happens at all and fix there
     {
         LL_DEBUGS("HUDEffect") << "Non-self Avatar HUDEffectLookAt message for ID: " << source_avatar->getID().asString() << LL_ENDL;
         markDead();
         return;
     }
-    else if (isLocalPrivate && is_private) // AO: send nothing if we're not showing anything ourselves
+    else if (isLocalPrivate && is_private && !force_send) // AO: send nothing if we're not showing anything ourselves
     {
         markDead();
         return;
     }
-    else if (is_private && target_type != LOOKAT_TARGET_AUTO_LISTEN) // AW: spoof boring lookat target to others if we still want real local effects.
+    else if (is_private && !force_send && target_type != LOOKAT_TARGET_AUTO_LISTEN) // AW: spoof boring lookat target to others if we still want real local effects.
     {
         //this mimicks "do nothing"
         target_type = LOOKAT_TARGET_AUTO_LISTEN;
