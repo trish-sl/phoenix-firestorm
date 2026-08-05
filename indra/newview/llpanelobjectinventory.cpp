@@ -619,6 +619,15 @@ void LLTaskInvFVBridge::buildContextMenu(LLMenuGL& menu, U32 flags)
     if (item->getType() == LLAssetType::AT_LSL_TEXT)
     {
         items.push_back(std::string("Task Stop Script"));
+        bool is_running = true;
+        if (!mPanel->getScriptRunningState(item->getUUID(), is_running))
+        {
+            mPanel->requestScriptRunningInfo(item->getUUID());
+        }
+        if (LLMenuItemGL* menu_item = menu.getChild<LLMenuItemGL>("Task Stop Script", true))
+        {
+            menu_item->setLabel(LLStringExplicit(is_running ? "Stop Script" : "Start Script"));
+        }
         if (!mPanel->canStopScripts())
         {
             disabled_items.push_back(std::string("Task Stop Script"));
@@ -1567,7 +1576,7 @@ LLPanelObjectInventory::LLPanelObjectInventory(const LLPanelObjectInventory::Par
 
     // Setup context menu callbacks
     mCommitCallbackRegistrar.add("Inventory.DoToSelected", boost::bind(&LLPanelObjectInventory::doToSelected, this, _2));
-    mCommitCallbackRegistrar.add("Inventory.StopScript", boost::bind(&LLPanelObjectInventory::stopScript, this));
+    mCommitCallbackRegistrar.add("Inventory.StopScript", boost::bind(&LLPanelObjectInventory::toggleScript, this));
     mCommitCallbackRegistrar.add("Inventory.StopScripts", boost::bind(&LLPanelObjectInventory::stopScripts, this));
     mCommitCallbackRegistrar.add("Inventory.EmptyTrash", boost::bind(&LLInventoryModel::emptyFolderType, &gInventory, "ConfirmEmptyTrash", LLFolderType::FT_TRASH));
     mCommitCallbackRegistrar.add("Inventory.EmptyLostAndFound", boost::bind(&LLInventoryModel::emptyFolderType, &gInventory, "ConfirmEmptyLostAndFound", LLFolderType::FT_LOST_AND_FOUND));
@@ -1764,7 +1773,7 @@ void LLPanelObjectInventory::stopScripts()
     }
 }
 
-void LLPanelObjectInventory::stopScript()
+void LLPanelObjectInventory::toggleScript()
 {
     if (!canStopScripts() || !mFolders)
     {
@@ -1792,6 +1801,13 @@ void LLPanelObjectInventory::stopScript()
         return;
     }
 
+    bool is_running = true;
+    if (!getScriptRunningState(inventory->getUUID(), is_running))
+    {
+        requestScriptRunningInfo(inventory->getUUID());
+    }
+    const bool new_running_state = !is_running;
+
     LLMessageSystem* msg = gMessageSystem;
     msg->newMessageFast(_PREHASH_SetScriptRunning);
     msg->nextBlockFast(_PREHASH_AgentData);
@@ -1800,10 +1816,10 @@ void LLPanelObjectInventory::stopScript()
     msg->nextBlockFast(_PREHASH_Script);
     msg->addUUIDFast(_PREHASH_ObjectID, mTaskUUID);
     msg->addUUIDFast(_PREHASH_ItemID, inventory->getUUID());
-    msg->addBOOLFast(_PREHASH_Running, false);
+    msg->addBOOLFast(_PREHASH_Running, new_running_state);
     msg->sendReliable(region->getHost());
 
-    setScriptRunningState(inventory->getUUID(), false);
+    setScriptRunningState(inventory->getUUID(), new_running_state);
 }
 
 void LLPanelObjectInventory::clearContents()
