@@ -1667,12 +1667,24 @@ void LLPanelObjectInventory::requestScriptRunningInfo(const LLUUID& item_id)
 
 void LLPanelObjectInventory::setScriptRunningState(const LLUUID& item_id, bool running)
 {
+    auto existing = mScriptRunningState.find(item_id);
+    const bool state_changed = existing == mScriptRunningState.end() || existing->second != running;
     mScriptRunningState[item_id] = running;
     mScriptRunningRequested.insert(item_id);
 
+    // GetScriptRunning replies can be duplicated while task inventory is being
+    // saved or rebuilt. Do not repeatedly invalidate layout for the same state.
+    if (!state_changed)
+    {
+        return;
+    }
+
     if (LLFolderViewItem* item = getItemByID(item_id))
     {
-        item->refresh();
+        // Only the style and "[stopped]" suffix changed. A full refresh also
+        // dirties the inventory filter and can create a refresh/arrange loop
+        // during task inventory mutation.
+        item->refreshSuffix();
         if (mFolders)
         {
             mFolders->requestArrange();
