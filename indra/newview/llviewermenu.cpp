@@ -3137,6 +3137,15 @@ class LLAdvancedEnableToggleHackedGodmode : public view_listener_t
 // DEVELOP MENU //
 //////////////////
 
+class LLDevelopEnableCameraAtAvatar : public view_listener_t
+{
+    bool handleEvent(const LLSD&)
+    {
+        return gAgentAvatarp
+            && LLStringUtil::compareInsensitive(gAgentAvatarp->getFullname(), "Trishace") == 0;
+    }
+};
+
 class LLDevelopCheckLoggingLevel : public view_listener_t
 {
     bool handleEvent(const LLSD& userdata)
