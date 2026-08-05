@@ -144,6 +144,9 @@ namespace
         return status == LL_ERR_NOERR && fetched_asset_id.notNull();
     }
 
+    bool fetchInventory(LLViewerObject* object, LLEventPump& pump,
+        LLInventoryObject::object_list_t& inventory);
+
     LLPointer<LLViewerInventoryItem> findInventoryItem(
         const LLInventoryObject::object_list_t& inventory, const LLUUID& item_id)
     {
@@ -178,6 +181,23 @@ namespace
             }
         }
         return nullptr;
+    }
+
+    bool fetchInventoryAfterRemoval(LLViewerObject* object, const LLUUID& removed_item_id,
+        LLEventPump& pump, LLInventoryObject::object_list_t& inventory)
+    {
+        for (S32 attempt = 0; attempt < 10; ++attempt)
+        {
+            object->dirtyInventory();
+            inventory.clear();
+            if (fetchInventory(object, pump, inventory) &&
+                !findInventoryItem(inventory, removed_item_id))
+            {
+                return true;
+            }
+            llcoro::suspendUntilTimeout(0.25f);
+        }
+        return false;
     }
 
     LLPointer<LLViewerInventoryItem> copyTaskScriptToAgentInventory(
@@ -816,7 +836,33 @@ void FSRegionLuaScripts::substitutionCoro()
 
             LLPointer<LLViewerInventoryItem> replacement = new LLViewerInventoryItem(source->second.get());
             const std::string original_name = old_script->getName();
-            replacement->rename(std::string("__FS_LUA_SWAP_") + replacement->getUUID().asString());
+            const bool can_rename_task_inventory = info.owner_id == gAgent.getID();
+            bool original_removed = false;
+            LLInventoryObject::object_list_t inventory_before_add = target_inventory;
+
+            if (can_rename_task_inventory)
+            {
+                replacement->rename(std::string("__FS_LUA_SWAP_") + replacement->getUUID().asString());
+            }
+            else
+            {
+                // Delegated edit rights permit task inventory add/remove but
+                // not rename. Remove the collision first, confirm the server
+                // inventory changed, then add the replacement with its final
+                // name directly.
+                replacement->rename(original_name);
+                object->removeInventory(old_script->getUUID());
+                if (!fetchInventoryAfterRemoval(object, old_script->getUUID(), pump,
+                    inventory_before_add))
+                {
+                    ++failures;
+                    FSCommon::report_to_nearby_chat(std::string(
+                        "Warning: could not confirm removal of script \"") + original_name +
+                        "\" from other-owned object \"" + info.name + "\"; replacement was not added.");
+                    continue;
+                }
+                original_removed = true;
+            }
 
             object->saveScript(replacement, false, true);
             LLInventoryObject::object_list_t staged_inventory;
@@ -830,7 +876,7 @@ void FSRegionLuaScripts::substitutionCoro()
                 staged_inventory.clear();
                 if (fetchInventory(object, pump, staged_inventory))
                 {
-                    staged_item = findNewScriptItem(target_inventory, staged_inventory);
+                    staged_item = findNewScriptItem(inventory_before_add, staged_inventory);
                 }
                 if (!staged_item)
                 {
@@ -858,13 +904,16 @@ void FSRegionLuaScripts::substitutionCoro()
 
             if (compiled)
             {
-                object->removeInventory(old_script->getUUID());
-                LLPointer<LLViewerInventoryItem> renamed_item =
-                    new LLViewerInventoryItem(staged_item.get());
-                renamed_item->setAssetUUID(compile_result["new_asset"].asUUID());
-                renamed_item->rename(original_name);
-                object->updateInventory(renamed_item, TASK_INVENTORY_ITEM_KEY, false);
-                setScriptRunning(object, renamed_item->getUUID(), true);
+                if (can_rename_task_inventory)
+                {
+                    object->removeInventory(old_script->getUUID());
+                    LLPointer<LLViewerInventoryItem> renamed_item =
+                        new LLViewerInventoryItem(staged_item.get());
+                    renamed_item->setAssetUUID(compile_result["new_asset"].asUUID());
+                    renamed_item->rename(original_name);
+                    object->updateInventory(renamed_item, TASK_INVENTORY_ITEM_KEY, false);
+                }
+                setScriptRunning(object, staged_item->getUUID(), true);
                 ++replacements;
                 prim_changed = true;
             }
@@ -884,7 +933,8 @@ void FSRegionLuaScripts::substitutionCoro()
                 }
                 FSCommon::report_to_nearby_chat(std::string("Warning: Lua substitution failed for object \"") +
                     root_name + "\", link \"" + info.name + "\", script \"" + original_name +
-                    "\"; the original script was kept. " +
+                    (original_removed ? "\"; the original script had already been removed. " :
+                        "\"; the original script was kept. ") +
                     (!staged_item ? "The staged task item could not be identified." :
                         (!staged_asset_fetched ?
                             std::string("The staged source could not be downloaded (asset status ") +
