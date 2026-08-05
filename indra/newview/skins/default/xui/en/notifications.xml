@@ -11698,6 +11698,20 @@ Your viewer cache is currently empty. Please be aware that you may experience sl
 
   <notification
    icon="alertmodal.tga"
+   name="ConfirmMassObjectEdit"
+   type="alertmodal">
+    Apply [OPERATION] to [ITEM_COUNT] selected content entries across [TARGET_COUNT] target prims?
+
+    [WARNING]
+    <tag>confirm</tag>
+    <usetemplate
+     name="okcancelbuttons"
+     notext="Cancel"
+     yestext="Apply"/>
+  </notification>
+
+  <notification
+   icon="alertmodal.tga"
    name="ConfirmRegionLuaRecompile"
    type="alertmodal">
     Recompile every script in every scripted rezzed prim you own that is currently known to the viewer in this region?
