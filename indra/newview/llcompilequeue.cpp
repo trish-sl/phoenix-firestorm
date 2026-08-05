@@ -62,6 +62,8 @@
 #include "llviewerassetupload.h"
 #include "llcorehttputil.h"
 
+#include "fscommon.h"
+
 // <FS:KC> [LSL PreProc]
 #include "fslslpreproc.h"
 #include "llsdutil.h"
@@ -116,7 +118,8 @@ namespace
             mPumpname(pumpname),
             mData(data)
         { }
-        HandleScriptUserData()
+        HandleScriptUserData() :
+            mData(nullptr)
         { }
         // </FS:Ansariel>
 
@@ -215,7 +218,10 @@ LLFloaterScriptQueue::LLFloaterScriptQueue(const LLSD& key) :
     LLFloater(key),
     mDone(false),
     mMono(false),
-    mLSLLuau(false)
+    mLSLLuau(false),
+    mLuaFallback(false),
+    mReportFailuresToChat(false),
+    mConfirmScriptModify(true)
 {
 
 }
@@ -240,14 +246,19 @@ void LLFloaterScriptQueue::onCloseBtn(void* user_data)
     self->closeFloater();
 }
 
-void LLFloaterScriptQueue::addObject(const LLUUID& id, std::string name)
+void LLFloaterScriptQueue::addObject(const LLUUID& id, std::string name, std::string link_name)
 {
-    ObjectData obj = { id, name };
+    ObjectData obj = { id, name, link_name.empty() ? name : link_name };
     mObjectList.push_back(obj);
 }
 
 bool LLFloaterScriptQueue::start()
 {
+    if (!mConfirmScriptModify)
+    {
+        return startQueueConfirmed();
+    }
+
     LLNotificationsUtil::add("ConfirmScriptModify", LLSD(), LLSD(), boost::bind(&LLFloaterScriptQueue::onScriptModifyConfirmation, this, _1, _2));
     return true;
     /*
@@ -271,6 +282,12 @@ bool LLFloaterScriptQueue::onScriptModifyConfirmation(const LLSD& notification, 
     {
         return true;
     }
+
+    return startQueueConfirmed();
+}
+
+bool LLFloaterScriptQueue::startQueueConfirmed()
+{
     std::string buffer;
 
     LLStringUtil::format_map_t args;
@@ -412,7 +429,7 @@ void LLFloaterCompileQueue::handleScriptRetrieval(const LLUUID& assetId,
         delete ((HandleScriptUserData *)userData)->getData();
     }
     // <FS:KC> [LSL PreProc]
-    else if (gSavedSettings.getBOOL("_NACL_LSLPreprocessor"))
+    else if (((HandleScriptUserData *)userData)->getData())
     {
         LLScriptQueueData* data = ((HandleScriptUserData *)userData)->getData();
         LLFloaterCompileQueue* queue = LLFloaterReg::findTypedInstance<LLFloaterCompileQueue>("compile_queue", data->mQueueID);
@@ -563,7 +580,7 @@ bool LLFloaterCompileQueue::processScript(LLHandle<LLFloaterCompileQueue> hfloat
         // <FS:Ansariel> [LSL PreProc]
         //HandleScriptUserData    userData(pump.getName());
         HandleScriptUserData userData;
-        if (gSavedSettings.getBOOL("_NACL_LSLPreprocessor"))
+        if (gSavedSettings.getBOOL("_NACL_LSLPreprocessor") && !floater->mLuaFallback)
         {
             // Need to dump some stuff into an LLScriptQueueData struct for the LSL PreProc.
             LLScriptQueueData* datap = new LLScriptQueueData(hfloater.get()->getKey().asUUID(), object->getID(), experienceId, item);
@@ -627,11 +644,19 @@ bool LLFloaterCompileQueue::processScript(LLHandle<LLFloaterCompileQueue> hfloat
 
     std::string url = object->getRegion()->getCapability("UpdateScriptTask");
 
+    const bool try_lua_fallback = floater->mLuaFallback &&
+        compile_target == LLScriptAssetUpload::LSL_LUAU;
+    const S32 compile_attempts = try_lua_fallback ? 2 : 1;
+
+    for (S32 attempt = 0; attempt < compile_attempts; ++attempt)
     {
+        const LLScriptAssetUpload::TargetType_t attempt_target =
+            attempt == 0 ? compile_target : LLScriptAssetUpload::LUAU;
+
         LLResourceUploadInfo::ptr_t uploadInfo = std::make_shared<LLQueuedScriptAssetUpload>(object->getID(),
             inventory->getUUID(),
             assetId,
-            compile_target,
+            attempt_target,
             true,
             inventory->getName(),
             floater->getKey().asUUID(),
@@ -640,53 +665,69 @@ bool LLFloaterCompileQueue::processScript(LLHandle<LLFloaterCompileQueue> hfloat
             boost::bind(&LLFloaterCompileQueue::handleHTTPFailureResponse, pump.getName(), _3, _4));
 
         LLViewerAssetUpload::EnqueueInventoryUpload(url, uploadInfo);
-    }
+        result = llcoro::suspendUntilEventOnWithTimeout(pump, QUEUE_INVENTORY_FETCH_TIMEOUT,
+            LLSDMap("timeout", LLSD::Boolean(true)));
 
-    result = llcoro::suspendUntilEventOnWithTimeout(pump, QUEUE_INVENTORY_FETCH_TIMEOUT, LLSDMap("timeout", LLSD::Boolean(true)));
+        floater.check();
 
-    floater.check();
-
-    if (result.has("timeout"))
-    { // A timeout filed in the result will always be true if present.
-        LLStringUtil::format_map_t args;
-        args["[OBJECT_NAME]"] = inventory->getName();
-        std::string buffer = floater->getString("Timeout", args);
-        floater->addStringMessage(buffer);
-        return true;
-    }
-
-    // Bytecode save completed
-    if (result["compiled"])
-    {
-        std::string buffer = std::string("Compilation of \"") + inventory->getName() + std::string("\" succeeded");
-
-        //floater->addStringMessage(buffer);
-        LL_INFOS() << buffer << LL_ENDL;
-        // <FS:Ansariel> Translation fixes
-        LLStringUtil::format_map_t args;
-        args["OBJECT_NAME"] = inventory->getName();
-        floater->addStringMessage(floater->getString("CompileSuccess", args));
-        // </FS:Ansariel>
-    }
-    else
-    {
-        LLSD compile_errors = result["errors"];
-        // <FS:Ansariel> Translation fixes
-        //std::string buffer = std::string("Compilation of \"") + inventory->getName() + std::string("\" failed:");
-        LLStringUtil::format_map_t args;
-        args["OBJECT_NAME"] = inventory->getName();
-        std::string buffer = floater->getString( "CompileFailure", args );
-        // </FS:Ansariel>
-        floater->addStringMessage(buffer);
-        for (LLSD::array_const_iterator line = compile_errors.beginArray();
-            line < compile_errors.endArray(); line++)
+        if (!result.has("timeout") && result["compiled"])
         {
-            std::string str = line->asString();
-            str.erase(std::remove(str.begin(), str.end(), '\n'), str.end());
+            std::string buffer = std::string("Compilation of \"") + inventory->getName() +
+                std::string("\" succeeded");
+            LL_INFOS() << buffer << LL_ENDL;
 
-            floater->addStringMessage(str);
+            LLStringUtil::format_map_t args;
+            args["OBJECT_NAME"] = inventory->getName();
+            floater->addStringMessage(floater->getString("CompileSuccess", args));
+            return true;
         }
-        LL_INFOS() << result["errors"] << LL_ENDL;
+
+        if (attempt + 1 < compile_attempts)
+        {
+            floater->addStringMessage(std::string("LSL-Luau compilation failed for \"") +
+                inventory->getName() + "\"; retrying as Lua...");
+            continue;
+        }
+
+        if (result.has("timeout"))
+        {
+            LLStringUtil::format_map_t args;
+            args["[OBJECT_NAME]"] = inventory->getName();
+            floater->addStringMessage(floater->getString("Timeout", args));
+        }
+        else
+        {
+            LLSD compile_errors = result["errors"];
+            LLStringUtil::format_map_t args;
+            args["OBJECT_NAME"] = inventory->getName();
+            floater->addStringMessage(floater->getString("CompileFailure", args));
+            for (LLSD::array_const_iterator line = compile_errors.beginArray();
+                line < compile_errors.endArray(); line++)
+            {
+                std::string str = line->asString();
+                str.erase(std::remove(str.begin(), str.end(), '\n'), str.end());
+                floater->addStringMessage(str);
+            }
+            LL_INFOS() << result["errors"] << LL_ENDL;
+        }
+
+        if (floater->mReportFailuresToChat)
+        {
+            std::string object_name = object->getID().asString();
+            std::string link_name = object_name;
+            for (const ObjectData& object_data : floater->mObjectList)
+            {
+                if (object_data.mObjectId == object->getID())
+                {
+                    object_name = object_data.mObjectName;
+                    link_name = object_data.mLinkName;
+                    break;
+                }
+            }
+
+            FSCommon::report_to_nearby_chat(std::string("Warning: Lua compilation failed for object \"") +
+                object_name + "\", link \"" + link_name + "\", script \"" + inventory->getName() + "\".");
+        }
     }
 
     return true;

@@ -11696,6 +11696,62 @@ Cannot track this avatar, because it is beyond radar range.
 Your viewer cache is currently empty. Please be aware that you may experience slow framerates and inventory loading for a short time while new content downloads.
   </notification>
 
+  <notification
+   icon="alertmodal.tga"
+   name="ConfirmRegionLuaRecompile"
+   type="alertmodal">
+    Recompile every script in every scripted rezzed prim you own that is currently known to the viewer in this region?
+
+    Each script will be tried as LSL-Luau first, then as Lua if that fails.
+    <tag>confirm</tag>
+    <usetemplate
+     name="okcancelbuttons"
+     notext="Cancel"
+     yestext="Recompile"/>
+  </notification>
+
+  <notification
+   icon="alertmodal.tga"
+   name="ConfirmRegionLuaSubstituteMine"
+   type="alertmodal">
+    Replace matching scripts only in your own modifiable objects using scripts from the closest owned prim named "Lua Script Source"?
+
+    The source linkset will be skipped. Originals are deleted only after the replacements compile successfully as Lua.
+    <tag>confirm</tag>
+    <usetemplate
+     name="okcancelbuttons"
+     notext="Cancel"
+     yestext="Substitute"/>
+  </notification>
+
+  <notification
+   icon="alertmodal.tga"
+   name="ConfirmRegionLuaSubstituteOthers"
+   type="alertmodal">
+    Replace matching scripts in modifiable objects owned by others using scripts from the closest owned prim named "Lua Script Source"?
+
+    Your own objects and the source linkset will be skipped. Originals are deleted only after the replacements compile successfully as Lua.
+    <tag>confirm</tag>
+    <usetemplate
+     name="okcancelbuttons"
+     notext="Cancel"
+     yestext="Substitute"/>
+  </notification>
+
+  <notification
+   icon="alertmodal.tga"
+   name="ConfirmRegionLuaSubstituteAll"
+   type="alertmodal">
+    Replace matching scripts in all modifiable objects, including your own, using scripts from the closest owned prim named "Lua Script Source"?
+
+    The source linkset will be skipped. Originals are deleted only after the replacements compile successfully as Lua.
+    <tag>confirm</tag>
+    <usetemplate
+     name="okcancelbuttons"
+     notext="Cancel"
+     yestext="Substitute"/>
+  </notification>
+
   <!-- <FS:Zi> Viewer version popup -->
   <notification
    icon="alertmodal.tga"
