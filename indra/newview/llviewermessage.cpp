@@ -75,6 +75,7 @@
 // <FS:Ansariel> [FS communication UI]
 //#include "llfloaterimnearbychat.h"
 #include "fsfloaternearbychat.h"
+#include "fsregionluascripts.h"
 // </FS:Ansariel> [FS communication UI]
 #include "llmarketplacefunctions.h"
 #include "llnotifications.h"
@@ -4822,6 +4823,8 @@ void process_object_properties(LLMessageSystem *msg, void**user_data)
     {
         area_search_floater->processObjectProperties(msg);
     }
+
+    FSRegionLuaScripts::instance().processObjectProperties(msg);
 
     AnimationExplorer* explorer = LLFloaterReg::findTypedInstance<AnimationExplorer>("animation_explorer");
     if (explorer)

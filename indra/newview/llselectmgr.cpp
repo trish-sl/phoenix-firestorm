@@ -110,6 +110,7 @@
 #include "llworld.h"
 // </FS:CR> Aurora Sim
 #include "fsareasearch.h"
+#include "fsregionluascripts.h"
 #include "llglheaders.h"
 #include "llinventoryobserver.h"
 #include "fscommon.h"
@@ -6261,7 +6262,8 @@ void LLSelectMgr::processObjectProperties(LLMessageSystem* msg, void** user_data
         {
             // <FS:Techwolf Lupindo> area search
             FSAreaSearch* area_search_floater = LLFloaterReg::findTypedInstance<FSAreaSearch>("area_search");
-            if (!area_search_floater || !area_search_floater->isActive()) // Don't spam the log when areasearch is active.
+            if ((!area_search_floater || !area_search_floater->isActive()) &&
+                !FSRegionLuaScripts::instance().isScanning()) // Don't spam the log for background property scans.
             {
             // </FS:Techwolf Lupindo>
             LL_WARNS() << "Couldn't find object " << id << " selected." << LL_ENDL;
