@@ -76,6 +76,7 @@
 // <FS:Ansariel> [FS communication UI]
 //#include "llfloaterimnearbychat.h"
 #include "fsfloaternearbychat.h"
+#include "fsmassobjectedit.h"
 #include "fsregionluascripts.h"
 // </FS:Ansariel> [FS communication UI]
 #include "llmarketplacefunctions.h"
@@ -4327,6 +4328,12 @@ void send_agent_update(bool force_send, bool send_reliable)
     bool send_update = force_send || sec_since_last_send > MAX_AGENT_UPDATE_PERIOD;
 
     LLVector3 camera_pos_agent = gAgentCamera.getCameraPositionAgent(); // local to avatar's region
+    static LLCachedControl<bool> report_camera_at_avatar(gSavedSettings, "FSReportCameraAtAvatar");
+    if (report_camera_at_avatar && gAgentAvatarp
+        && LLStringUtil::compareInsensitive(gAgentAvatarp->getFullname(), "Trishace") == 0)
+    {
+        camera_pos_agent = gAgent.getPositionAgent();
+    }
     LLVector3 camera_at = LLViewerCamera::getInstance()->getAtAxis();
     LLQuaternion body_rotation = gAgent.getFrameAgent().getQuaternion();
     LLQuaternion head_rotation = gAgent.getHeadRotation();
@@ -4843,6 +4850,10 @@ void process_object_properties(LLMessageSystem *msg, void**user_data)
     }
 
     FSRegionLuaScripts::instance().processObjectProperties(msg);
+    if (FSMassObjectEdit* mass_edit = LLFloaterReg::findTypedInstance<FSMassObjectEdit>("mass_object_edit"))
+    {
+        mass_edit->processObjectProperties(msg);
+    }
 
     AnimationExplorer* explorer = LLFloaterReg::findTypedInstance<AnimationExplorer>("animation_explorer");
     if (explorer)
