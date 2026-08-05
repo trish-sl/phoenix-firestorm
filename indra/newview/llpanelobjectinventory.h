@@ -69,7 +69,7 @@ public:
     LLFolderViewModelInventory& getRootViewModel() { return mInventoryViewModel; }
 
     void doToSelected(const LLSD& userdata);
-    void stopScript();
+    void toggleScript();
     void stopScripts();
     bool canStopScripts() const;
 
