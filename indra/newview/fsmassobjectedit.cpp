@@ -9,16 +9,22 @@
 
 #include "fscommon.h"
 #include "llagent.h"
+#include "llagentcamera.h"
 #include "llassetstorage.h"
+#include "llavatarnamecache.h"
 #include "llbutton.h"
+#include "llcachename.h"
 #include "llcallbacklist.h"
 #include "llcoros.h"
 #include "lleventcoro.h"
 #include "llevents.h"
 #include "llinventorydefines.h"
 #include "llinventorymodel.h"
+#include "lllineeditor.h"
+#include "llmenugl.h"
 #include "message.h"
 #include "llnotificationsutil.h"
+#include "llprogressbar.h"
 #include "llscrolllistctrl.h"
 #include "llselectmgr.h"
 #include "lltextbox.h"
@@ -28,7 +34,11 @@
 #include "llviewerobjectlist.h"
 #include "llviewerregion.h"
 #include "llviewerassetupload.h"
+#include "llviewercontrol.h"
 #include "llvoinventorylistener.h"
+#include "llviewermenu.h"
+#include "lluicolortable.h"
+#include "lluictrlfactory.h"
 #include "roles_constants.h"
 
 #include <algorithm>
@@ -38,8 +48,47 @@
 namespace
 {
     constexpr F32 PROPERTY_TIMEOUT = 15.f;
-    constexpr F32 INVENTORY_TIMEOUT = 60.f;
-    constexpr S32 MAX_OBJECTS_PER_PACKET = 254;
+    constexpr F32 INVENTORY_TIMEOUT = 20.f;
+    constexpr F32 TARGET_LIST_UPDATE_BUDGET = 0.003f;
+    constexpr S32 MAX_OBJECTS_PER_PACKET = 50;
+    constexpr S32 TARGET_SCAN_WORKERS = 8;
+    constexpr S32 TARGET_SCAN_RETRIES = 10;
+    constexpr F32 TARGET_SCAN_RETRY_DELAY = 1.f;
+
+    std::string avatarSearchTerms(const LLAvatarName& av_name)
+    {
+        return av_name.getCompleteName() + " " + av_name.getDisplayName(true) + " " +
+            av_name.getAccountName() + " " + av_name.getLegacyName() + " " +
+            av_name.getUserName();
+    }
+
+    bool matchesCountFilter(S32 count, std::string filter)
+    {
+        LLStringUtil::trim(filter);
+        if (filter.empty()) return true;
+
+        const auto parse = [](const std::string& value, S32& result)
+        {
+            return LLStringUtil::convertToS32(value, result);
+        };
+        S32 value = 0;
+        if (filter.compare(0, 2, ">=") == 0) return parse(filter.substr(2), value) && count >= value;
+        if (filter.compare(0, 2, "<=") == 0) return parse(filter.substr(2), value) && count <= value;
+        if (filter.compare(0, 1, ">") == 0) return parse(filter.substr(1), value) && count > value;
+        if (filter.compare(0, 1, "<") == 0) return parse(filter.substr(1), value) && count < value;
+        if (filter.compare(0, 1, "=") == 0) return parse(filter.substr(1), value) && count == value;
+
+        const size_t dash = filter.find('-', 1);
+        if (dash != std::string::npos)
+        {
+            S32 minimum = 0;
+            S32 maximum = 0;
+            return parse(filter.substr(0, dash), minimum) &&
+                parse(filter.substr(dash + 1), maximum) &&
+                count >= minimum && count <= maximum;
+        }
+        return parse(filter, value) && count >= value;
+    }
 
     class InventoryFetcher final : public LLVOInventoryListener
     {
@@ -279,18 +328,37 @@ FSMassObjectEdit::FSMassObjectEdit(const LLSD& key) : LLFloater(key)
 FSMassObjectEdit::~FSMassObjectEdit()
 {
     gIdleCallbacks.deleteFunction(onIdle, this);
+    for (const auto& connection : mNameCacheConnections)
+    {
+        connection.second.disconnect();
+    }
+    if (LLContextMenu* menu = mContextMenuHandle.get())
+    {
+        menu->die();
+    }
 }
 
 bool FSMassObjectEdit::postBuild()
 {
+    mNameFilter = getChild<LLLineEditor>("name_filter");
+    mCreatorFilter = getChild<LLLineEditor>("creator_filter");
+    mOwnerFilter = getChild<LLLineEditor>("owner_filter");
+    mContentNameFilter = getChild<LLLineEditor>("content_name_filter");
+    mContentTypeFilter = getChild<LLLineEditor>("content_type_filter");
+    mContentCountFilter = getChild<LLLineEditor>("content_count_filter");
     mTargetList = getChild<LLScrollListCtrl>("target_list");
     mSourceList = getChild<LLScrollListCtrl>("source_list");
     mTargetContentsList = getChild<LLScrollListCtrl>("target_contents_list");
+    mOccurrenceList = getChild<LLScrollListCtrl>("occurrence_list");
     mSourceLabel = getChild<LLTextBox>("source_label");
+    mOccurrenceLabel = getChild<LLTextBox>("occurrence_label");
+    mOperationScopeLabel = getChild<LLTextBox>("operation_scope_label");
     mStatusText = getChild<LLTextBox>("status_text");
+    mProgressBar = getChild<LLProgressBar>("scan_progress");
     mAddButton = getChild<LLButton>("add_btn");
     mReplaceButton = getChild<LLButton>("replace_btn");
     mDeleteButton = getChild<LLButton>("delete_btn");
+    mRefreshOccurrencesButton = getChild<LLButton>("refresh_occurrences_btn");
 
     getChild<LLButton>("refresh_btn")->setCommitCallback(
         boost::bind(&FSMassObjectEdit::refreshObjects, this));
@@ -298,14 +366,57 @@ bool FSMassObjectEdit::postBuild()
         boost::bind(&FSMassObjectEdit::useSelectedSource, this));
     getChild<LLButton>("scan_contents_btn")->setCommitCallback(
         boost::bind(&FSMassObjectEdit::scanTargetContents, this));
+    mRefreshOccurrencesButton->setCommitCallback(
+        boost::bind(&FSMassObjectEdit::refreshOccurrenceInventories, this));
+    getChild<LLButton>("select_all_targets_btn")->setCommitCallback(
+        boost::bind(&FSMassObjectEdit::selectAllTargets, this));
+    getChild<LLButton>("clear_targets_btn")->setCommitCallback(
+        boost::bind(&FSMassObjectEdit::clearTargetSelection, this));
     mAddButton->setCommitCallback(boost::bind(&FSMassObjectEdit::beginOperation, this, Operation::ADD));
     mReplaceButton->setCommitCallback(boost::bind(&FSMassObjectEdit::beginOperation, this, Operation::REPLACE));
     mDeleteButton->setCommitCallback(boost::bind(&FSMassObjectEdit::beginOperation, this, Operation::DELETE_ITEMS));
     mTargetList->setCommitCallback(boost::bind(&FSMassObjectEdit::updateButtons, this));
     mSourceList->setCommitCallback(boost::bind(&FSMassObjectEdit::updateButtons, this));
-    mTargetContentsList->setCommitCallback(boost::bind(&FSMassObjectEdit::updateButtons, this));
+    mTargetContentsList->setCommitCallback(boost::bind(&FSMassObjectEdit::refreshOccurrenceList, this));
+    mOccurrenceList->setCommitCallback(boost::bind(&FSMassObjectEdit::updateButtons, this));
+    mNameFilter->setKeystrokeCallback(
+        boost::bind(&FSMassObjectEdit::rebuildTargetList, this), nullptr);
+    mCreatorFilter->setKeystrokeCallback(
+        boost::bind(&FSMassObjectEdit::rebuildTargetList, this), nullptr);
+    mOwnerFilter->setKeystrokeCallback(
+        boost::bind(&FSMassObjectEdit::rebuildTargetList, this), nullptr);
+    mContentNameFilter->setKeystrokeCallback(
+        boost::bind(&FSMassObjectEdit::refreshTargetContentsList, this), nullptr);
+    mContentTypeFilter->setKeystrokeCallback(
+        boost::bind(&FSMassObjectEdit::refreshTargetContentsList, this), nullptr);
+    mContentCountFilter->setKeystrokeCallback(
+        boost::bind(&FSMassObjectEdit::refreshTargetContentsList, this), nullptr);
+    mTargetList->setRightMouseDownCallback(boost::bind(
+        &FSMassObjectEdit::onObjectListRightClick, this, _1, _2, _3, _4, mTargetList));
+    mOccurrenceList->setRightMouseDownCallback(boost::bind(
+        &FSMassObjectEdit::onObjectListRightClick, this, _1, _2, _3, _4, mOccurrenceList));
+    mTargetContentsList->sortByColumn("name", true);
+    mTargetContentsList->setAlternateSort();
+    mTargetList->sortByColumn("name", true);
+    mOccurrenceList->sortByColumn("name", true);
+    mProgressBar->setValue(0.0);
     updateButtons();
     return LLFloater::postBuild();
+}
+
+void FSMassObjectEdit::draw()
+{
+    LLFloater::draw();
+    if (LLViewerObject* object = gObjectList.findObject(mBeaconObjectID))
+    {
+        static LLCachedControl<S32> beacon_line_width(gSavedSettings, "DebugBeaconLineWidth");
+        static LLUIColor beacon_color = LLUIColorTable::getInstance()->getColor("AreaSearchBeaconColor");
+        static LLUIColor beacon_text_color = LLUIColorTable::getInstance()->getColor("PathfindingDefaultBeaconTextColor");
+        const auto found = mObjects.find(mBeaconObjectID);
+        const std::string name = found != mObjects.end() ? found->second.name : "Mass edit target";
+        gObjectList.addDebugBeacon(object->getPositionAgent(), name,
+            beacon_color, beacon_text_color, beacon_line_width);
+    }
 }
 
 void FSMassObjectEdit::onOpen(const LLSD&)
@@ -323,17 +434,38 @@ void FSMassObjectEdit::setStatus(const std::string& status)
 
 void FSMassObjectEdit::updateButtons()
 {
-    const bool targets = mTargetList && !mTargetList->getAllSelected().empty();
+    const uuid_vec_t operation_targets = getOperationTargets();
+    const bool targets = !operation_targets.empty();
     const bool source = mSourceList && !mSourceList->getAllSelected().empty();
     const bool contents = mTargetContentsList && !mTargetContentsList->getAllSelected().empty();
-    mAddButton->setEnabled(!mBusy && targets && source);
-    mReplaceButton->setEnabled(!mBusy && targets && source);
-    mDeleteButton->setEnabled(!mBusy && targets && contents);
+    const bool ready = !mBusy && !mScanning && !mTargetRebuildPending;
+    getChild<LLButton>("refresh_btn")->setEnabled(ready);
+    getChild<LLButton>("select_all_targets_btn")->setEnabled(ready &&
+        mTargetList && mTargetList->getItemCount() > 0);
+    getChild<LLButton>("clear_targets_btn")->setEnabled(ready &&
+        mTargetList && !mTargetList->getAllSelected().empty());
+    getChild<LLButton>("scan_contents_btn")->setEnabled(ready &&
+        mTargetList && !mTargetList->getAllSelected().empty());
+    mAddButton->setEnabled(ready && targets && source);
+    mReplaceButton->setEnabled(ready && targets && source);
+    mDeleteButton->setEnabled(ready && targets && contents);
+    mRefreshOccurrencesButton->setEnabled(ready && mOccurrenceList &&
+        mOccurrenceList->getItemCount() > 0);
+    if (mOperationScopeLabel)
+    {
+        std::string scope = "selected target prims";
+        if (mOccurrenceList && !mOccurrenceList->getAllSelected().empty())
+        {
+            scope = "selected occurrences";
+        }
+        mOperationScopeLabel->setText(llformat("Operation scope: %d %s",
+            static_cast<S32>(operation_targets.size()), scope.c_str()));
+    }
 }
 
 void FSMassObjectEdit::refreshObjects()
 {
-    if (mBusy || mScanning)
+    if (mBusy || mScanning || mTargetRebuildPending)
     {
         return;
     }
@@ -343,9 +475,18 @@ void FSMassObjectEdit::refreshObjects()
         return;
     }
 
-    mTargetList->deleteAllItems();
     mTargetContentsList->deleteAllItems();
+    mOccurrenceList->deleteAllItems();
     mTargetContentKeys.clear();
+    mOccurrenceLabel->setText(LLStringExplicit("4. Select content to see where it exists"));
+    mProgressBar->setValue(0.0);
+    mCreatorRefreshPending = false;
+    gIdleCallbacks.deleteFunction(onIdle, this);
+    for (const auto& connection : mNameCacheConnections)
+    {
+        connection.second.disconnect();
+    }
+    mNameCacheConnections.clear();
     mObjects.clear();
     mRegionID = region->getRegionID();
 
@@ -368,6 +509,7 @@ void FSMassObjectEdit::refreshObjects()
 
     mPendingProperties = static_cast<S32>(mObjects.size());
     mScanning = mPendingProperties > 0;
+    updateButtons();
     mScanTimer.reset();
     if (mScanning)
     {
@@ -431,9 +573,9 @@ void FSMassObjectEdit::processObjectProperties(LLMessageSystem* msg)
         }
 
         ObjectInfo& info = found->second;
-        LLUUID creator, group, last_owner;
+        LLUUID group, last_owner;
         U32 base = 0, owner = 0, everyone = 0, group_mask = 0, next = 0;
-        msg->getUUIDFast(_PREHASH_ObjectData, _PREHASH_CreatorID, creator, i);
+        msg->getUUIDFast(_PREHASH_ObjectData, _PREHASH_CreatorID, info.creator_id, i);
         msg->getUUIDFast(_PREHASH_ObjectData, _PREHASH_OwnerID, info.owner_id, i);
         msg->getUUIDFast(_PREHASH_ObjectData, _PREHASH_GroupID, group, i);
         msg->getUUIDFast(_PREHASH_ObjectData, _PREHASH_LastOwnerID, last_owner, i);
@@ -443,8 +585,9 @@ void FSMassObjectEdit::processObjectProperties(LLMessageSystem* msg)
         msg->getU32Fast(_PREHASH_ObjectData, _PREHASH_GroupMask, group_mask, i);
         msg->getU32Fast(_PREHASH_ObjectData, _PREHASH_NextOwnerMask, next, i);
         msg->getStringFast(_PREHASH_ObjectData, _PREHASH_Name, info.name, i);
-        info.permissions.init(creator, info.owner_id, last_owner, group);
+        info.permissions.init(info.creator_id, info.owner_id, last_owner, group);
         info.permissions.initMasks(base, owner, everyone, group_mask, next);
+        info.permissions.getOwnership(info.owner_id, info.group_owned);
         info.received = true;
         --mPendingProperties;
     }
@@ -453,35 +596,272 @@ void FSMassObjectEdit::processObjectProperties(LLMessageSystem* msg)
 void FSMassObjectEdit::onIdle(void* userdata)
 {
     FSMassObjectEdit* self = static_cast<FSMassObjectEdit*>(userdata);
-    if (self && self->mScanning && (self->mPendingProperties == 0 ||
+    if (!self)
+    {
+        return;
+    }
+    if (self->mScanning && (self->mPendingProperties == 0 ||
         self->mScanTimer.getElapsedTimeF32() >= PROPERTY_TIMEOUT))
     {
         self->finishObjectScan();
+    }
+    if (self->mCreatorRefreshPending &&
+        self->mCreatorRefreshTimer.getElapsedTimeF32() >= 0.1f)
+    {
+        self->mCreatorRefreshPending = false;
+        self->rebuildTargetList();
+    }
+    if (self->mTargetRebuildPending)
+    {
+        self->processTargetListRebuild();
+    }
+    if (!self->mScanning && !self->mCreatorRefreshPending &&
+        !self->mTargetRebuildPending)
+    {
+        gIdleCallbacks.deleteFunction(onIdle, self);
     }
 }
 
 void FSMassObjectEdit::finishObjectScan()
 {
     mScanning = false;
-    gIdleCallbacks.deleteFunction(onIdle, this);
-    for (const auto& entry : mObjects)
+    for (auto& entry : mObjects)
     {
-        const ObjectInfo& info = entry.second;
+        ObjectInfo& info = entry.second;
         if (!info.received || !gAgent.allowOperation(PERM_MODIFY, info.permissions,
             GP_OBJECT_MANIPULATE))
         {
             continue;
         }
+
+        LLAvatarName avatar_name;
+        if (LLAvatarNameCache::get(info.creator_id, &avatar_name))
+        {
+            info.creator_name = avatar_name.getCompleteName();
+            info.creator_search_name = avatarSearchTerms(avatar_name);
+        }
+        else if (info.creator_id.notNull() &&
+            mNameCacheConnections.find(info.creator_id) == mNameCacheConnections.end())
+        {
+            mNameCacheConnections.emplace(info.creator_id,
+                LLAvatarNameCache::get(info.creator_id,
+                    boost::bind(&FSMassObjectEdit::avatarNameCallback, this, _1, _2)));
+        }
+
+        if (info.group_owned)
+        {
+            bool is_group = false;
+            if (!gCacheName->getIfThere(info.owner_id, info.owner_name, is_group) &&
+                info.owner_id.notNull() &&
+                mNameCacheConnections.find(info.owner_id) == mNameCacheConnections.end())
+            {
+                mNameCacheConnections.emplace(info.owner_id,
+                    gCacheName->get(info.owner_id, true,
+                        boost::bind(&FSMassObjectEdit::ownerNameCallback, this, _1, _2)));
+            }
+            else
+            {
+                info.owner_search_name = info.owner_name;
+            }
+        }
+        else if (LLAvatarNameCache::get(info.owner_id, &avatar_name))
+        {
+            info.owner_name = avatar_name.getCompleteName();
+            info.owner_search_name = avatarSearchTerms(avatar_name);
+        }
+        else if (info.owner_id.notNull() &&
+            mNameCacheConnections.find(info.owner_id) == mNameCacheConnections.end())
+        {
+            mNameCacheConnections.emplace(info.owner_id,
+                LLAvatarNameCache::get(info.owner_id,
+                    boost::bind(&FSMassObjectEdit::avatarNameCallback, this, _1, _2)));
+        }
+    }
+    rebuildTargetList();
+}
+
+void FSMassObjectEdit::rebuildTargetList()
+{
+    if (!mTargetList)
+    {
+        return;
+    }
+
+    if (!mTargetRebuildPending)
+    {
+        mTargetRebuildSelection.clear();
+    }
+    for (LLScrollListItem* row : mTargetList->getAllSelected())
+    {
+        mTargetRebuildSelection.insert(row->getValue().asUUID());
+    }
+
+    mTargetNameFilter = mNameFilter ? mNameFilter->getText() : std::string();
+    mTargetCreatorFilter = mCreatorFilter ? mCreatorFilter->getText() : std::string();
+    mTargetOwnerFilter = mOwnerFilter ? mOwnerFilter->getText() : std::string();
+    LLStringUtil::trim(mTargetNameFilter);
+    LLStringUtil::trim(mTargetCreatorFilter);
+    LLStringUtil::trim(mTargetOwnerFilter);
+    LLStringUtil::toLower(mTargetNameFilter);
+    LLStringUtil::toLower(mTargetCreatorFilter);
+    LLStringUtil::toLower(mTargetOwnerFilter);
+
+    mTargetRebuildIDs.clear();
+    mTargetRebuildIDs.reserve(mObjects.size());
+    for (const auto& entry : mObjects)
+    {
+        mTargetRebuildIDs.push_back(entry.first);
+    }
+    mTargetRebuildIndex = 0;
+    mTargetRebuildEditableCount = 0;
+    mTargetRebuildClearing = mTargetList->getItemCount() > 0;
+    mTargetRebuildPending = true;
+    setStatus(llformat("Updating target list: 0/%d prims...",
+        static_cast<S32>(mTargetRebuildIDs.size())));
+    updateButtons();
+    gIdleCallbacks.deleteFunction(onIdle, this);
+    gIdleCallbacks.addFunction(onIdle, this);
+}
+
+void FSMassObjectEdit::processTargetListRebuild()
+{
+    LLFrameTimer budget;
+    budget.reset();
+    while (mTargetRebuildClearing && mTargetList->getItemCount() > 0 &&
+        budget.getElapsedTimeF32() < TARGET_LIST_UPDATE_BUDGET)
+    {
+        mTargetList->deleteSingleItem(mTargetList->getItemCount() - 1);
+    }
+    if (mTargetRebuildClearing)
+    {
+        if (mTargetList->getItemCount() > 0)
+        {
+            return;
+        }
+        mTargetRebuildClearing = false;
+        budget.reset();
+    }
+
+    while (mTargetRebuildIndex < mTargetRebuildIDs.size() &&
+        budget.getElapsedTimeF32() < TARGET_LIST_UPDATE_BUDGET)
+    {
+        const LLUUID id = mTargetRebuildIDs[mTargetRebuildIndex++];
+        const auto found = mObjects.find(id);
+        if (found == mObjects.end())
+        {
+            continue;
+        }
+        const ObjectInfo& info = found->second;
+        if (!info.received || !gAgent.allowOperation(PERM_MODIFY, info.permissions,
+            GP_OBJECT_MANIPULATE))
+        {
+            continue;
+        }
+        ++mTargetRebuildEditableCount;
+
+        std::string object_name = info.name;
+        std::string creator = info.creator_name.empty() ?
+            info.creator_id.asString() : info.creator_name;
+        std::string owner = info.owner_name.empty() ?
+            info.owner_id.asString() : info.owner_name;
+        std::string creator_search = (info.creator_search_name.empty() ? creator :
+            info.creator_search_name) + " " + info.creator_id.asString();
+        std::string owner_search = (info.owner_search_name.empty() ? owner :
+            info.owner_search_name) + " " + info.owner_id.asString();
+        if (info.owner_id == gAgent.getID())
+        {
+            owner_search += " me";
+        }
+        LLStringUtil::toLower(object_name);
+        LLStringUtil::toLower(creator_search);
+        LLStringUtil::toLower(owner_search);
+        if ((!mTargetNameFilter.empty() && object_name.find(mTargetNameFilter) == std::string::npos) ||
+            (!mTargetCreatorFilter.empty() && creator_search.find(mTargetCreatorFilter) == std::string::npos) ||
+            (!mTargetOwnerFilter.empty() && owner_search.find(mTargetOwnerFilter) == std::string::npos))
+        {
+            continue;
+        }
+
         LLSD row;
         row["id"] = info.id;
         row["columns"][0]["column"] = "name";
         row["columns"][0]["value"] = info.name;
-        row["columns"][1]["column"] = "owner";
-        row["columns"][1]["value"] = info.owner_id == gAgent.getID() ? "Me" : info.owner_id.asString();
-        mTargetList->addElement(row, ADD_BOTTOM);
+        row["columns"][1]["column"] = "creator";
+        row["columns"][1]["value"] = creator;
+        row["columns"][2]["column"] = "owner";
+        row["columns"][2]["value"] = info.owner_id == gAgent.getID() ? "Me" :
+            owner;
+        LLScrollListItem* added = mTargetList->addElement(row, ADD_BOTTOM);
+        if (added && mTargetRebuildSelection.find(info.id) != mTargetRebuildSelection.end())
+        {
+            added->setSelected(true);
+        }
     }
-    setStatus(llformat("Found %d editable prims.", mTargetList->getItemCount()));
+    if (mTargetRebuildIndex < mTargetRebuildIDs.size())
+    {
+        setStatus(llformat("Updating target list: %d/%d prims...",
+            static_cast<S32>(mTargetRebuildIndex),
+            static_cast<S32>(mTargetRebuildIDs.size())));
+        return;
+    }
+
+    mTargetRebuildPending = false;
+    mTargetList->setNeedsSort();
+    setStatus(llformat("Showing %d of %d editable prims.",
+        mTargetList->getItemCount(), mTargetRebuildEditableCount));
     updateButtons();
+}
+
+void FSMassObjectEdit::avatarNameCallback(const LLUUID& id, const LLAvatarName& av_name)
+{
+    const std::string complete_name = av_name.getCompleteName();
+    for (auto& entry : mObjects)
+    {
+        if (entry.second.creator_id == id)
+        {
+            entry.second.creator_name = complete_name;
+            entry.second.creator_search_name = avatarSearchTerms(av_name);
+        }
+        if (!entry.second.group_owned && entry.second.owner_id == id)
+        {
+            entry.second.owner_name = complete_name;
+            entry.second.owner_search_name = avatarSearchTerms(av_name);
+        }
+    }
+    if (auto found = mNameCacheConnections.find(id); found != mNameCacheConnections.end())
+    {
+        found->second.disconnect();
+        mNameCacheConnections.erase(found);
+    }
+    if (!mCreatorRefreshPending)
+    {
+        mCreatorRefreshPending = true;
+        gIdleCallbacks.addFunction(onIdle, this);
+    }
+    mCreatorRefreshTimer.reset();
+}
+
+void FSMassObjectEdit::ownerNameCallback(const LLUUID& id, const std::string& name)
+{
+    for (auto& entry : mObjects)
+    {
+        if (entry.second.group_owned && entry.second.owner_id == id)
+        {
+            entry.second.owner_name = name;
+            entry.second.owner_search_name = name;
+        }
+    }
+    if (auto found = mNameCacheConnections.find(id); found != mNameCacheConnections.end())
+    {
+        found->second.disconnect();
+        mNameCacheConnections.erase(found);
+    }
+    if (!mCreatorRefreshPending)
+    {
+        mCreatorRefreshPending = true;
+        gIdleCallbacks.addFunction(onIdle, this);
+    }
+    mCreatorRefreshTimer.reset();
 }
 
 uuid_vec_t FSMassObjectEdit::getSelectedTargets() const
@@ -494,6 +874,24 @@ uuid_vec_t FSMassObjectEdit::getSelectedTargets() const
     return ids;
 }
 
+uuid_vec_t FSMassObjectEdit::getOperationTargets() const
+{
+    std::set<LLUUID> ids;
+    if (mOccurrenceList)
+    {
+        for (LLScrollListItem* row : mOccurrenceList->getAllSelected())
+        {
+            ids.insert(row->getValue().asUUID());
+        }
+    }
+    if (ids.empty())
+    {
+        const uuid_vec_t selected_targets = getSelectedTargets();
+        ids.insert(selected_targets.begin(), selected_targets.end());
+    }
+    return uuid_vec_t(ids.begin(), ids.end());
+}
+
 void FSMassObjectEdit::useSelectedSource()
 {
     LLViewerObject* object = LLSelectMgr::getInstance()->getSelection()->getFirstObject();
@@ -503,7 +901,9 @@ void FSMassObjectEdit::useSelectedSource()
         return;
     }
     mSourceObjectID = object->getID();
-    mSourceLabel->setText(object->getID().asString());
+    const auto source_info = mObjects.find(mSourceObjectID);
+    mSourceLabel->setText(source_info != mObjects.end() ?
+        source_info->second.name : object->getID().asString());
     mSourceList->deleteAllItems();
     mSourceItems.clear();
     LLCoros::instance().launch("FSMassObjectEdit::fetchSourceInventory",
@@ -548,71 +948,415 @@ void FSMassObjectEdit::fetchSourceInventoryCoro(LLUUID source_id)
 
 void FSMassObjectEdit::scanTargetContents()
 {
-    if (mBusy || getSelectedTargets().empty())
+    const uuid_vec_t targets = getSelectedTargets();
+    if (mBusy || mScanning || mTargetRebuildPending || targets.empty())
     {
         return;
     }
     mBusy = true;
     updateButtons();
+    setStatus(llformat("Starting target-content scan for %d prims...",
+        static_cast<S32>(targets.size())));
     LLCoros::instance().launch("FSMassObjectEdit::scanTargetContents",
-        boost::bind(&FSMassObjectEdit::scanTargetContentsCoro, this));
+        boost::bind(&FSMassObjectEdit::scanTargetContentsCoro, this, targets, false));
 }
 
-void FSMassObjectEdit::scanTargetContentsCoro()
+void FSMassObjectEdit::refreshOccurrenceInventories()
+{
+    uuid_vec_t targets;
+    if (mOccurrenceList)
+    {
+        for (LLScrollListItem* row : mOccurrenceList->getAllData())
+        {
+            targets.push_back(row->getValue().asUUID());
+        }
+    }
+    if (mBusy || targets.empty())
+    {
+        return;
+    }
+
+    mBusy = true;
+    updateButtons();
+    setStatus(llformat("Refreshing inventory for %d occurrence objects...",
+        static_cast<S32>(targets.size())));
+    LLCoros::instance().launch("FSMassObjectEdit::refreshOccurrenceInventories",
+        boost::bind(&FSMassObjectEdit::scanTargetContentsCoro, this, targets, true));
+}
+
+void FSMassObjectEdit::scanTargetContentsCoro(uuid_vec_t targets, bool refresh_existing)
 {
     LLUUID pump_id = LLUUID::generateNewID();
-    LLEventMailDrop pump("MassObjectTargets-" + pump_id.asString(), true);
-    mTargetContentKeys.clear();
-    mTargetContentsList->deleteAllItems();
-    const uuid_vec_t targets = getSelectedTargets();
+    const std::string done_pump_name = "MassObjectTargetsDone-" + pump_id.asString();
+    LLEventMailDrop done_pump(done_pump_name, true);
+    if (!refresh_existing)
+    {
+        mTargetContentKeys.clear();
+        mTargetContentsList->deleteAllItems();
+    }
+    mTargetScanTotal = static_cast<S32>(targets.size());
+    mTargetScanProcessed = 0;
+    mTargetScanSucceeded = 0;
+    mTargetScanFailed = 0;
+    mTargetContentRefreshTimer.reset();
+    mProgressBar->setValue(0.0);
+    if (!refresh_existing)
+    {
+        mOccurrenceList->deleteAllItems();
+        mOccurrenceLabel->setText(LLStringExplicit("Objects containing the selected content"));
+    }
+
+    uuid_vec_t pass_targets = targets;
+    S32 retries_used = 0;
+    for (S32 attempt = 0; !pass_targets.empty() && attempt <= TARGET_SCAN_RETRIES; ++attempt)
+    {
+        const bool retry_pass = attempt > 0;
+        if (retry_pass)
+        {
+            retries_used = attempt;
+            setStatus(llformat("Retrying %d unavailable target inventories (attempt %d/%d)...",
+                static_cast<S32>(pass_targets.size()), attempt, TARGET_SCAN_RETRIES));
+            llcoro::suspendUntilTimeout(TARGET_SCAN_RETRY_DELAY * static_cast<F32>(attempt));
+        }
+
+        mTargetScanRetryIDs.clear();
+        const S32 pass_count = static_cast<S32>(pass_targets.size());
+        const S32 worker_count = llmin(TARGET_SCAN_WORKERS, pass_count);
+        std::vector<uuid_vec_t> work(static_cast<size_t>(worker_count));
+        for (S32 i = 0; i < pass_count; ++i)
+        {
+            work[static_cast<size_t>(i % worker_count)].push_back(
+                pass_targets[static_cast<size_t>(i)]);
+        }
+
+        for (S32 i = 0; i < worker_count; ++i)
+        {
+            LLCoros::instance().launch("FSMassObjectEdit::scanTargetContentsWorker",
+                boost::bind(&FSMassObjectEdit::scanTargetContentsWorkerCoro, this,
+                    work[static_cast<size_t>(i)], done_pump_name,
+                    refresh_existing, retry_pass));
+        }
+        for (S32 i = 0; i < worker_count; ++i)
+        {
+            llcoro::suspendUntilEventOn(done_pump);
+        }
+
+        mTargetScanFailed = static_cast<S32>(mTargetScanRetryIDs.size());
+        mTargetScanSucceeded = mTargetScanTotal - mTargetScanFailed;
+        pass_targets = mTargetScanRetryIDs;
+        if (retry_pass)
+        {
+            refreshTargetContentsList();
+        }
+    }
+
+    refreshTargetContentsList();
+    mProgressBar->setValue(100.0);
+    mBusy = false;
+    setStatus(llformat(refresh_existing ?
+        "Refreshed %d of %d occurrence objects; %d unavailable after %d retries. Found %d unique contents." :
+        "Scanned %d of %d targets; %d unavailable after %d retries. Found %d unique contents.",
+        mTargetScanSucceeded, mTargetScanTotal, mTargetScanFailed,
+        retries_used,
+        static_cast<S32>(mTargetContentKeys.size())));
+    updateButtons();
+}
+
+void FSMassObjectEdit::scanTargetContentsWorkerCoro(uuid_vec_t targets,
+    std::string done_pump_name, bool refresh_existing, bool retry_pass)
+{
+    LLUUID pump_id = LLUUID::generateNewID();
+    LLEventMailDrop pump("MassObjectTargetWorker-" + pump_id.asString(), true);
     for (const LLUUID& id : targets)
     {
         LLInventoryObject::object_list_t inventory;
-        if (!fetchInventory(gObjectList.findObject(id), pump, inventory))
+        if (fetchInventory(gObjectList.findObject(id), pump, inventory,
+            refresh_existing || retry_pass))
         {
-            continue;
+            if (!retry_pass)
+            {
+                ++mTargetScanSucceeded;
+            }
+            if (refresh_existing)
+            {
+                removeTargetContents(id);
+            }
+            std::set<std::string> seen;
+            for (const LLPointer<LLInventoryObject>& object : inventory)
+            {
+                LLViewerInventoryItem* item = dynamic_cast<LLViewerInventoryItem*>(object.get());
+                if (!item)
+                {
+                    continue;
+                }
+                const std::string key = contentKey(item->getName(), item->getType());
+                if (seen.insert(key).second)
+                {
+                    ContentKey& content = mTargetContentKeys[key];
+                    content.name = item->getName();
+                    content.type = item->getType();
+                    content.targets.insert(id);
+                    content.count = static_cast<S32>(content.targets.size());
+                }
+            }
         }
-        std::set<std::string> seen;
-        for (const LLPointer<LLInventoryObject>& object : inventory)
+        else
         {
-            LLViewerInventoryItem* item = dynamic_cast<LLViewerInventoryItem*>(object.get());
-            if (!item)
+            mTargetScanRetryIDs.push_back(id);
+            if (!retry_pass)
             {
-                continue;
-            }
-            const std::string key = contentKey(item->getName(), item->getType());
-            if (seen.insert(key).second)
-            {
-                ContentKey& content = mTargetContentKeys[key];
-                content.name = item->getName();
-                content.type = item->getType();
-                ++content.count;
+                ++mTargetScanFailed;
             }
         }
-        llcoro::suspend();
+        if (!retry_pass)
+        {
+            ++mTargetScanProcessed;
+            updateTargetScanProgress();
+        }
     }
+    LLEventPumps::instance().post(done_pump_name, LLSDMap("done", true));
+}
 
+void FSMassObjectEdit::removeTargetContents(const LLUUID& target_id)
+{
+    for (auto iter = mTargetContentKeys.begin(); iter != mTargetContentKeys.end();)
+    {
+        ContentKey& content = iter->second;
+        content.targets.erase(target_id);
+        content.count = static_cast<S32>(content.targets.size());
+        if (content.targets.empty())
+        {
+            iter = mTargetContentKeys.erase(iter);
+        }
+        else
+        {
+            ++iter;
+        }
+    }
+}
+
+void FSMassObjectEdit::refreshTargetContentsList()
+{
+    std::set<std::string> selected;
+    for (LLScrollListItem* row : mTargetContentsList->getAllSelected())
+    {
+        selected.insert(row->getValue().asString());
+    }
+    std::string name_filter = mContentNameFilter ? mContentNameFilter->getText() : std::string();
+    std::string type_filter = mContentTypeFilter ? mContentTypeFilter->getText() : std::string();
+    std::string count_filter = mContentCountFilter ? mContentCountFilter->getText() : std::string();
+    LLStringUtil::trim(name_filter);
+    LLStringUtil::trim(type_filter);
+    LLStringUtil::trim(count_filter);
+    LLStringUtil::toLower(name_filter);
+    LLStringUtil::toLower(type_filter);
+    const S32 scroll_pos = mTargetContentsList->getScrollPos();
+    mTargetContentsList->deleteAllItems();
     for (const auto& entry : mTargetContentKeys)
     {
         const ContentKey& content = entry.second;
+        std::string searchable_name = content.name;
+        std::string type_name = assetTypeName(content.type);
+        std::string searchable_type = type_name;
+        LLStringUtil::toLower(searchable_name);
+        LLStringUtil::toLower(searchable_type);
+        if (!matchesCountFilter(content.count, count_filter) ||
+            (!name_filter.empty() && searchable_name.find(name_filter) == std::string::npos) ||
+            (!type_filter.empty() && searchable_type.find(type_filter) == std::string::npos))
+        {
+            continue;
+        }
         LLSD row;
         row["id"] = entry.first;
         row["columns"][0]["column"] = "name";
         row["columns"][0]["value"] = content.name;
         row["columns"][1]["column"] = "type";
-        row["columns"][1]["value"] = assetTypeName(content.type);
+        row["columns"][1]["value"] = type_name;
         row["columns"][2]["column"] = "count";
         row["columns"][2]["value"] = content.count;
+        row["columns"][2]["alt_value"] = llformat("%010d", content.count);
         mTargetContentsList->addElement(row, ADD_BOTTOM);
+        if (selected.find(entry.first) != selected.end())
+        {
+            mTargetContentsList->selectByValue(entry.first);
+        }
     }
-    mBusy = false;
-    setStatus(llformat("Scanned contents of %d targets.", static_cast<S32>(targets.size())));
+    mTargetContentsList->setNeedsSort();
+    mTargetContentsList->setScrollPos(scroll_pos);
+    refreshOccurrenceList();
+}
+
+void FSMassObjectEdit::refreshOccurrenceList()
+{
+    std::set<LLUUID> selected;
+    for (LLScrollListItem* row : mOccurrenceList->getAllSelected())
+    {
+        selected.insert(row->getValue().asUUID());
+    }
+    std::set<LLUUID> target_ids;
+    for (LLScrollListItem* row : mTargetContentsList->getAllSelected())
+    {
+        auto found = mTargetContentKeys.find(row->getValue().asString());
+        if (found != mTargetContentKeys.end())
+        {
+            target_ids.insert(found->second.targets.begin(), found->second.targets.end());
+        }
+    }
+
+    mOccurrenceList->deleteAllItems();
+    for (const LLUUID& id : target_ids)
+    {
+        auto found = mObjects.find(id);
+        if (found == mObjects.end())
+        {
+            continue;
+        }
+        const ObjectInfo& info = found->second;
+        LLSD row;
+        row["id"] = id;
+        row["columns"][0]["column"] = "name";
+        row["columns"][0]["value"] = info.name;
+        row["columns"][1]["column"] = "owner";
+        row["columns"][1]["value"] = info.owner_id == gAgent.getID() ? "Me" :
+            (info.owner_name.empty() ? info.owner_id.asString() : info.owner_name);
+        mOccurrenceList->addElement(row, ADD_BOTTOM);
+        if (selected.find(id) != selected.end())
+        {
+            mOccurrenceList->selectByID(id);
+        }
+    }
+    mOccurrenceList->setNeedsSort();
+    mOccurrenceLabel->setText(target_ids.empty() ?
+        "4. Select content to see where it exists" :
+        llformat("4. Objects containing selected content (%d)",
+            mOccurrenceList->getItemCount()));
     updateButtons();
+}
+
+void FSMassObjectEdit::updateTargetScanProgress()
+{
+    if (mTargetContentRefreshTimer.getElapsedTimeF32() < 0.5f &&
+        mTargetScanProcessed < mTargetScanTotal)
+    {
+        return;
+    }
+    refreshTargetContentsList();
+    mProgressBar->setValue(mTargetScanTotal > 0 ?
+        100.0 * static_cast<F64>(mTargetScanProcessed) / static_cast<F64>(mTargetScanTotal) : 0.0);
+    setStatus(llformat("Scanning target contents: %d/%d processed, %d unavailable, %d unique contents...",
+        mTargetScanProcessed, mTargetScanTotal, mTargetScanFailed,
+        static_cast<S32>(mTargetContentKeys.size())));
+    mTargetContentRefreshTimer.reset();
+    updateButtons();
+}
+
+void FSMassObjectEdit::selectAllTargets()
+{
+    if (mScanning || mTargetRebuildPending)
+    {
+        return;
+    }
+    for (LLScrollListItem* row : mTargetList->getAllData())
+    {
+        row->setSelected(true);
+    }
+    updateButtons();
+}
+
+void FSMassObjectEdit::clearTargetSelection()
+{
+    if (mScanning || mTargetRebuildPending)
+    {
+        return;
+    }
+    for (LLScrollListItem* row : mTargetList->getAllSelected())
+    {
+        row->setSelected(false);
+    }
+    updateButtons();
+}
+
+void FSMassObjectEdit::onObjectListRightClick(LLUICtrl*, S32 x, S32 y, MASK,
+    LLScrollListCtrl* list)
+{
+    if (!list)
+    {
+        return;
+    }
+    list->selectItemAt(x, y, MASK_NONE);
+    showObjectContextMenu(list, x, y);
+}
+
+void FSMassObjectEdit::showObjectContextMenu(LLScrollListCtrl* list, S32 x, S32 y)
+{
+    LLScrollListItem* selected = list ? list->getFirstSelected() : nullptr;
+    if (!selected)
+    {
+        return;
+    }
+    const LLUUID id = selected->getValue().asUUID();
+    const bool loaded = gObjectList.findObject(id) != nullptr;
+
+    if (LLContextMenu* old_menu = mContextMenuHandle.get())
+    {
+        old_menu->die();
+        mContextMenuHandle.markDead();
+    }
+
+    LLContextMenu::Params menu_params;
+    menu_params.name("mass_object_edit_context_menu");
+    menu_params.visible(false);
+    LLContextMenu* menu = LLUICtrlFactory::create<LLContextMenu>(menu_params);
+    auto add_item = [&](const std::string& name, const std::string& label,
+        const std::function<void()>& action)
+    {
+        LLMenuItemCallGL::Params params;
+        params.name(name);
+        params.label(label);
+        params.enabled.set(loaded);
+        params.on_click.function([action](LLUICtrl*, const LLSD&) { action(); });
+        menu->addChild(LLUICtrlFactory::create<LLMenuItemCallGL>(params));
+    };
+    add_item("edit", "Edit Object", [this, id]() { editObject(id); });
+    add_item("zoom", "Zoom to Object", [this, id]() { zoomObject(id); });
+    add_item("beacon", mBeaconObjectID == id ? "Hide Beacon" : "Show Beacon",
+        [this, id]() { beaconObject(id); });
+
+    mContextMenuHandle = menu->getHandle();
+    gMenuHolder->addChild(menu);
+    S32 screen_x = 0, screen_y = 0;
+    list->localPointToScreen(x, y, &screen_x, &screen_y);
+    menu->show(screen_x, screen_y, list);
+}
+
+void FSMassObjectEdit::editObject(const LLUUID& id)
+{
+    if (LLViewerObject* object = gObjectList.findObject(id))
+    {
+        LLSelectMgr::getInstance()->deselectAll();
+        LLSelectMgr::getInstance()->selectObjectAndFamily(object);
+        handle_object_edit();
+    }
+}
+
+void FSMassObjectEdit::zoomObject(const LLUUID& id)
+{
+    if (LLViewerObject* object = gObjectList.findObject(id))
+    {
+        LLSelectMgr::getInstance()->deselectAll();
+        LLSelectMgr::getInstance()->selectObjectAndFamily(object);
+        handle_look_at_selection("zoom");
+    }
+}
+
+void FSMassObjectEdit::beaconObject(const LLUUID& id)
+{
+    mBeaconObjectID = mBeaconObjectID == id ? LLUUID::null : id;
 }
 
 void FSMassObjectEdit::beginOperation(Operation operation)
 {
-    uuid_vec_t targets = getSelectedTargets();
+    uuid_vec_t targets = getOperationTargets();
     uuid_vec_t source_items;
     std::vector<std::string> delete_keys;
     if (operation == Operation::DELETE_ITEMS)
