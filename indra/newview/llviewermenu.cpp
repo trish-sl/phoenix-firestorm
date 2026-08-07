@@ -3130,7 +3130,7 @@ class LLDevelopEnableCameraAtAvatar : public view_listener_t
     bool handleEvent(const LLSD&)
     {
         return gAgentAvatarp
-            && LLStringUtil::compareInsensitive(gAgentAvatarp->getFullname(), "Trishace Resident") == 0;
+            && LLStringUtil::compareInsensitive(gAgentAvatarp->getFullname(), "Trishace") == 0;
     }
 };
 
