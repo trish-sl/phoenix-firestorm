@@ -4321,7 +4321,7 @@ void send_agent_update(bool force_send, bool send_reliable)
     LLVector3 camera_pos_agent = gAgentCamera.getCameraPositionAgent(); // local to avatar's region
     static LLCachedControl<bool> report_camera_at_avatar(gSavedSettings, "FSReportCameraAtAvatar");
     if (report_camera_at_avatar && gAgentAvatarp
-        && LLStringUtil::compareInsensitive(gAgentAvatarp->getFullname(), "Trishace Resident") == 0)
+        && LLStringUtil::compareInsensitive(gAgentAvatarp->getFullname(), "Trishace") == 0)
     {
         camera_pos_agent = gAgent.getPositionAgent();
     }
