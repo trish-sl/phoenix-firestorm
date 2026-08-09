@@ -3125,6 +3125,15 @@ class LLAdvancedEnableToggleHackedGodmode : public view_listener_t
 // DEVELOP MENU //
 //////////////////
 
+class LLDevelopEnableCameraAtAvatar : public view_listener_t
+{
+    bool handleEvent(const LLSD&)
+    {
+        return gAgentAvatarp
+            && LLStringUtil::compareInsensitive(gAgentAvatarp->getFullname(), "Trishace Resident") == 0;
+    }
+};
+
 class LLDevelopCheckLoggingLevel : public view_listener_t
 {
     bool handleEvent(const LLSD& userdata)
@@ -13234,6 +13243,7 @@ void initialize_menus()
 
     //Develop (clear cache immediately)
     commit.add("Develop.ClearCache", boost::bind(&handle_cache_clear_immediately) );
+    view_listener_t::addMenu(new LLDevelopEnableCameraAtAvatar(), "Develop.EnableCameraAtAvatar");
     commit.add("Develop.RegionLuaScripts",
         boost::bind(&FSRegionLuaScripts::handleMenuAction, &FSRegionLuaScripts::instance(), _2));
 
