@@ -13253,6 +13253,7 @@ void initialize_menus()
 
     //Develop (clear cache immediately)
     commit.add("Develop.ClearCache", boost::bind(&handle_cache_clear_immediately) );
+    view_listener_t::addMenu(new LLDevelopEnableCameraAtAvatar(), "Develop.EnableCameraAtAvatar");
     commit.add("Develop.RegionLuaScripts",
         boost::bind(&FSRegionLuaScripts::handleMenuAction, &FSRegionLuaScripts::instance(), _2));
 
