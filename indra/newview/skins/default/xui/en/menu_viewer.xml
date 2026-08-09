@@ -3971,6 +3971,18 @@
              function="Floater.Show"
              parameter="mass_object_edit" />
         </menu_item_call>
+        <menu_item_check
+         label="Set Camera to Avatar"
+         name="Set Camera to Avatar">
+            <menu_item_check.on_check
+             function="CheckControl"
+             parameter="FSReportCameraAtAvatar" />
+            <menu_item_check.on_click
+             function="ToggleControl"
+             parameter="FSReportCameraAtAvatar" />
+            <menu_item_check.on_enable
+             function="Develop.EnableCameraAtAvatar" />
+        </menu_item_check>
         <menu_item_separator />
         <menu
          create_jump_keys="true"
