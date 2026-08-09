@@ -7697,6 +7697,9 @@ class LLViewEnableJoystickFlycam : public view_listener_t
     bool handleEvent(const LLSD& userdata)
     {
         bool new_value = (gSavedSettings.getBOOL("JoystickEnabled") && gSavedSettings.getBOOL("JoystickFlycamEnabled"));
+        // [RLVa:Trish] Greyed while RLVa doesn't allow a flycam
+        new_value = new_value && (LLViewerJoystick::getInstance()->getOverrideCamera() || LLViewerJoystick::isFlycamAllowedByRlv());
+        // [/RLVa:Trish]
         return new_value;
     }
 };
@@ -13273,6 +13276,7 @@ void initialize_menus()
 
     //Develop (clear cache immediately)
     commit.add("Develop.ClearCache", boost::bind(&handle_cache_clear_immediately) );
+    view_listener_t::addMenu(new LLDevelopEnableCameraAtAvatar(), "Develop.EnableCameraAtAvatar");
     commit.add("Develop.RegionLuaScripts",
         boost::bind(&FSRegionLuaScripts::handleMenuAction, &FSRegionLuaScripts::instance(), _2));
 
