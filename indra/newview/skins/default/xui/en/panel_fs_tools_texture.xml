@@ -78,15 +78,7 @@
    can_apply_immediately="true"
    allow_no_texture="true"
    fallback_image="materials_ui_x_24.png"
-   tool_tip="Click to choose a pbr material"
->
-   <texture_picker.mouseenter_callback
-      function="BuildTool.ShowFindAllButton"
-      parameter="btn_select_same_gltf"/>
-   <texture_picker.mouseleave_callback
-      function="BuildTool.HideFindAllButton"
-      parameter="btn_select_same_gltf"/>
-</texture_picker>
+   tool_tip="Click to choose a pbr material"/>
 
 <texture_picker
    follows="left|top"
@@ -1679,15 +1671,7 @@
    allow_no_texture="false"
    default_image_name="Default"
    fallback_image="materials_ui_x_24.png"
-   tool_tip="Click to choose a picture"
->
-   <texture_picker.mouseenter_callback
-      function="BuildTool.ShowFindAllButton"
-      parameter="btn_select_same_diff"/>
-   <texture_picker.mouseleave_callback
-      function="BuildTool.HideFindAllButton"
-      parameter="btn_select_same_diff"/>
-</texture_picker>
+   tool_tip="Click to choose a picture"/>
 
 <color_swatch
    follows="top|left"
@@ -1704,7 +1688,7 @@
 
 <button
    enabled="true"
-   visible="false"
+   visible="true"
    layout="topleft"
    follows="right|top"
    height="23"
@@ -1736,19 +1720,11 @@
    fallback_image="materials_ui_x_24.png"
    label="Normal"
    name="bumpytexture control"
-   tool_tip="Click to choose a picture"
->
-   <texture_picker.mouseenter_callback
-      function="BuildTool.ShowFindAllButton"
-      parameter="btn_select_same_norm"/>
-   <texture_picker.mouseleave_callback
-      function="BuildTool.HideFindAllButton"
-      parameter="btn_select_same_norm"/>
-</texture_picker>
+   tool_tip="Click to choose a picture"/>
 
 <button
    enabled="true"
-   visible="false"
+   visible="true"
    layout="topleft"
    follows="right|top"
    height="23"
@@ -1780,15 +1756,7 @@
    fallback_image="materials_ui_x_24.png"
    label="Specular"
    name="shinytexture control"
-   tool_tip="Click to choose a picture"
->
-   <texture_picker.mouseenter_callback
-      function="BuildTool.ShowFindAllButton"
-      parameter="btn_select_same_spec"/>
-   <texture_picker.mouseleave_callback
-      function="BuildTool.HideFindAllButton"
-      parameter="btn_select_same_spec"/>
-</texture_picker>
+   tool_tip="Click to choose a picture"/>
 
 <color_swatch
    follows="left|top"
@@ -1806,7 +1774,7 @@
 
 <button
    enabled="true"
-   visible="false"
+   visible="true"
    layout="topleft"
    follows="right|top"
    height="23"
