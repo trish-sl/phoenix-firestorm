@@ -62,6 +62,7 @@ class LLEventTimer;
 class FSLSLPreprocessor;
 class FSLSLPreProcViewer;
 // NaCl End
+class LLScriptEditorWSServer;
 
 class LLLiveLSLFile : public LLLiveFile
 {
@@ -69,12 +70,12 @@ public:
     typedef std::function<bool(const std::string& filename)> change_callback_t;
 
     LLLiveLSLFile(std::string file_path, change_callback_t change_cb);
-    ~LLLiveLSLFile();
+    ~LLLiveLSLFile() override;
 
     void ignoreNextUpdate() { mIgnoreNextUpdate = true; }
 
 protected:
-    /*virtual*/ bool loadFile();
+    bool loadFile() override;
 
     change_callback_t   mOnChangeCallback;
     bool                mIgnoreNextUpdate;
@@ -109,13 +110,17 @@ protected:
         bool live,
         S32 bottom_pad = 0);    // pad below bottom row of buttons
 public:
-    ~LLScriptEdCore();
+    ~LLScriptEdCore() override;
 
     void            initMenu();
     void            processKeywords();
+    void            processKeywords(bool luau_language);
+    LLScriptEditor* getEditor() const { return mEditor; }
+    LLKeywords&     getKeywords() const { return mEditor->getKeywords(); }
+    bool            isLuauLanguage() const { return mEditor->getIsLuauLanguage(); }
 
-    virtual void    draw();
-    /*virtual*/ bool    postBuild();
+    void            draw() override;
+    bool            postBuild() override;
     bool            canClose();
     void            setEnableEditing(bool enable);
     bool            canLoadOrSaveToFile( void* userdata );
@@ -157,7 +162,7 @@ public:
     static bool     enableSaveToFileMenu(void* userdata);
     static bool     enableLoadFromFileMenu(void* userdata);
 
-    virtual bool    hasAccelerators() const { return true; }
+    bool            hasAccelerators() const override { return true; }
     LLUUID          getAssociatedExperience()const;
     void            setAssociatedExperience( const LLUUID& experience_id );
 
@@ -173,8 +178,11 @@ public:
     //void onChangeFontSize(const LLSD &size_name);
     // </FS:Ansarie>
 
-    virtual bool handleKeyHere(KEY key, MASK mask);
-    void selectAll() { mEditor->selectAll(); }
+    bool            handleKeyHere(KEY key, MASK mask) override;
+    void            selectAll() { mEditor->selectAll(); }
+
+    void            enableSave(bool b) { mEnableSave = b; }
+    bool            hasChanged() const;
 
   private:
     std::string     getCompileTarget() const;
@@ -194,8 +202,6 @@ public: // <FS:Ansariel> Show keyword help on F1
     void        onBtnDynamicHelp();
 private: // <FS:Ansariel> Show keyword help on F1
     void        onBtnUndoChanges();
-
-    bool        hasChanged() const;
 
     void selectFirstError();
 
@@ -278,7 +284,7 @@ private:
 
     LLScriptEdContainer* mContainer; // parent view
 
-public:
+ public:
     boost::signals2::connection mSyntaxIDConnection;
 
 };
@@ -290,7 +296,7 @@ class LLScriptEdContainer : public LLPreview
 public:
     LLScriptEdContainer(const LLSD& key);
 // [SL:KB] - Patch: Build-ScriptRecover | Checked: 2011-11-23 (Catznip-3.2.0) | Added: Catznip-3.2.0
-    /*virtual*/ ~LLScriptEdContainer();
+    ~LLScriptEdContainer() override;
 
     /*virtual*/ void refreshFromItem();
 // [/SL:KB]
@@ -298,15 +304,23 @@ public:
     // <FS:Ansariel> FIRE-16740: Color syntax highlighting changes don't immediately appear in script window
     void updateStyle();
 
-    bool handleKeyHere(KEY key, MASK mask);
+    bool handleKeyHere(KEY key, MASK mask) override;
+
+    void startWebsocketServer();
+    void unsubscribeScript();
+    void sendCompileResults(LLSD&);
+
+    LLScriptEdCore* getScriptEdCore() const { return mScriptEd; }
 
 protected:
-    std::string     getTmpFileName(const std::string& script_name);
+    std::string     getTmpFileName(const std::string& script_name) const;
 // [SL:KB] - Patch: Build-ScriptRecover | Checked: 2011-11-23 (Catznip-3.2.0) | Added: Catznip-3.2.0
     virtual std::string getBackupFileName() const;
     bool            onBackupTimer();
 // [/SL:KB]
 
+    std::string     getUniqueHash() const;
+    std::string     getErrorLogFileName(const std::string& script_path);
     bool            onExternalChange(const std::string& filename);
     virtual void    saveIfNeeded(bool sync = true) = 0;
 
@@ -315,6 +329,10 @@ protected:
     std::string         mBackupFilename;
     LLEventTimer*       mBackupTimer;
 // [/SL:KB]
+    LLLiveLSLFile*      mLiveFile = nullptr;
+    LLLiveLSLFile*      mLiveLogFile = nullptr;
+
+    std::weak_ptr<LLScriptEditorWSServer> mWebSocketServer;
 };
 
 // Used to view and edit an LSL script from your inventory.
@@ -322,7 +340,7 @@ class LLPreviewLSL : public LLScriptEdContainer
 {
 public:
     LLPreviewLSL(const LLSD& key );
-    ~LLPreviewLSL();
+    ~LLPreviewLSL() override;
 
     LLUUID getScriptID() { return mItemUUID; }
 
@@ -331,19 +349,19 @@ public:
     virtual void callbackLSLCompileSucceeded();
     virtual void callbackLSLCompileFailed(const LLSD& compile_errors);
 
-    /*virtual*/ bool postBuild();
+    bool postBuild() override;
 
 // [SL:KB] - Patch: UI-FloaterSearchReplace | Checked: 2010-11-05 (Catznip-2.3.0a) | Added: Catznip-2.3.0a
     LLScriptEditor* getEditor() { return (mScriptEd) ? mScriptEd->mEditor : NULL; }
 // [/SL:KB]
 
 protected:
-    virtual void draw();
-    virtual bool canClose();
+    void draw() override;
+    bool canClose() override;
     void closeIfNeeded();
 
-    virtual void loadAsset();
-    /*virtual*/ void saveIfNeeded(bool sync = true);
+    void loadAsset() override;
+    void saveIfNeeded(bool sync = true) override;
 
     static void onSearchReplace(void* userdata);
     static void onLoad(void* userdata);
@@ -386,7 +404,7 @@ public:
                                             bool is_script_running);
     virtual void callbackLSLCompileFailed(const LLSD& compile_errors);
 
-    /*virtual*/ bool postBuild();
+    bool postBuild() override;
 
     void setIsNew() { mIsNew = true; }
 
@@ -407,15 +425,14 @@ public:
     void setObjectName(std::string name) { mObjectName = name; }
 
 private:
-    virtual bool canClose();
+    bool canClose() override;
     void onClose(bool app_quitting) override;
     void closeIfNeeded();
-    virtual void draw();
+    void draw() override;
 
-    virtual void loadAsset();
-    /*virtual*/ void saveIfNeeded(bool sync = true);
+    void loadAsset() override;
+    void saveIfNeeded(bool sync = true) override;
     bool monoChecked() const;
-
 
     static void onSearchReplace(void* userdata);
     static void onLoad(void* userdata);

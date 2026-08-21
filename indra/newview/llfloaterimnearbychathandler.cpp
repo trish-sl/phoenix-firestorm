@@ -45,6 +45,7 @@
 #include "llfloaterimcontainer.h"
 #include "llrootview.h"
 #include "lllayoutstack.h"
+#include "llscripteditorws.h"
 
 // [RLVa:KB] - Checked: RLVa-2.0.0
 #include "rlvactions.h"
@@ -395,6 +396,7 @@ void LLFloaterIMNearbyChatScreenChannel::addChat(LLSD& chat)
     {
         if (!gSavedSettings.getBOOL("ShowScriptErrors"))
             return;
+
         if (gSavedSettings.getS32("ShowScriptErrorsLocation") == 1)
             return;
     }
@@ -633,6 +635,15 @@ void LLFloaterIMNearbyChatHandler::processChat(const LLChat& chat_msg,
         if (!gSavedSettings.getBOOL("ShowScriptErrors") && chat_msg.mChatType == CHAT_TYPE_DEBUG_MSG)
             return;
 
+        if (gSavedSettings.getBOOL("ExternalWebsocketSyncEnable") && gSavedSettings.getBOOL("ExternalWebsocketForwardDebug"))
+        {
+            LLScriptEditorWSServer::ptr_t server = LLScriptEditorWSServer::getServer();
+            if (server)
+            {
+                server->forwardChatToIDE(chat_msg);
+            }
+        }
+
         // don't process debug messages from not owned objects, see EXT-7762
         // <FS:Ansariel> FIRE-15014: [OpenSim] osMessageObject(target, message) fails silently
         //if (gAgentID != chat_msg.mOwnerID)
@@ -679,6 +690,18 @@ void LLFloaterIMNearbyChatHandler::processChat(const LLChat& chat_msg,
         return;
     }
     // </FS:Beq>
+
+    if ((chat_msg.mChatType == CHAT_TYPE_OWNER) &&
+        !FSllOwnerSayToScriptDebugWindow &&
+        gSavedSettings.getBOOL("ExternalWebsocketSyncEnable") &&
+        gSavedSettings.getBOOL("ExternalWebsocketForwardDebug"))
+    {
+        LLScriptEditorWSServer::ptr_t server = LLScriptEditorWSServer::getServer();
+        if (server)
+        {
+            server->forwardChatToIDE(chat_msg);
+        }
+    }
     nearby_chat->addMessage(chat_msg, true, args);
 
     if (chat_msg.mSourceType == CHAT_SOURCE_AGENT
