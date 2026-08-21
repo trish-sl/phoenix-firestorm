@@ -325,3 +325,53 @@ boost::signals2::connection LLSyntaxIdLSL::addSyntaxIDCallback(const syntax_id_c
 {
     return mSyntaxIDChangedSignal.connect(cb);
 }
+
+
+
+//-----------------------------------------------------------------------------
+// LLSyntaxLua
+//-----------------------------------------------------------------------------
+LLSyntaxLua::LLSyntaxLua()
+    : mKeywordsXml(LLSD())
+    , mInitialized(false)
+{
+}
+
+void LLSyntaxLua::initialize()
+{
+    if (mInitialized) return;
+
+    loadDefaultKeywordsIntoLLSD();
+    loadLuaTypesIntoLLSD();
+    mInitialized = true;
+}
+
+void LLSyntaxLua::loadDefaultKeywordsIntoLLSD()
+{
+    std::string fullFileSpec = gDirUtilp->getExpandedFilename(LL_PATH_APP_SETTINGS, FILENAME_DEFAULT_LUA);
+    llifstream file(fullFileSpec.c_str());
+
+    if (file.good())
+    {
+        LLSD content;
+        if (LLSDSerialize::fromXML(content, file) != LLSDParser::PARSE_FAILURE)
+        {
+            mKeywordsXml = content;
+        }
+    }
+}
+
+void LLSyntaxLua::loadLuaTypesIntoLLSD()
+{
+    std::string fullFileSpec = gDirUtilp->getExpandedFilename(LL_PATH_APP_SETTINGS, "types_lua_default.xml");
+    llifstream  file(fullFileSpec.c_str());
+
+    if (file.good())
+    {
+        LLSD content;
+        if (LLSDSerialize::fromXML(content, file) != LLSDParser::PARSE_FAILURE)
+        {
+            mTypesXml = content;
+        }
+    }
+}
