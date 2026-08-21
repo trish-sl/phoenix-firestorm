@@ -41,11 +41,11 @@ public:
         Params();
     };
 
-    virtual ~LLScriptEditor() {};
+    ~LLScriptEditor() override {};
 
     // LLView override
-    virtual void    draw();
-    bool postBuild();
+    void    draw() override;
+    bool    postBuild() override;
 
     // <FS> Improved Home-key behavior
     // LLTextBase override
@@ -56,6 +56,7 @@ public:
     /* virtual */ void  clearSegments();
     LLKeywords::keyword_iterator_t keywordsBegin()  { return mKeywords.begin(); }
     LLKeywords::keyword_iterator_t keywordsEnd()    { return mKeywords.end(); }
+    LLKeywords& getKeywords() { return mKeywords; }
 
     // <FS:Ansariel> FIRE-20818: User-selectable font and size for script editor
     //static std::string getScriptFontSize();

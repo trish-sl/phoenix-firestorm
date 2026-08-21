@@ -125,4 +125,16 @@
          function="Pref.ClearSettings" />
     </button>
 
+    <button
+     follows="left|top"
+     height="20"
+     label="Script Development"
+     name="scripting_development"
+     left="30"
+     top_pad="10"
+     width="200">
+        <button.commit_callback
+         function="Pref.Scripting" />
+    </button>
+
  </panel>
