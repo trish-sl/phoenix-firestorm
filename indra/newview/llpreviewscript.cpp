@@ -1759,47 +1759,6 @@ void LLScriptEdCore::doSaveComplete( void* userdata, bool close_after_save, bool
 
 void LLScriptEdCore::openInExternalEditor()
 {
-    //if (mContainer->mLiveFile)
-    //{
-    //    // If already open in an external editor, just return
-    //    return;
-    //}
-
-    // Generate a suitable filename
-    std::string script_name = mScriptName;
-
-    static const std::set<char> forbidden_chars{ '<', '>', ':', '"', '\\', '/', '|', '?', '*' };
-    script_name.erase(
-        std::remove_if(script_name.begin(), script_name.end(), [](char c) {
-            return forbidden_chars.contains(c);
-        }), script_name.end());
-
-    std::string filename = mContainer->getTmpFileName(script_name);
-
-    // Save the script to a temporary file.
-    if (!writeToFile(filename))
-    {
-        // In case some characters from script name are forbidden
-        // and not accounted for, name is too long or some other issue,
-        // try file that doesn't include script name
-        script_name.clear();
-        filename = mContainer->getTmpFileName(script_name);
-        writeToFile(filename);
-    }
-
-    if (mContainer->mLiveFile && mContainer->mLiveFile->filename() != filename)
-    { // The name may have changed if we changed the type of scipt being edited.
-        delete mContainer->mLiveFile;
-        mContainer->mLiveFile = NULL;
-    }
-    // Start watching file changes.
-    if (!mContainer->mLiveFile)
-    {
-        mContainer->mLiveFile = new LLLiveLSLFile(filename, boost::bind(&LLScriptEdContainer::onExternalChange, mContainer, _1));
-        mContainer->mLiveFile->addToEventTimer();
-    }
-    mContainer->startWebsocketServer();
-
     // Open it in external editor.
     {
         LLExternalEditor ed;
@@ -1851,6 +1810,7 @@ void LLScriptEdCore::openInExternalEditor()
         // Start watching file changes.
         mLiveFile = new LLLiveLSLFile(filename, boost::bind(&LLScriptEdContainer::onExternalChange, mContainer, _1));
         mLiveFile->addToEventTimer();
+        mContainer->startWebsocketServer();
         // FS:TS FIRE-6122 end
 
         status = ed.run(filename);
@@ -2281,12 +2241,6 @@ LLScriptEdContainer::~LLScriptEdContainer()
         LLFile::remove(mBackupFilename);
     delete mBackupTimer;
 
-    delete mLiveFile;
-    mLiveFile = nullptr;
-
-    delete mLiveLogFile;
-    mLiveLogFile = nullptr;
-
     if (!mWebSocketServer.expired())
     {
         unsubscribeScript();
@@ -2377,60 +2331,6 @@ std::string LLScriptEdContainer::getUniqueHash() const
     script_id_hash.hex_digest(script_id_hash_str);
 
     return std::string(script_id_hash_str);
-}
-
-std::string LLScriptEdContainer::getErrorLogFileName(const std::string& script_path)
-{
-    if (script_path.empty())
-    {
-        return std::string();
-    }
-
-    return script_path + ".log";
-}
-
-bool LLScriptEdContainer::logErrorsToFile(const LLSD& compile_errors)
-{
-    if (!isOpenInExternalEditor())
-    {
-        return false;
-    }
-
-    std::string script_path = getTmpFileName(mScriptEd->mScriptName);
-    std::string log_path = getErrorLogFileName(script_path);
-
-    llofstream file(log_path.c_str());
-    if (!file.is_open())
-    {
-        LL_WARNS() << "Unable to open error log file: " << log_path << LL_ENDL;
-        return false;
-    }
-
-    // Write timestamp
-    std::string timestamp = LLLogChat::timestamp2LogString(0, true);
-    file << "// " << timestamp << "\n\n";
-
-    // Write errors
-    for (LLSD::array_const_iterator line = compile_errors.beginArray();
-         line < compile_errors.endArray();
-         line++)
-    {
-        std::string error_message = line->asString();
-        LLStringUtil::stripNonprintable(error_message);
-        file << error_message << "\n";
-    }
-
-    file.close();
-
-    // Create a log file handler if we don't already have one,
-    // this is needed to delete the temporary log file properly
-    if (!mLiveLogFile && !log_path.empty())
-    {
-        // Empty callback since we don't need to react to file changes
-        mLiveLogFile = new LLLiveLSLFile(log_path, [](const std::string& filename) { return true; });
-    }
-
-    return true;
 }
 
 bool LLScriptEdContainer::onExternalChange(const std::string& filename)

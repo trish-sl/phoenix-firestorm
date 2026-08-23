@@ -14,6 +14,10 @@
 *.stamp
 *.rc
 
+# Source patches carried with the WebSocket++ compatibility integration.
+!indra/vcpkg/ports/websocketpp/boost187.patch
+!indra/vcpkg/ports/websocketpp/cpp23.patch
+
 *.tar.bz2
 *.code-workspace
 *~
