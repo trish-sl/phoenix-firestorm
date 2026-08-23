@@ -114,10 +114,9 @@ public:
 
     void            initMenu();
     void            processKeywords();
-    void            processKeywords(bool luau_language);
     LLScriptEditor* getEditor() const { return mEditor; }
     LLKeywords&     getKeywords() const { return mEditor->getKeywords(); }
-    bool            isLuauLanguage() const { return mEditor->getIsLuauLanguage(); }
+    bool            isLuauLanguage() const { return getCompileTarget() == "luau" || getCompileTarget() == "lsl-luau"; }
 
     void            draw() override;
     bool            postBuild() override;
@@ -204,8 +203,6 @@ private: // <FS:Ansariel> Show keyword help on F1
     void        onBtnUndoChanges();
 
     void selectFirstError();
-
-    void enableSave(bool b) {mEnableSave = b;}
 
 // <FS:CR> Advanced Script Editor
     void    initButtonBar();
@@ -320,7 +317,6 @@ protected:
 // [/SL:KB]
 
     std::string     getUniqueHash() const;
-    std::string     getErrorLogFileName(const std::string& script_path);
     bool            onExternalChange(const std::string& filename);
     virtual void    saveIfNeeded(bool sync = true) = 0;
 
@@ -329,9 +325,6 @@ protected:
     std::string         mBackupFilename;
     LLEventTimer*       mBackupTimer;
 // [/SL:KB]
-    LLLiveLSLFile*      mLiveFile = nullptr;
-    LLLiveLSLFile*      mLiveLogFile = nullptr;
-
     std::weak_ptr<LLScriptEditorWSServer> mWebSocketServer;
 };
 

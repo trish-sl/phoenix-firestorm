@@ -41,6 +41,7 @@
 const std::string SYNTAX_ID_CAPABILITY_NAME = "LSLSyntax";
 const std::string SYNTAX_ID_SIMULATOR_FEATURE = "LSLSyntaxId";
 const std::string FILENAME_DEFAULT = "keywords_lsl_default.xml";
+const std::string FILENAME_DEFAULT_LUA = "keywords_lua_default.xml";
 
 /**
  * @brief LLSyntaxIdLSL constructor
