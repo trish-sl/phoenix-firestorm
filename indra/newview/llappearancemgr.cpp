@@ -2817,13 +2817,13 @@ void LLAppearanceMgr::updateAppearanceFromCOF(bool enforce_item_restrictions,
         updateClothingOrderingInfo(LLUUID::null, cb);
 // [/SL:KB]
 
-        // As with enforce_item_restrictions handling above, we want
-        // to wait for the update callbacks, then (finally!) call
-        // updateAppearanceFromCOF() with no additional COF munging needed.
-        LLPointer<LLInventoryCallback> cb(
-            new LLUpdateAppearanceOnDestroy(false, false, post_update_func));
-        updateClothingOrderingInfo(LLUUID::null, cb);
-        return;
+//      // As with enforce_item_restrictions handling above, we want
+//      // to wait for the update callbacks, then (finally!) call
+//      // updateAppearanceFromCOF() with no additional COF munging needed.
+//      LLPointer<LLInventoryCallback> cb(
+//          new LLUpdateAppearanceOnDestroy(false, false, post_update_func));
+//      updateClothingOrderingInfo(LLUUID::null, cb);
+//      return;
     }
 
     if (!validateClothingOrderingInfo())
