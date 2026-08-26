@@ -347,7 +347,7 @@ void LLAudioEngine_OpenAL::shutdown()
 {
     LL_INFOS() << "About to LLAudioEngine::shutdown()" << LL_ENDL;
 
-    if (mHasSystemEventsExt && mEventControlSOFT && mEventCallbackSOFT)
+    if (mHasReopenExt && mHasSystemEventsExt && mEventControlSOFT && mEventCallbackSOFT)
     {
         // <FS:Ansariel> Output device selection
         //ALCenum events[] = { ALC_EVENT_TYPE_DEFAULT_DEVICE_CHANGED_SOFT };
@@ -372,6 +372,24 @@ void LLAudioEngine_OpenAL::shutdown()
     {
         LL_WARNS() << "Uncleared error state prior to shutdown: "
             << alutGetErrorString(error) << LL_ENDL;
+    }
+
+    // Mac OS' alutExit can trip over stale error state. Drain it.
+    if (alcGetCurrentContext() != NULL)
+    {
+        // Avoid potential infinite loops.
+        for (int i = 0; i < 16; ++i)
+        {
+            if (alGetError() == AL_NO_ERROR)
+            {
+                break;
+            }
+        }
+        ALenum error = alGetError();
+        if (error != AL_NO_ERROR)
+        {
+             LL_WARNS() << "Uncleared error state prior to shutdown: " << error << LL_ENDL;
+        }
     }
 
     LL_INFOS() << "About to alutExit()" << LL_ENDL;
