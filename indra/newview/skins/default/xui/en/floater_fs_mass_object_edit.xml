@@ -58,7 +58,7 @@
     <scroll_list
      left="786" top="104" width="402" height="280"
      follows="right|top"
-     name="target_contents_list" multi_select="true">
+     name="target_contents_list" multi_select="true" sort_lazily="true">
         <scroll_list.columns name="name" label="Name" width="210" />
         <scroll_list.columns name="type" label="Type" width="105" />
         <scroll_list.columns name="count" label="Targets" width="70" />
@@ -69,7 +69,7 @@
     <scroll_list
      left="786" top="418" width="402" height="234"
      follows="right|top|bottom"
-     name="occurrence_list" multi_select="true">
+     name="occurrence_list" multi_select="true" sort_lazily="true">
         <scroll_list.columns name="name" label="Object / link" width="245" />
         <scroll_list.columns name="owner" label="Owner" width="140" />
     </scroll_list>
