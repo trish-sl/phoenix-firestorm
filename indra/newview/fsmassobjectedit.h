@@ -42,6 +42,7 @@ public:
 
 private:
     enum class Operation { ADD, REPLACE, DELETE_ITEMS };
+    enum class PropertyRequestState { NEED, SENT, RECEIVED };
 
     struct ObjectInfo
     {
@@ -56,6 +57,7 @@ private:
         std::string owner_name;
         std::string owner_search_name;
         LLPermissions permissions;
+        PropertyRequestState property_request{ PropertyRequestState::NEED };
         bool received{ false };
         bool group_owned{ false };
     };
@@ -80,6 +82,8 @@ private:
     void removeTargetContents(const LLUUID& target_id);
     void refreshTargetContentsList();
     void refreshOccurrenceList();
+    void requestTargetListRebuild();
+    void requestTargetContentsListRefresh();
     void updateTargetScanProgress();
     void selectAllTargets();
     void clearTargetSelection();
@@ -90,10 +94,13 @@ private:
     void setStatus(const std::string& status);
 
     static void onIdle(void* userdata);
-    void requestObjectProperties(bool select);
+    void requestObjectProperties(const std::vector<U32>& local_ids, bool select);
+    void processPropertyRequestQueue();
     void finishObjectScan();
     void rebuildTargetList();
     void processTargetListRebuild();
+    void processTargetContentsListRebuild();
+    void processOccurrenceListRebuild();
     void avatarNameCallback(const LLUUID& id, const LLAvatarName& av_name);
     void ownerNameCallback(const LLUUID& id, const std::string& name);
     void onObjectListRightClick(LLUICtrl* ctrl, S32 x, S32 y, MASK mask,
@@ -127,11 +134,18 @@ private:
 
     std::map<LLUUID, ObjectInfo> mObjects;
     std::map<LLUUID, boost::signals2::connection> mNameCacheConnections;
+    std::map<LLUUID, uuid_vec_t> mCreatorObjectIDs;
+    std::map<LLUUID, uuid_vec_t> mOwnerObjectIDs;
     std::map<LLUUID, LLPointer<LLViewerInventoryItem>> mSourceItems;
     std::map<std::string, ContentKey> mTargetContentKeys;
     uuid_vec_t mTargetScanRetryIDs;
+    uuid_vec_t mPropertyRequestIDs;
     uuid_vec_t mTargetRebuildIDs;
+    uuid_vec_t mOccurrenceRebuildIDs;
+    std::vector<std::string> mTargetContentsRebuildKeys;
     std::set<LLUUID> mTargetRebuildSelection;
+    std::set<LLUUID> mOccurrenceRebuildSelection;
+    std::set<std::string> mTargetContentsRebuildSelection;
     std::string mTargetNameFilter;
     std::string mTargetCreatorFilter;
     std::string mTargetOwnerFilter;
@@ -141,18 +155,32 @@ private:
     LLUUID mBeaconObjectID;
     LLFrameTimer mScanTimer;
     LLFrameTimer mCreatorRefreshTimer;
+    LLFrameTimer mTargetFilterRefreshTimer;
+    LLFrameTimer mContentFilterRefreshTimer;
     LLFrameTimer mTargetContentRefreshTimer;
     S32 mPendingProperties{ 0 };
+    S32 mPropertyRequestsInFlight{ 0 };
     S32 mTargetScanTotal{ 0 };
     S32 mTargetScanProcessed{ 0 };
     S32 mTargetScanSucceeded{ 0 };
     S32 mTargetScanFailed{ 0 };
     size_t mTargetRebuildIndex{ 0 };
+    size_t mPropertyRequestIndex{ 0 };
+    size_t mTargetContentsRebuildIndex{ 0 };
+    size_t mOccurrenceRebuildIndex{ 0 };
     S32 mTargetRebuildEditableCount{ 0 };
     bool mScanning{ false };
     bool mCreatorRefreshPending{ false };
+    bool mTargetFilterRefreshPending{ false };
+    bool mContentFilterRefreshPending{ false };
     bool mTargetRebuildPending{ false };
     bool mTargetRebuildClearing{ false };
+    bool mTargetContentsRebuildPending{ false };
+    bool mTargetContentsRebuildClearing{ false };
+    bool mTargetContentsRebuildDirty{ false };
+    bool mOccurrenceRebuildPending{ false };
+    bool mOccurrenceRebuildClearing{ false };
+    bool mOccurrenceRebuildDirty{ false };
     bool mBusy{ false };
 };
 
