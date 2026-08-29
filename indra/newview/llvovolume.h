@@ -464,6 +464,8 @@ private:
     friend class LLFace;
     friend class LLViewerFetchedTexture;
 
+    bool        mTextureAnimPrepared;
+    bool        mTextureAnimWasVisible = false;
     bool        mFaceMappingChanged;
     LLFrameTimer mTextureUpdateTimer;
     S32         mLOD;
