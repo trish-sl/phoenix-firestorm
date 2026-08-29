@@ -1820,18 +1820,32 @@ void LLPanelObjectInventory::toggleScript()
     }
     const bool new_running_state = !is_running;
 
-    LLMessageSystem* msg = gMessageSystem;
-    msg->newMessageFast(_PREHASH_SetScriptRunning);
-    msg->nextBlockFast(_PREHASH_AgentData);
-    msg->addUUIDFast(_PREHASH_AgentID, gAgent.getID());
-    msg->addUUIDFast(_PREHASH_SessionID, gAgent.getSessionID());
-    msg->nextBlockFast(_PREHASH_Script);
-    msg->addUUIDFast(_PREHASH_ObjectID, mTaskUUID);
-    msg->addUUIDFast(_PREHASH_ItemID, inventory->getUUID());
-    msg->addBOOLFast(_PREHASH_Running, new_running_state);
-    msg->sendReliable(region->getHost());
+    // The context-menu label and action are based on the current item, but
+    // users expect that action to apply to every selected script in the task.
+    for (LLFolderViewItem* item : mFolders->getSelectionList())
+    {
+        const LLFolderViewModelItemInventory* selected_inventory = item ?
+            dynamic_cast<const LLFolderViewModelItemInventory*>(item->getViewModelItem()) : nullptr;
+        LLInventoryObject* selected_script = selected_inventory ?
+            object->getInventoryObject(selected_inventory->getUUID()) : nullptr;
+        if (!selected_script || selected_script->getType() != LLAssetType::AT_LSL_TEXT)
+        {
+            continue;
+        }
 
-    setScriptRunningState(inventory->getUUID(), new_running_state);
+        LLMessageSystem* msg = gMessageSystem;
+        msg->newMessageFast(_PREHASH_SetScriptRunning);
+        msg->nextBlockFast(_PREHASH_AgentData);
+        msg->addUUIDFast(_PREHASH_AgentID, gAgent.getID());
+        msg->addUUIDFast(_PREHASH_SessionID, gAgent.getSessionID());
+        msg->nextBlockFast(_PREHASH_Script);
+        msg->addUUIDFast(_PREHASH_ObjectID, mTaskUUID);
+        msg->addUUIDFast(_PREHASH_ItemID, selected_script->getUUID());
+        msg->addBOOLFast(_PREHASH_Running, new_running_state);
+        msg->sendReliable(region->getHost());
+
+        setScriptRunningState(selected_script->getUUID(), new_running_state);
+    }
 }
 
 void LLPanelObjectInventory::clearContents()
