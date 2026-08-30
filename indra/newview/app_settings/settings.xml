@@ -11910,7 +11910,7 @@ Change of this parameter will affect the layout of buttons in notification toast
   <key>RenderDelayCreation</key>
   <map>
     <key>Comment</key>
-    <string>Throttle creation of drawables.</string>
+    <string>Throttle creation of drawables. EXPERIMENTAL: much of the viewer assumes objects always have drawables; enabling this has caused null-drawable crashes (getRenderCost, sitOnObject).</string>
     <key>Persist</key>
     <integer>1</integer>
     <key>Type</key>
