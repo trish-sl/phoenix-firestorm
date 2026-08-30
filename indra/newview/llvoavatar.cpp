@@ -12205,6 +12205,7 @@ void LLVOAvatar::updateImpostors()
 {
     LLViewerCamera::sCurCameraID = LLViewerCamera::CAMERA_WORLD;
 
+    LLVOAvatar* avatar_to_update = nullptr;
     for (LLCharacter* character : LLCharacter::sInstances)
     {
         LLVOAvatar* avatar = (LLVOAvatar*)character;
@@ -12213,9 +12214,17 @@ void LLVOAvatar::updateImpostors()
             && avatar->isImpostor()
             && avatar->needsImpostorUpdate())
         {
-            avatar->calcMutedAVColor();
-            gPipeline.generateImpostor(avatar);
+            if (!avatar_to_update || avatar->getPixelArea() > avatar_to_update->getPixelArea())
+            {
+                avatar_to_update = avatar;
+            }
         }
+    }
+
+    if (avatar_to_update)
+    {
+        avatar_to_update->calcMutedAVColor();
+        gPipeline.generateImpostor(avatar_to_update);
     }
 
     LLCharacter::sAllowInstancesChange = true;

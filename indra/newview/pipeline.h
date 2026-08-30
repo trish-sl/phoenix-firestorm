@@ -257,7 +257,7 @@ public:
 
     void updateMoveDampedAsync(LLDrawable* drawablep);
     void updateMoveNormalAsync(LLDrawable* drawablep);
-    void updateMovedList(LLDrawable::drawable_vector_t& move_list);
+    void updateMovedList(LLDrawable::drawable_vector_t& move_list, F32 max_dtime = -1.f);
     void updateMove();
     bool visibleObjectsInFrustum(LLCamera& camera);
     bool getVisibleExtents(LLCamera& camera, LLVector3 &min, LLVector3& max);
@@ -269,7 +269,9 @@ public:
     void createObject(LLViewerObject* vobj);
     void processPartitionQ();
     void updateGeom(F32 max_dtime);
-    void updateGL();
+    // Allow a queue drain at startup, but allow limitting it!
+    void updateGL(F32 max_dtime = 0.f);
+    static F32 getUpdateTimeBudget();
     void rebuildPriorityGroups();
     void rebuildGroups();
     void clearRebuildGroups();
@@ -812,6 +814,15 @@ public:
     LLVector4               mSunClipPlanes;
     LLVector4               mSunOrthoClipPlanes;
     LLVector2               mScreenScale;
+
+    // A complete sun-shadow set may be reused briefly while the camera is
+    // moving quickly. Keep the last observed camera state separate from the
+    // matrices so every reused set remains internally coherent.
+    LLVector3               mLastSunShadowCameraAt;
+    LLVector3               mLastSunShadowCameraOrigin;
+    F32                     mLastSunShadowCameraFOV = 0.f;
+    bool                    mSunShadowHistoryValid = false;
+    U8                      mSunShadowFramesSkipped = 0;
 
     //water distortion texture (refraction)
     LLRenderTarget              mWaterDis;

@@ -294,6 +294,28 @@ LLTrace::BlockTimerStatHandle FTM_RENDER_DEFERRED("Deferred Shading");
 LLTrace::BlockTimerStatHandle FTM_RENDER_UI_HUD("HUD");
 LLTrace::BlockTimerStatHandle FTM_RENDER_UI_3D("3D");
 LLTrace::BlockTimerStatHandle FTM_RENDER_UI_2D("2D");
+static LLTrace::BlockTimerStatHandle FTM_GL_UPDATE_QUEUE("GL Update Queue");
+static LLTrace::BlockTimerStatHandle FTM_PRIORITY_GEOM_REBUILD("Priority Geometry Rebuild");
+static LLTrace::BlockTimerStatHandle FTM_DELAYED_MESH_REBUILD("Delayed Mesh Rebuild");
+static LLTrace::BlockTimerStatHandle FTM_VISIBLE_GEOM_REBUILD("Visible Geometry Rebuild");
+static LLTrace::BlockTimerStatHandle FTM_RETEXTURE_UPDATE("Retextured Drawable Update");
+static LLTrace::BlockTimerStatHandle FTM_MOVED_DRAWABLE_UPDATE("Moved Drawable Update");
+static LLTrace::BlockTimerStatHandle FTM_PARTITION_MOVE_UPDATE("Partition Move Update");
+static LLTrace::CountStatHandle<S32> sGLUpdates("gl_update_queue_processed", "GL updates processed"),
+                                     sDrawableGeomRebuilds("drawable_geometry_rebuilds", "Drawable geometry updates processed"),
+                                     sPriorityGeomRebuilds("priority_geometry_rebuilds", "Priority geometry groups rebuilt"),
+                                     sDelayedMeshRebuilds("delayed_mesh_rebuilds", "Delayed mesh groups rebuilt"),
+                                     sVisibleGeomRebuilds("visible_geometry_rebuilds", "Visible geometry groups rebuilt"),
+                                     sRetexturedDrawables("retextured_drawables", "Retextured drawables processed"),
+                                     sMovedDrawables("moved_drawables", "Moved drawables processed"),
+                                     sPartitionMoves("partition_moves", "Partition moves processed");
+static LLTrace::SampleStatHandle<S32> sGLUpdateBacklog("gl_update_queue_backlog", "GL updates remaining"),
+                                      sDrawableGeomBacklog("drawable_geometry_backlog", "Drawable geometry updates remaining"),
+                                      sPriorityGeomBacklog("priority_geometry_backlog", "Priority geometry groups remaining"),
+                                      sDelayedMeshBacklog("delayed_mesh_backlog", "Delayed mesh groups remaining"),
+                                      sRetexturedBacklog("retextured_drawable_backlog", "Retextured drawables remaining"),
+                                      sMovedDrawableBacklog("moved_drawable_backlog", "Moved drawables remaining"),
+                                      sPartitionMoveBacklog("partition_move_backlog", "Partition moves remaining");
 
 static LLTrace::BlockTimerStatHandle FTM_STATESORT_DRAWABLE("Sort Drawables");
 
@@ -1439,6 +1461,8 @@ void LLPipeline::releaseScreenBuffers()
 void LLPipeline::releaseSunShadowTarget(U32 index)
 {
     llassert(index < 4);
+    mSunShadowHistoryValid = false;
+    mSunShadowFramesSkipped = 0;
     mRT->shadow[index].release();
 }
 
@@ -2134,7 +2158,11 @@ void LLPipeline::removeMutedAVsLights(LLVOAvatar* muted_avatar)
 
 U32 LLPipeline::addObject(LLViewerObject *vobj)
 {
-    if (RenderDelayCreation)
+    // Newly connected neighbor regions can deliver a large object burst.  Keep
+    // the current region synchronous because login and region-entry paths have
+    // ordering dependencies on a drawable being available immediately.
+    if (RenderDelayCreation && gAgent.getRegion() && vobj->getRegion() &&
+        vobj->getRegion() != gAgent.getRegion())
     {
         mCreateQ.push_back(vobj);
     }
@@ -2287,14 +2315,20 @@ void LLPipeline::updateMoveNormalAsync(LLDrawable* drawablep)
     }
 }
 
-void LLPipeline::updateMovedList(LLDrawable::drawable_vector_t& moved_list)
+void LLPipeline::updateMovedList(LLDrawable::drawable_vector_t& moved_list, F32 max_dtime)
 {
     LL_PROFILE_ZONE_SCOPED;
+    LL_RECORD_BLOCK_TIME(FTM_MOVED_DRAWABLE_UPDATE);
+
+    LLTimer update_timer;
+    S32 update_count = 0;
     for (LLDrawable::drawable_vector_t::iterator iter = moved_list.begin();
-         iter != moved_list.end(); )
+         iter != moved_list.end() &&
+         (max_dtime < 0.f || update_count == 0 || update_timer.getElapsedTimeF32() < max_dtime); )
     {
         LLDrawable::drawable_vector_t::iterator curiter = iter++;
         LLDrawable *drawablep = *curiter;
+        ++update_count;
         if (!drawablep)
         {
             iter = moved_list.erase(curiter);
@@ -2326,6 +2360,8 @@ void LLPipeline::updateMovedList(LLDrawable::drawable_vector_t& moved_list)
             iter = moved_list.erase(curiter);
         }
     }
+
+    LLTrace::add(sMovedDrawables, update_count);
 }
 
 void LLPipeline::updateMove()
@@ -2339,18 +2375,34 @@ void LLPipeline::updateMove()
 
     assertInitialized();
 
-    for (LLDrawable::drawable_set_t::iterator iter = mRetexturedList.begin();
-            iter != mRetexturedList.end(); ++iter)
     {
-        LLDrawable* drawablep = *iter;
-        if (drawablep && !drawablep->isDead())
-        {
-            drawablep->updateTexture();
-        }
-    }
-    mRetexturedList.clear();
+        LL_RECORD_BLOCK_TIME(FTM_RETEXTURE_UPDATE);
+        LLTimer update_timer;
+        S32 update_count = 0;
+        const F32 max_dtime = getUpdateTimeBudget();
 
+        for (LLDrawable::drawable_set_t::iterator iter = mRetexturedList.begin();
+             iter != mRetexturedList.end() &&
+             (update_count == 0 || update_timer.getElapsedTimeF32() < max_dtime); )
+        {
+            LLDrawable::drawable_set_t::iterator curiter = iter++;
+            LLDrawable* drawablep = *curiter;
+            if (drawablep && !drawablep->isDead())
+            {
+                drawablep->updateTexture();
+            }
+            mRetexturedList.erase(curiter);
+            ++update_count;
+        }
+
+        LLTrace::add(sRetexturedDrawables, update_count);
+        LLTrace::sample(sRetexturedBacklog, (S32)mRetexturedList.size());
+    }
+
+    // Motion is correctness-critical: EARLY_MOVE must be cleared this frame,
+    // and an active drawable already on this list must not miss newer updates.
     updateMovedList(mMovedList);
+    LLTrace::sample(sMovedDrawableBacklog, (S32)mMovedList.size());
 
     //balance octrees
     for (LLWorld::region_list_t::const_iterator iter = LLWorld::getInstance()->getRegionList().begin();
@@ -2858,26 +2910,6 @@ void LLPipeline::doOcclusion(LLCamera& camera)
         gGL.setColorMask(true, true);
     }
 
-    if (sReflectionProbesEnabled && sUseOcclusion > 1 && !LLPipeline::sShadowRender && !gCubeSnapshot)
-    {
-        gGL.setColorMask(false, false);
-        LLGLDepthTest depth(GL_TRUE, GL_FALSE);
-        LLGLDisable cull(GL_CULL_FACE);
-
-        gOcclusionCubeProgram.bind();
-
-        if (mCubeVB.isNull())
-        { //cube VB will be used for issuing occlusion queries
-            mCubeVB = ll_create_cube_vb(LLVertexBuffer::MAP_VERTEX);
-        }
-        mCubeVB->setBuffer();
-
-        mHeroProbeManager.doOcclusion();
-        gOcclusionCubeProgram.unbind();
-
-        gGL.setColorMask(true, true);
-    }
-
     if (LLPipeline::sUseOcclusion > 1 &&
         (sCull->hasOcclusionGroups() || LLVOCachePartition::sNeedsOcclusionCheck))
     {
@@ -2934,18 +2966,34 @@ bool LLPipeline::updateDrawableGeom(LLDrawable* drawablep)
     return update_complete;
 }
 
-void LLPipeline::updateGL()
+void LLPipeline::updateGL(F32 max_dtime)
 {
     LL_PROFILE_ZONE_SCOPED_CATEGORY_PIPELINE;
+    LL_RECORD_BLOCK_TIME(FTM_GL_UPDATE_QUEUE);
+    LLTimer update_timer;
+    S32 update_count = 0;
     {
-        while (!LLGLUpdate::sGLQ.empty())
+        while (!LLGLUpdate::sGLQ.empty() &&
+               (update_count == 0 || max_dtime <= 0.f || update_timer.getElapsedTimeF32() < max_dtime))
         {
             LLGLUpdate* glu = LLGLUpdate::sGLQ.front();
             glu->updateGL();
             glu->mInQ = false;
             LLGLUpdate::sGLQ.pop_front();
+            ++update_count;
         }
     }
+
+    LLTrace::add(sGLUpdates, update_count);
+    LLTrace::sample(sGLUpdateBacklog, (S32)LLGLUpdate::sGLQ.size());
+}
+
+// The saved value is a frame-rate-independent allowance in milliseconds per
+// second, so 50 spends up to 50 ms of each second on deferred update work.
+F32 LLPipeline::getUpdateTimeBudget()
+{
+    static LLCachedControl<F32> update_time_budget_ms(gSavedSettings, "RenderUpdateTimeBudgetMS", 50.f);
+    return llmax((F32)update_time_budget_ms, 0.f) * 0.001f * gFrameIntervalSeconds.value();
 }
 
 void LLPipeline::clearRebuildGroups()
@@ -3030,31 +3078,39 @@ void LLPipeline::rebuildPriorityGroups()
     LL_PROFILE_ZONE_SCOPED_CATEGORY_PIPELINE;
     LL_PROFILE_GPU_ZONE("rebuildPriorityGroups");
 
+    LL_RECORD_BLOCK_TIME(FTM_PRIORITY_GEOM_REBUILD);
     LLTimer update_timer;
+    S32 rebuild_count = 0;
+    const F32 max_dtime = getUpdateTimeBudget();
     assertInitialized();
 
     gMeshRepo.notifyLoadedMeshes();
 
     mGroupQ1Locked = true;
     // Iterate through all drawables on the priority build queue,
-    for (LLSpatialGroup::sg_vector_t::iterator iter = mGroupQ1.begin();
-         iter != mGroupQ1.end(); ++iter)
+    LLSpatialGroup::sg_vector_t::iterator iter = mGroupQ1.begin();
+    for (; iter != mGroupQ1.end() &&
+           (rebuild_count == 0 || update_timer.getElapsedTimeF32() < max_dtime); ++iter)
     {
         LLSpatialGroup* group = *iter;
         group->rebuildGeom();
         group->clearState(LLSpatialGroup::IN_BUILD_Q1);
+        ++rebuild_count;
     }
 
-    mGroupSaveQ1 = mGroupQ1;
-    mGroupQ1.clear();
+    mGroupSaveQ1.assign(mGroupQ1.begin(), iter);
+    mGroupQ1.erase(mGroupQ1.begin(), iter);
     mGroupQ1Locked = false;
 
+    LLTrace::add(sPriorityGeomRebuilds, rebuild_count);
+    LLTrace::sample(sPriorityGeomBacklog, (S32)mGroupQ1.size());
 }
 
 void LLPipeline::updateGeom(F32 max_dtime)
 {
     LLTimer update_timer;
     LLPointer<LLDrawable> drawablep;
+    S32 rebuild_count = 0;
 
     LL_RECORD_BLOCK_TIME(FTM_GEO_UPDATE);
     if (gCubeSnapshot)
@@ -3070,7 +3126,8 @@ void LLPipeline::updateGeom(F32 max_dtime)
 
     // Iterate through all drawables on the priority build queue,
     for (LLDrawable::drawable_list_t::iterator iter = mBuildQ1.begin();
-         iter != mBuildQ1.end();)
+         iter != mBuildQ1.end() &&
+         (rebuild_count == 0 || update_timer.getElapsedTimeF32() < max_dtime);)
     {
         LLDrawable::drawable_list_t::iterator curiter = iter++;
         LLDrawable* drawablep = *curiter;
@@ -3087,6 +3144,7 @@ void LLPipeline::updateGeom(F32 max_dtime)
                 drawablep->clearState(LLDrawable::IN_REBUILD_Q);
                 mBuildQ1.erase(curiter);
             }
+            ++rebuild_count;
         }
         else
         {
@@ -3094,6 +3152,12 @@ void LLPipeline::updateGeom(F32 max_dtime)
         }
     }
 
+    LLTrace::add(sDrawableGeomRebuilds, rebuild_count);
+    LLTrace::sample(sDrawableGeomBacklog, (S32)mBuildQ1.size());
+
+    // Keep spatial bridges in sync with their moving drawables.  Deferring
+    // this leaves their partitions at a stale transform and can make objects
+    // appear frozen or cull incorrectly.
     updateMovedList(mMovedBridge);
 }
 
@@ -3280,10 +3344,17 @@ void LLPipeline::markPartitionMove(LLDrawable* drawable)
 void LLPipeline::processPartitionQ()
 {
     LL_PROFILE_ZONE_SCOPED_CATEGORY_PIPELINE;
+    LL_RECORD_BLOCK_TIME(FTM_PARTITION_MOVE_UPDATE);
+
+    LLTimer update_timer;
+    S32 update_count = 0;
+    const F32 max_dtime = getUpdateTimeBudget();
 
     // <FS:ND> A vector is much better suited for the use case of mPartitionQ
     // for (LLDrawable::drawable_list_t::iterator iter = mPartitionQ.begin(); iter != mPartitionQ.end(); ++iter)
-    for (LLDrawable::drawable_vector_t::iterator iter = mPartitionQ.begin(); iter != mPartitionQ.end(); ++iter)
+    LLDrawable::drawable_vector_t::iterator iter = mPartitionQ.begin();
+    for (; iter != mPartitionQ.end() &&
+           (update_count == 0 || update_timer.getElapsedTimeF32() < max_dtime); ++iter)
     // </FS:ND>
     {
         LLDrawable* drawable = *iter;
@@ -3293,9 +3364,12 @@ void LLPipeline::processPartitionQ()
             drawable->movePartition();
         }
         drawable->clearState(LLDrawable::PARTITION_MOVE);
+        ++update_count;
     }
 
-    mPartitionQ.clear();
+    mPartitionQ.erase(mPartitionQ.begin(), iter);
+    LLTrace::add(sPartitionMoves, update_count);
+    LLTrace::sample(sPartitionMoveBacklog, (S32)mPartitionQ.size());
 }
 
 void LLPipeline::markMeshDirty(LLSpatialGroup* group)
@@ -3427,28 +3501,33 @@ void LLPipeline::stateSort(LLCamera& camera, LLCullResult &result)
     }
     {
         LL_PROFILE_ZONE_NAMED_CATEGORY_PIPELINE("StateSort: visible groups");
-    for (LLCullResult::sg_iterator iter = sCull->beginVisibleGroups(); iter != sCull->endVisibleGroups(); ++iter)
-    {
-        LLSpatialGroup* group = *iter;
-        if (group->isDead())
+        // stateSort() can discover child bridge groups.  Read the group by
+        // index each time so mVisibleGroups may grow and reallocate safely.
+        for (U32 visible_group_index = 0;
+             visible_group_index < sCull->getVisibleGroupsSize();
+             ++visible_group_index)
         {
-            continue;
-        }
-        group->checkOcclusion();
-        if (sUseOcclusion > 1 && group->isOcclusionState(LLSpatialGroup::OCCLUDED))
-        {
-            markOccluder(group);
-        }
-        else
-        {
-            group->setVisible();
-            stateSort(group, camera);
+            LLSpatialGroup* group = sCull->getVisibleGroup(visible_group_index);
+            if (group->isDead())
+            {
+                continue;
+            }
+            group->checkOcclusion();
+            if (sUseOcclusion > 1 && group->isOcclusionState(LLSpatialGroup::OCCLUDED))
+            {
+                markOccluder(group);
+            }
+            else
+            {
+                group->setVisible();
+                stateSort(group, camera);
 
-            { //rebuild mesh as soon as we know it's visible
-                group->rebuildMesh();
+                { //rebuild mesh as soon as we know it's visible
+                    group->rebuildMesh();
+                }
             }
         }
-    }}
+    }
 
     {
         LL_PROFILE_ZONE_NAMED_CATEGORY_DRAWABLE("stateSort"); // LL_RECORD_BLOCK_TIME(FTM_STATESORT_DRAWABLE);
@@ -3812,17 +3891,23 @@ void LLPipeline::postSort(LLCamera &camera)
     if (!gCubeSnapshot)
     {
         // rebuild drawable geometry
-        for (LLCullResult::sg_iterator i = sCull->beginDrawableGroups(); i != sCull->endDrawableGroups(); ++i)
         {
-            LLSpatialGroup *group = *i;
-            if (group->isDead())
+            LL_RECORD_BLOCK_TIME(FTM_VISIBLE_GEOM_REBUILD);
+            S32 rebuild_count = 0;
+            for (LLCullResult::sg_iterator i = sCull->beginDrawableGroups(); i != sCull->endDrawableGroups(); ++i)
             {
-                continue;
+                LLSpatialGroup *group = *i;
+                if (group->isDead())
+                {
+                    continue;
+                }
+                if (!sUseOcclusion || !group->isOcclusionState(LLSpatialGroup::OCCLUDED))
+                {
+                    group->rebuildGeom();
+                    ++rebuild_count;
+                }
             }
-            if (!sUseOcclusion || !group->isOcclusionState(LLSpatialGroup::OCCLUDED))
-            {
-                group->rebuildGeom();
-            }
+            LLTrace::add(sVisibleGeomRebuilds, rebuild_count);
         }
         LL_PUSH_CALLSTACKS();
         // rebuild groups
@@ -3933,14 +4018,25 @@ void LLPipeline::postSort(LLCamera &camera)
 
     {
         LL_PROFILE_ZONE_NAMED_CATEGORY_PIPELINE("rebuild delayed upd groups");
-    // pack vertex buffers for groups that chose to delay their updates
-    {
-        LL_PROFILE_GPU_ZONE("rebuildMesh");
-        for (LLSpatialGroup::sg_vector_t::iterator iter = mMeshDirtyGroup.begin(); iter != mMeshDirtyGroup.end(); ++iter)
+        LL_RECORD_BLOCK_TIME(FTM_DELAYED_MESH_REBUILD);
+        LLTimer update_timer;
+        S32 rebuild_count = 0;
+        const F32 max_dtime = getUpdateTimeBudget();
+        // pack vertex buffers for groups that chose to delay their updates
         {
-            (*iter)->rebuildMesh();
+            LL_PROFILE_GPU_ZONE("rebuildMesh");
+            LLSpatialGroup::sg_vector_t::iterator iter = mMeshDirtyGroup.begin();
+            for (; iter != mMeshDirtyGroup.end() &&
+                   (rebuild_count == 0 || update_timer.getElapsedTimeF32() < max_dtime); ++iter)
+            {
+                (*iter)->rebuildMesh();
+                ++rebuild_count;
+            }
+            mMeshDirtyGroup.erase(mMeshDirtyGroup.begin(), iter);
         }
-    }
+
+        LLTrace::add(sDelayedMeshRebuilds, rebuild_count);
+        LLTrace::sample(sDelayedMeshBacklog, (S32)mMeshDirtyGroup.size());
     }
 
     /*if (use_transform_feedback)
@@ -3948,7 +4044,6 @@ void LLPipeline::postSort(LLCamera &camera)
         glEndQuery(GL_TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN);
     }*/
 
-    mMeshDirtyGroup.clear();
 
     {
         LL_PROFILE_ZONE_NAMED_CATEGORY_PIPELINE("sort alpha groups");
@@ -10970,6 +11065,51 @@ void LLPipeline::generateSunShadow(LLCamera& camera)
         return;
     }
 
+    // Sun-shadow generation performs four complete cull-and-render passes.
+    // During rapid camera movement, keep the last complete set for one frame
+    // instead of introducing a large frame-time spike.  Do not use this for probe
+    // snapshots or camera-offset rendering, which require their own matrices.
+    static LLCachedControl<bool> adaptive_shadow_updates(
+        gSavedSettings, "RenderAdaptiveShadowUpdates", true);
+    static LLCachedControl<F32> adaptive_shadow_pan_degrees(
+        gSavedSettings, "RenderAdaptiveShadowPanDegrees", 2.f);
+    static LLCachedControl<F32> adaptive_shadow_move_meters(
+        gSavedSettings, "RenderAdaptiveShadowMoveMeters", 0.5f);
+    static LLCachedControl<F32> adaptive_shadow_zoom_degrees(
+        gSavedSettings, "RenderAdaptiveShadowZoomDegrees", 1.f);
+    static LLCachedControl<U32> adaptive_shadow_max_skips(
+        gSavedSettings, "RenderAdaptiveShadowMaxSkippedFrames", 1);
+
+    const LLVector3 camera_at = camera.getAtAxis();
+    const LLVector3 camera_origin = camera.getOrigin();
+    const F32 camera_fov = camera.getView();
+    const F32 pan_degrees = llclamp((F32)adaptive_shadow_pan_degrees, 0.f, 180.f);
+    const F32 move_meters = llmax((F32)adaptive_shadow_move_meters, 0.f);
+    const F32 zoom_degrees = llmax((F32)adaptive_shadow_zoom_degrees, 0.f);
+    const bool rapid_pan = mSunShadowHistoryValid &&
+                           pan_degrees > 0.f &&
+                           camera_at * mLastSunShadowCameraAt < cosf(pan_degrees * DEG_TO_RAD);
+    const bool rapid_move = mSunShadowHistoryValid &&
+                            move_meters > 0.f &&
+                            (camera_origin - mLastSunShadowCameraOrigin).lengthSquared() > move_meters * move_meters;
+    const bool rapid_zoom = mSunShadowHistoryValid &&
+                            zoom_degrees > 0.f &&
+                            fabsf(camera_fov - mLastSunShadowCameraFOV) > zoom_degrees * DEG_TO_RAD;
+    const bool rapid_camera_motion = rapid_pan || rapid_move || rapid_zoom;
+
+    if (adaptive_shadow_updates &&
+        !gCubeSnapshot &&
+        !CameraOffset &&
+        rapid_camera_motion &&
+        mSunShadowFramesSkipped < adaptive_shadow_max_skips)
+    {
+        mLastSunShadowCameraAt = camera_at;
+        mLastSunShadowCameraOrigin = camera_origin;
+        mLastSunShadowCameraFOV = camera_fov;
+        ++mSunShadowFramesSkipped;
+        return;
+    }
+
     LL_PROFILE_ZONE_SCOPED_CATEGORY_PIPELINE; //LL_RECORD_BLOCK_TIME(FTM_GEN_SUN_SHADOW);
     LL_PROFILE_GPU_ZONE("generateSunShadow");
 
@@ -11114,6 +11254,9 @@ void LLPipeline::generateSunShadow(LLCamera& camera)
 
         if (fp.empty())
         {
+            mSunShadowHistoryValid = false;
+            mSunShadowFramesSkipped = 0;
+
             if (!hasRenderDebugMask(RENDER_DEBUG_SHADOW_FRUSTA) && !gCubeSnapshot)
             {
                 mShadowCamera[0] = main_camera;
@@ -11741,6 +11884,15 @@ void LLPipeline::generateSunShadow(LLCamera& camera)
     set_last_projection(last_projection);
 
     popRenderTypeMask();
+
+    if (!gCubeSnapshot && mSunDiffuse != LLColor4::black)
+    {
+        mLastSunShadowCameraAt = camera_at;
+        mLastSunShadowCameraOrigin = camera_origin;
+        mLastSunShadowCameraFOV = camera_fov;
+        mSunShadowHistoryValid = true;
+        mSunShadowFramesSkipped = 0;
+    }
 
     if (!skip_avatar_update)
     {
@@ -12580,6 +12732,9 @@ void LLPipeline::restoreHiddenObject( const LLUUID& id )
 
 void LLPipeline::skipRenderingShadows()
 {
+    mSunShadowHistoryValid = false;
+    mSunShadowFramesSkipped = 0;
+
     LLGLDepthTest depth(GL_TRUE);
 
     for (S32 j = 0; j < 4; j++)
