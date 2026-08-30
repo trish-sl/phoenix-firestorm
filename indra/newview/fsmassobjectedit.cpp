@@ -330,6 +330,7 @@ FSMassObjectEdit::FSMassObjectEdit(const LLSD& key) : LLFloater(key)
 
 FSMassObjectEdit::~FSMassObjectEdit()
 {
+    gAgent.setFSMassObjectEditActive(false);
     gIdleCallbacks.deleteFunction(onIdle, this);
     for (const auto& connection : mNameCacheConnections)
     {
@@ -424,7 +425,27 @@ void FSMassObjectEdit::draw()
 
 void FSMassObjectEdit::onOpen(const LLSD&)
 {
-    refreshObjects();
+    gAgent.setFSMassObjectEditActive(true);
+    gAgent.changeInterestListMode(IL_MODE_360);
+
+    // The InterestList capability does not report completion. Give the sim a
+    // short head start before taking the first complete-region snapshot.
+    mInterestListTimer.reset();
+    mWaitingForInterestList = true;
+    gIdleCallbacks.addFunction(onIdle, this);
+    setStatus("Requesting all region objects...");
+    updateButtons();
+}
+
+void FSMassObjectEdit::onClose(bool app_quitting)
+{
+    mWaitingForInterestList = false;
+    gAgent.setFSMassObjectEditActive(false);
+    if (!app_quitting)
+    {
+        gAgent.changeInterestListMode(IL_MODE_DEFAULT);
+    }
+    LLFloater::onClose(app_quitting);
 }
 
 void FSMassObjectEdit::setStatus(const std::string& status)
@@ -441,7 +462,7 @@ void FSMassObjectEdit::updateButtons()
     const bool targets = !operation_targets.empty();
     const bool source = mSourceList && !mSourceList->getAllSelected().empty();
     const bool contents = mTargetContentsList && !mTargetContentsList->getAllSelected().empty();
-    const bool ready = !mBusy && !mScanning && !mTargetRebuildPending &&
+    const bool ready = !mBusy && !mScanning && !mWaitingForInterestList && !mTargetRebuildPending &&
         !mTargetFilterRefreshPending && !mContentFilterRefreshPending &&
         !mTargetContentsRebuildPending && !mOccurrenceRebuildPending;
     getChild<LLButton>("refresh_btn")->setEnabled(ready);
@@ -470,7 +491,7 @@ void FSMassObjectEdit::updateButtons()
 
 void FSMassObjectEdit::refreshObjects()
 {
-    if (mBusy || mScanning || mTargetRebuildPending)
+    if (mBusy || mScanning || mWaitingForInterestList || mTargetRebuildPending)
     {
         return;
     }
@@ -677,6 +698,12 @@ void FSMassObjectEdit::onIdle(void* userdata)
     if (!self)
     {
         return;
+    }
+    if (self->mWaitingForInterestList &&
+        self->mInterestListTimer.getElapsedTimeF32() >= 2.0f)
+    {
+        self->mWaitingForInterestList = false;
+        self->refreshObjects();
     }
     if (self->mScanning)
     {
