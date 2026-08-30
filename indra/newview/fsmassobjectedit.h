@@ -37,6 +37,7 @@ public:
     bool postBuild() override;
     void draw() override;
     void onOpen(const LLSD& key) override;
+    void onClose(bool app_quitting) override;
     void processObjectProperties(LLMessageSystem* msg);
     bool isScanning() const { return mScanning; }
 
@@ -158,6 +159,7 @@ private:
     LLFrameTimer mTargetFilterRefreshTimer;
     LLFrameTimer mContentFilterRefreshTimer;
     LLFrameTimer mTargetContentRefreshTimer;
+    LLFrameTimer mInterestListTimer;
     S32 mPendingProperties{ 0 };
     S32 mPropertyRequestsInFlight{ 0 };
     S32 mTargetScanTotal{ 0 };
@@ -182,6 +184,7 @@ private:
     bool mOccurrenceRebuildClearing{ false };
     bool mOccurrenceRebuildDirty{ false };
     bool mBusy{ false };
+    bool mWaitingForInterestList{ false };
 };
 
 #endif
