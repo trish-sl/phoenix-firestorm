@@ -34,6 +34,21 @@ mat4 getSkinnedTransform()
     int i = int(floor(weight.x));
     float x = fract(weight.x);
 
+    // The palette is laid out as three 15-entry planes.  The final joint
+    // cannot be interpolated with a following entry, since that would read
+    // past matrixPalette[44].  Bad or out-of-range weights must therefore
+    // saturate at the final valid joint instead of reaching matrixPalette[45].
+    if (i < 0)
+    {
+        i = 0;
+        x = 0.0;
+    }
+    else if (i >= 14)
+    {
+        i = 13;
+        x = 1.0;
+    }
+
     ret[0] = mix(matrixPalette[i+0], matrixPalette[i+1], x);
     ret[1] = mix(matrixPalette[i+15],matrixPalette[i+16], x);
     ret[2] = mix(matrixPalette[i+30],matrixPalette[i+31], x);

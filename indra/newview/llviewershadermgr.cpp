@@ -551,6 +551,10 @@ void LLViewerShaderMgr::setShaders()
         {
             HBXXH128 hash_obj;
             hash_obj.update(LLVersionInfo::instance().getVersion());
+            // Program binaries are driver-specific.  Do not reuse binaries
+            // after an OpenGL driver update even when the viewer version is
+            // unchanged.
+            hash_obj.update(gGLManager.mDriverVersionVendorString);
             current_cache_version = hash_obj.digest();
 
             old_cache_version = LLUUID(gSavedSettings.getString("RenderShaderCacheVersion"));
@@ -3604,4 +3608,3 @@ LLViewerShaderMgr::shader_iter LLViewerShaderMgr::endShaders() const
 {
     return mShaderList.end();
 }
-
