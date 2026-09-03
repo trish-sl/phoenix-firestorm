@@ -1012,6 +1012,19 @@ void LLShaderMgr::initShaderCache(bool enabled, const LLUUID& old_cache_version,
     LL_INFOS("ShaderMgr") << "Initializing shader cache" << LL_ENDL;
 
     mShaderCacheEnabled = gGLManager.mGLVersion >= 4.09 && enabled;
+    if (mShaderCacheEnabled)
+    {
+        GLint num_binary_formats = 0;
+        glGetIntegerv(GL_NUM_PROGRAM_BINARY_FORMATS, &num_binary_formats);
+        const bool have_entry_points = glProgramParameteri && glGetProgramBinary && glProgramBinary;
+        if (!have_entry_points || num_binary_formats <= 0)
+        {
+            LL_WARNS("ShaderMgr") << "Disabling shader binary cache: "
+                                   << (have_entry_points ? "driver reports " : "required entry point missing; driver reports ")
+                                   << num_binary_formats << " program binary format(s)" << LL_ENDL;
+            mShaderCacheEnabled = false;
+        }
+    }
 
     if(!mShaderCacheEnabled || mShaderCacheVersion.notNull())
         return;
@@ -1141,6 +1154,11 @@ bool LLShaderMgr::loadCachedProgramBinary(LLGLSLShader* shader)
 {
     if (!mShaderCacheEnabled) return false;
 
+    if (!shader || shader->mProgramObject == 0)
+    {
+        return false;
+    }
+
     glProgramParameteri(shader->mProgramObject, GL_PROGRAM_BINARY_RETRIEVABLE_HINT, GL_TRUE);
 
     auto binary_iter = mShaderBinaryCache.find(shader->mShaderHash);
@@ -1187,6 +1205,11 @@ bool LLShaderMgr::loadCachedProgramBinary(LLGLSLShader* shader)
 bool LLShaderMgr::saveCachedProgramBinary(LLGLSLShader* shader)
 {
     if (!mShaderCacheEnabled) return true;
+
+    if (!shader || shader->mProgramObject == 0)
+    {
+        return false;
+    }
 
     ProgramBinaryData binary_info = ProgramBinaryData();
     glGetProgramiv(shader->mProgramObject, GL_PROGRAM_BINARY_LENGTH, &binary_info.mBinaryLength);

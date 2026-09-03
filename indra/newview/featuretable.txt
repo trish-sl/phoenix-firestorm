@@ -420,8 +420,10 @@ RenderDownScaleMethod       1   0
 
 list AMD
 // AMD Windows drivers have historically been sensitive to shared OpenGL
-// contexts during texture upload.  Keep this disabled, matching Linux AMD.
+// contexts during texture and media upload. Keep both worker paths disabled
+// so the main context owns all AMD/Windows uploads.
 RenderGLMultiThreadedTextures       1   0
+RenderGLMultiThreadedMedia           1   0
 
 list GL3
 RenderFSAAType  			0	0
