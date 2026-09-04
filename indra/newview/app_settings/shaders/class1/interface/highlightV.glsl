@@ -32,7 +32,8 @@ in vec2 texcoord0;
 out vec2 vary_texcoord0;
 
 #ifdef HAS_SKIN
-mat4 getObjectSkinnedTransform();
+mat3x4 getSkinBlend();
+vec4 skinTransformH(mat3x4 b, vec3 pos, mat4 m);
 uniform mat4 projection_matrix;
 uniform mat4 modelview_matrix;
 #endif
@@ -41,13 +42,10 @@ void main()
 {
     //transform vertex
 #ifdef HAS_SKIN
-    mat4 mat = getObjectSkinnedTransform();
-    mat = modelview_matrix * mat;
-    vec4 pos = mat * vec4(position.xyz,1.0);
+    vec4 pos = skinTransformH(getSkinBlend(), position.xyz, modelview_matrix);
     gl_Position = projection_matrix * pos;
 #else
     gl_Position = modelview_projection_matrix * vec4(position.xyz, 1.0);
 #endif
     vary_texcoord0 = (texture_matrix0 * vec4(texcoord0,0,1)).xy;
 }
-

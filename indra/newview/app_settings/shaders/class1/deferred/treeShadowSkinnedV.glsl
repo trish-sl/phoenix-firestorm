@@ -32,16 +32,13 @@ in vec2 texcoord0;
 
 out vec2 vary_texcoord0;
 
-mat4 getObjectSkinnedTransform();
+mat3x4 getSkinBlend();
+vec4 skinTransformH(mat3x4 b, vec3 pos, mat4 m);
 
 void main()
 {
     //transform vertex
-    mat4 mat = getObjectSkinnedTransform();
-
-    mat = modelview_matrix * mat;
-
-    vec4 pos = mat * vec4(position.xyz, 1.0);
+    vec4 pos = skinTransformH(getSkinBlend(), position.xyz, modelview_matrix);
     gl_Position = projection_matrix * pos;
 
     vary_texcoord0 = (texture_matrix0 * vec4(texcoord0,0,1)).xy;

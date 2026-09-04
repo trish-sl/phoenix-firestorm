@@ -232,7 +232,8 @@ public:
 
         AVATAR_MATRIX,                      //  "matrixPalette"
         AVATAR_TRANSLATION,                 //  "translationPalette"
-        AVATAR_MATRIX_SIZE,                 //  "matrixPaletteSize" (valid uploaded rigged-object entries)
+        AVATAR_MATRIX_SIZE,                 //  "matrixPaletteSize"
+        SKIN_ORIGIN,                        //  "skin_origin"
 
         // <FS:CR> Import Vignette from Exodus
         RENDER_VIGNETTE,                    //  "vignette"

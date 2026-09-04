@@ -1478,6 +1478,7 @@ void LLShaderMgr::initAttribsAndUniforms()
     mReservedUniforms.push_back("matrixPalette");
     mReservedUniforms.push_back("translationPalette");
     mReservedUniforms.push_back("matrixPaletteSize");
+    mReservedUniforms.push_back("skin_origin");
 
 // <FS:CR> Import Vignette from Exodus
     mReservedUniforms.push_back("vignette");

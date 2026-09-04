@@ -11273,11 +11273,23 @@ const LLVOAvatar::MatrixPaletteCache& LLVOAvatar::updateSkinInfoMatrixPalette(co
 
         //build matrix palette
         U32 count = LLSkinningUtil::getMeshJointCount(skin);
+        if (count == 0)
+        {
+            entry.mMatrixPalette.clear();
+            entry.mGLMp.clear();
+            entry.mSkinOrigin.clear();
+            return entry;
+        }
         entry.mMatrixPalette.resize(count);
         LLSkinningUtil::initSkinningMatrixPalette(&(entry.mMatrixPalette[0]), count, skin, this);
 
         const LLMatrix4a* mat = &(entry.mMatrixPalette[0]);
 
+        // Joint matrices contain agent-space translations.  Rebase those values
+        // around the avatar root so all per-vertex skinning operands stay small;
+        // the origin is uploaded separately and added back after model-view
+        // transformation in skinTransformH().
+        entry.mSkinOrigin = mRoot ? mRoot->getWorldPosition() : getPositionAgent();
         entry.mGLMp.resize(count * 12);
 
         F32* mp = &(entry.mGLMp[0]);
@@ -11291,17 +11303,17 @@ const LLVOAvatar::MatrixPaletteCache& LLVOAvatar::updateSkinInfoMatrixPalette(co
             mp[idx + 0] = m[0];
             mp[idx + 1] = m[1];
             mp[idx + 2] = m[2];
-            mp[idx + 3] = m[12];
+            mp[idx + 3] = m[12] - entry.mSkinOrigin.mV[VX];
 
             mp[idx + 4] = m[4];
             mp[idx + 5] = m[5];
             mp[idx + 6] = m[6];
-            mp[idx + 7] = m[13];
+            mp[idx + 7] = m[13] - entry.mSkinOrigin.mV[VY];
 
             mp[idx + 8] = m[8];
             mp[idx + 9] = m[9];
             mp[idx + 10] = m[10];
-            mp[idx + 11] = m[14];
+            mp[idx + 11] = m[14] - entry.mSkinOrigin.mV[VZ];
         }
     }
 

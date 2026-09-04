@@ -25,12 +25,12 @@
 in vec4 weight4;
 
 uniform mat3x4 matrixPalette[MAX_JOINTS_PER_MESH_OBJECT];
-// Number of valid entries uploaded for this mesh.  Keeping this separate from
-// MAX_JOINTS_PER_MESH_OBJECT prevents malformed/partially loaded rig weights
-// from reading stale uniform-array entries beyond the uploaded palette.
+// Number of valid entries uploaded for this mesh.  This prevents malformed or
+// partially loaded rig weights from reading stale uniform-array entries.
 uniform int matrixPaletteSize;
+uniform vec3 skin_origin;
 
-mat4 getObjectSkinnedTransform()
+mat3x4 getSkinBlend()
 {
     int i;
 
@@ -42,16 +42,15 @@ mat4 getObjectSkinnedTransform()
     index = max(index, vec4( 0.0));
 
     float weight_sum = w.x + w.y + w.z + w.w;
-    if (weight_sum > 0.0)
+    if (weight_sum <= 0.00001)
     {
-        w *= 1.0 / weight_sum;
-    }
-    else
-    {
-        // Broken or partially decoded weights must not turn the skin matrix
-        // into NaNs.  Keep the vertex attached to the first valid joint.
+        // Broken/partially loaded weights must not turn the entire vertex into
+        // NaNs.  Keep it attached to the root joint until valid weights arrive.
         w = vec4(1.0, 0.0, 0.0, 0.0);
+        index = vec4(0.0);
+        weight_sum = 1.0;
     }
+    w *= 1.0 / weight_sum;
 
     int i1 = int(index.x);
     int i2 = int(index.y);
@@ -68,12 +67,10 @@ mat4 getObjectSkinnedTransform()
          trans += vec3(matrixPalette[i3][0].w,matrixPalette[i3][1].w,matrixPalette[i3][2].w)*w.z;
          trans += vec3(matrixPalette[i4][0].w,matrixPalette[i4][1].w,matrixPalette[i4][2].w)*w.w;
 
-    mat4 ret;
-
-    ret[0] = vec4(mat[0], 0);
-    ret[1] = vec4(mat[1], 0);
-    ret[2] = vec4(mat[2], 0);
-    ret[3] = vec4(trans, 1.0);
+    mat3x4 ret;
+    ret[0] = vec4(mat[0], trans.x);
+    ret[1] = vec4(mat[1], trans.y);
+    ret[2] = vec4(mat[2], trans.z);
 
 #ifdef IS_AMD_CARD
    // If it's AMD make sure the GLSL compiler sees the arrays referenced once by static index. Otherwise it seems to optimise the storage awawy which leads to unfun crashes and artifacts.
@@ -81,5 +78,34 @@ mat4 getObjectSkinnedTransform()
    mat3x4 dummy2 = matrixPalette[MAX_JOINTS_PER_MESH_OBJECT-1];
 #endif
 
+    return ret;
+}
+
+vec3 skinDirection(mat3x4 skin, vec3 direction)
+{
+    return mat3(skin) * direction;
+}
+
+vec3 skinPoint(mat3x4 skin, vec3 position)
+{
+    return mat3(skin) * position + vec3(skin[0].w, skin[1].w, skin[2].w);
+}
+
+vec4 skinTransformH(mat3x4 skin, vec3 position, mat4 transform)
+{
+    return transform * vec4(skinPoint(skin, position), 0.0) + transform * vec4(skin_origin, 1.0);
+}
+
+// Compatibility for less frequently used rigged permutations that have not yet
+// been converted to skinTransformH().  New consumers should use the local path
+// above; this keeps older shader variants source-compatible while they are phased in.
+mat4 getObjectSkinnedTransform()
+{
+    mat3x4 skin = getSkinBlend();
+    mat4 ret;
+    ret[0] = vec4(skin[0].xyz, 0.0);
+    ret[1] = vec4(skin[1].xyz, 0.0);
+    ret[2] = vec4(skin[2].xyz, 0.0);
+    ret[3] = vec4(skinPoint(skin, vec3(0.0)) + skin_origin, 1.0);
     return ret;
 }
