@@ -56,8 +56,8 @@ void main()
     vary_position = pos;
     gl_Position = projection_matrix*vec4(pos, 1.0);
 
-    vec3 n = normalize((mat * vec4(normal.xyz+position.xyz, 1.0)).xyz-pos.xyz);
-    vec3 t = normalize((mat * vec4(tangent.xyz+position.xyz, 1.0)).xyz-pos.xyz);
+    vec3 n = normalize(mat3(mat) * normal.xyz);
+    vec3 t = normalize(mat3(mat) * tangent.xyz);
 #else
     vary_position = (modelview_matrix*vec4(position.xyz, 1.0)).xyz;
     gl_Position = modelview_projection_matrix * vec4(position.xyz, 1.0);

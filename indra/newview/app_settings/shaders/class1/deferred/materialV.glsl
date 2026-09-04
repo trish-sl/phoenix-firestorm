@@ -99,9 +99,9 @@ void main()
 #endif
 
 #ifdef HAS_SKIN
-    vec3 n = normalize((mat*vec4(normal.xyz+position.xyz,1.0)).xyz-pos.xyz);
+    vec3 n = normalize(mat3(mat) * normal.xyz);
 #ifdef HAS_NORMAL_MAP
-    vec3 t = normalize((mat*vec4(tangent.xyz+position.xyz,1.0)).xyz-pos.xyz);
+    vec3 t = normalize(mat3(mat) * tangent.xyz);
 
     vary_tangent = t;
     vary_sign = tangent.w;
@@ -128,4 +128,3 @@ void main()
     vary_position = (modelview_matrix*vec4(position.xyz, 1.0)).xyz;
 #endif
 }
-

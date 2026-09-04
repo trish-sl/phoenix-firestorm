@@ -79,8 +79,7 @@ void main()
 
     pos = trans * vec4(position.xyz, 1.0);
 
-    norm = position.xyz + normal.xyz;
-    norm = normalize((trans * vec4(norm, 1.0)).xyz - pos.xyz);
+    norm = normalize(mat3(trans) * normal.xyz);
     vec4 frag_pos = projection_matrix * pos;
     gl_Position = frag_pos;
 #else
@@ -136,4 +135,3 @@ void main()
 #endif
 
 }
-

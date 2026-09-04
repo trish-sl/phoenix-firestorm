@@ -68,7 +68,7 @@ void main()
     mat = modelview_matrix * mat;
     vec4 pos = mat * vec4(position.xyz, 1.0);
     gl_Position = projection_matrix * pos;
-    norm = normalize((mat*vec4(normal.xyz+position.xyz,1.0)).xyz-pos.xyz);
+    norm = normalize(mat3(mat) * normal.xyz);
 #else
     gl_Position = modelview_projection_matrix * vec4(position.xyz, 1.0);
     norm = normalize(normal_matrix * normal);

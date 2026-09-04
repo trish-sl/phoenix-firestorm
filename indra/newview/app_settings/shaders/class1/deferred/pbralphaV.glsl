@@ -94,8 +94,8 @@ void main()
     emissive_texcoord = texture_transform(texcoord0, texture_emissive_transform, texture_matrix0);
 
 #ifdef HAS_SKIN
-    vec3 n = (mat*vec4(normal.xyz+position.xyz,1.0)).xyz-pos.xyz;
-    vec3 t = (mat*vec4(tangent.xyz+position.xyz,1.0)).xyz-pos.xyz;
+    vec3 n = mat3(mat) * normal.xyz;
+    vec3 t = mat3(mat) * tangent.xyz;
 #else //HAS_SKIN
     vec3 n = normal_matrix * normal;
     vec3 t = normal_matrix * tangent.xyz;

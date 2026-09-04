@@ -47,10 +47,8 @@ uniform mat4 modelview_matrix;
 // world_pos = mat * vec4(position.xyz, 1.0)
 vec4 get_screen_normal(vec3 position, vec4 world_pos, vec3 normal, mat4 mat)
 {
-    vec4 world_norm = mat * vec4((position + normal), 1.0);
-    world_norm.xyz -= world_pos.xyz;
-    world_norm.xyz = debug_normal_draw_length * normalize(world_norm.xyz);
-    world_norm.xyz += world_pos.xyz;
+    vec4 world_norm = world_pos;
+    world_norm.xyz += debug_normal_draw_length * normalize(mat3(mat) * normal);
     return projection_matrix * world_norm;
 }
 
@@ -71,4 +69,3 @@ void main()
     tangent_g = get_screen_normal(position.xyz, world_pos, tangent.xyz, mat);
 #endif
 }
-
