@@ -25,6 +25,10 @@
 in vec4 weight4;
 
 uniform mat3x4 matrixPalette[MAX_JOINTS_PER_MESH_OBJECT];
+// Number of valid entries uploaded for this mesh.  Keeping this separate from
+// MAX_JOINTS_PER_MESH_OBJECT prevents malformed/partially loaded rig weights
+// from reading stale uniform-array entries beyond the uploaded palette.
+uniform int matrixPaletteSize;
 
 mat4 getObjectSkinnedTransform()
 {
@@ -33,10 +37,21 @@ mat4 getObjectSkinnedTransform()
     vec4 w = fract(weight4);
     vec4 index = floor(weight4);
 
-    index = min(index, vec4(MAX_JOINTS_PER_MESH_OBJECT-1));
+    int last_palette_index = min(max(matrixPaletteSize - 1, 0), MAX_JOINTS_PER_MESH_OBJECT - 1);
+    index = min(index, vec4(float(last_palette_index)));
     index = max(index, vec4( 0.0));
 
-    w *= 1.0/(w.x+w.y+w.z+w.w);
+    float weight_sum = w.x + w.y + w.z + w.w;
+    if (weight_sum > 0.0)
+    {
+        w *= 1.0 / weight_sum;
+    }
+    else
+    {
+        // Broken or partially decoded weights must not turn the skin matrix
+        // into NaNs.  Keep the vertex attached to the first valid joint.
+        w = vec4(1.0, 0.0, 0.0, 0.0);
+    }
 
     int i1 = int(index.x);
     int i2 = int(index.y);
