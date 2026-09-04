@@ -89,7 +89,7 @@ const F32 CAMERA_FUDGE_FROM_OBJECT = 16.f;
 const F32 MAX_CAMERA_SMOOTH_DISTANCE = 50.0f;
 
 const F32 HEAD_BUFFER_SIZE = 0.3f;
-const F32 FOLLOW_CAM_PARAM_LOSS_GRACE_PERIOD = 1.0f;
+const F64 FOLLOW_CAM_PARAM_LOSS_GRACE_PERIOD = 3.0;
 
 const F32 CUSTOMIZE_AVATAR_CAMERA_ANIM_SLOP = 0.1f;
 
@@ -1499,8 +1499,7 @@ void LLAgentCamera::updateCamera()
             else
             {
                 const F64 now = LLFrameTimer::getTotalSeconds();
-                if (gAgentAvatarp->isSitting() &&
-                    mLastValidFollowCamParamsTime > 0.0 &&
+                if (mLastValidFollowCamParamsTime > 0.0 &&
                     (now - mLastValidFollowCamParamsTime) < FOLLOW_CAM_PARAM_LOSS_GRACE_PERIOD)
                 {
                     // Keep the last valid scripted follow-cam briefly to avoid temp source drops (like parcel visibility handoff at borders).
@@ -3330,6 +3329,11 @@ void LLAgentCamera::lookAtLastChat()
 bool LLAgentCamera::isfollowCamLocked()
 {
     return mFollowCam.getPositionLocked();
+}
+
+void LLAgentCamera::notifyFollowCamParamsCleared()
+{
+    mLastValidFollowCamParamsTime = 0.0;
 }
 
 void LLAgentCamera::resetFollowCamZoom()

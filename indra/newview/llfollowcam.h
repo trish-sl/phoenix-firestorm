@@ -218,7 +218,6 @@ public:
     LLFollowCamParams* getActiveFollowCamParams();
     LLFollowCamParams* getParamsForID(const LLUUID& source);
     void removeFollowCamParams(const LLUUID& source);
-    void clearActiveFollowCamParams();
     bool isScriptedCameraSource(const LLUUID& source);
     void dump();
 
