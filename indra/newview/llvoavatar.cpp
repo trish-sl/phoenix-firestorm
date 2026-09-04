@@ -8994,6 +8994,19 @@ void LLVOAvatar::sitDown(bool bSitting)
 //-----------------------------------------------------------------------------
 void LLVOAvatar::sitOnObject(LLViewerObject *sit_object)
 {
+    mSitFollowCamSources.clear();
+    mSitFollowCamSources.push_back(sit_object->getID());
+    LLViewerObject::const_child_list_t& child_list = sit_object->getChildren();
+    for (LLViewerObject::const_child_list_t::const_iterator iter = child_list.begin();
+         iter != child_list.end(); ++iter)
+    {
+        LLViewerObject* child_objectp = *iter;
+        if (child_objectp)
+        {
+            mSitFollowCamSources.push_back(child_objectp->getID());
+        }
+    }
+
     if (isSelf())
     {
         // Might be first sit
@@ -9074,6 +9087,13 @@ void LLVOAvatar::getOffObject()
 
     if (sit_object)
     {
+        // A live seat during stand is an explicit action; clear any follow-cam
+        // loss grace period. A dead seat may be reconstructed during a crossing.
+        if (isSelf() && !sit_object->isDead())
+        {
+            gAgentCamera.notifyFollowCamParamsCleared();
+        }
+
         stopMotionFromSource(sit_object->getID());
         LLFollowCamMgr::getInstance()->setCameraActive(sit_object->getID(), false);
 
@@ -9089,9 +9109,21 @@ void LLVOAvatar::getOffObject()
     }
     else if (isSelf())
     {
-        // Recovery path for missing seat parents (e.g. bad crossings): avoid lingering follow-cam locks.
-        LLFollowCamMgr::getInstance()->clearActiveFollowCamParams();
+        // A completely missing parent is the borked-vehicle case. Deactivate only
+        // the sources remembered for this seat, leaving unrelated HUD followcams intact.
+        for (const LLUUID& source_id : mSitFollowCamSources)
+        {
+            stopMotionFromSource(source_id);
+            LLFollowCamMgr::getInstance()->setCameraActive(source_id, false);
+        }
+
+        if (!LLFollowCamMgr::getInstance()->getActiveFollowCamParams())
+        {
+            gAgentCamera.notifyFollowCamParamsCleared();
+        }
     }
+
+    mSitFollowCamSources.clear();
 
     // assumes that transform will not be updated with drawable still having a parent
     // or that drawable had no parent from the start
