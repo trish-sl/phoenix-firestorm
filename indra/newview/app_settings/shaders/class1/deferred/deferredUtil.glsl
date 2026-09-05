@@ -538,7 +538,7 @@ vec3 pbrCalcPointLightOrSpotLight(vec3 diffuseColor, vec3 specularColor,
     float dist = lightDist / lightSize;
     if (dist <= 1.0)
     {
-        lv /= lightDist;
+        lv /= max(lightDist, 1e-8);
 
         float dist_atten = calcLegacyDistanceAttenuation(dist, falloff);
 
@@ -645,4 +645,3 @@ void waterClip(vec3 pos)
     }
 
 }
-

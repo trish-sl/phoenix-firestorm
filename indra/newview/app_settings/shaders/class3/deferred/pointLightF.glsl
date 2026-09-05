@@ -72,9 +72,18 @@ void main()
     vec3 final_color = vec3(0);
     vec2 tc          = getScreenCoord(vary_fragcoord);
     vec3 pos         = getPosition(tc).xyz;
+    vec3 lv = trans_center.xyz - pos;
+    if (size <= 0.0 || dot(lv, lv) >= size * size)
+    {
+        discard;
+    }
     GBufferInfo gb = getGBuffer(tc);
 
     vec3 n = gb.normal;
+    if (dot(n, lv) <= 0.0)
+    {
+        discard;
+    }
 
     vec3 diffuse = gb.albedo.rgb;
     vec4 spec    = gb.specular;
