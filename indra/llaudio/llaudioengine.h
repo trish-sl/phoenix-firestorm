@@ -153,7 +153,7 @@ public:
     // NaCl End
     void triggerSound(SoundData& soundData);
 
-    bool preloadSound(const LLUUID &id, bool pin_buffer = true);
+    bool preloadSound(const LLUUID &id, bool pin_buffer = false);
 
     void addAudioSource(LLAudioSource *asp);
     void cleanupAudioSource(LLAudioSource *asp);
