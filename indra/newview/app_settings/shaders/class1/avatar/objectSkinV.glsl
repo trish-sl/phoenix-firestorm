@@ -32,16 +32,14 @@ uniform vec3 skin_origin;
 
 mat3x4 getSkinBlend()
 {
-    int i;
-
-    vec4 w = fract(weight4);
+    SKIN_PRECISE vec4 w = fract(weight4);
     vec4 index = floor(weight4);
 
     int last_palette_index = min(max(matrixPaletteSize - 1, 0), MAX_JOINTS_PER_MESH_OBJECT - 1);
     index = min(index, vec4(float(last_palette_index)));
     index = max(index, vec4( 0.0));
 
-    float weight_sum = w.x + w.y + w.z + w.w;
+    SKIN_PRECISE float weight_sum = w.x + w.y + w.z + w.w;
     if (weight_sum <= 0.00001)
     {
         // Broken/partially loaded weights must not turn the entire vertex into
@@ -57,17 +55,17 @@ mat3x4 getSkinBlend()
     int i3 = int(index.z);
     int i4 = int(index.w);
 
-    mat3 mat = mat3(matrixPalette[i1])*w.x;
+    SKIN_PRECISE mat3 mat = mat3(matrixPalette[i1])*w.x;
          mat += mat3(matrixPalette[i2])*w.y;
          mat += mat3(matrixPalette[i3])*w.z;
          mat += mat3(matrixPalette[i4])*w.w;
 
-    vec3 trans = vec3(matrixPalette[i1][0].w,matrixPalette[i1][1].w,matrixPalette[i1][2].w)*w.x;
+    SKIN_PRECISE vec3 trans = vec3(matrixPalette[i1][0].w,matrixPalette[i1][1].w,matrixPalette[i1][2].w)*w.x;
          trans += vec3(matrixPalette[i2][0].w,matrixPalette[i2][1].w,matrixPalette[i2][2].w)*w.y;
          trans += vec3(matrixPalette[i3][0].w,matrixPalette[i3][1].w,matrixPalette[i3][2].w)*w.z;
          trans += vec3(matrixPalette[i4][0].w,matrixPalette[i4][1].w,matrixPalette[i4][2].w)*w.w;
 
-    mat3x4 ret;
+    SKIN_PRECISE mat3x4 ret;
     ret[0] = vec4(mat[0], trans.x);
     ret[1] = vec4(mat[1], trans.y);
     ret[2] = vec4(mat[2], trans.z);
@@ -83,29 +81,56 @@ mat3x4 getSkinBlend()
 
 vec3 skinDirection(mat3x4 skin, vec3 direction)
 {
-    return mat3(skin) * direction;
+    SKIN_PRECISE vec3 result = mat3(skin) * direction;
+    return result;
 }
 
 vec3 skinPoint(mat3x4 skin, vec3 position)
 {
-    return mat3(skin) * position + vec3(skin[0].w, skin[1].w, skin[2].w);
+    SKIN_PRECISE vec3 result = mat3(skin) * position + vec3(skin[0].w, skin[1].w, skin[2].w);
+    return result;
+}
+
+mat4 skinMatrix(mat3x4 skin)
+{
+    SKIN_PRECISE mat4 result;
+    result[0] = vec4(skin[0].xyz, 0.0);
+    result[1] = vec4(skin[1].xyz, 0.0);
+    result[2] = vec4(skin[2].xyz, 0.0);
+    result[3] = vec4(skinPoint(skin, vec3(0.0)) + skin_origin, 1.0);
+    return result;
 }
 
 vec4 skinTransformH(mat3x4 skin, vec3 position, mat4 transform)
 {
-    return transform * vec4(skinPoint(skin, position), 0.0) + transform * vec4(skin_origin, 1.0);
+#ifdef RIGGED_LOCAL_ORIGIN
+    // Keep origin cancellation separate from the small local vertex position.
+    SKIN_PRECISE vec4 local_position = transform * vec4(skinPoint(skin, position), 0.0);
+    SKIN_PRECISE vec4 origin = transform * vec4(skin_origin, 1.0);
+    SKIN_PRECISE vec4 result = local_position + origin;
+#else
+    // Comparison path: blend agent-space translations and compose the matrices
+    // before transforming the vertex, as before the local-origin experiment.
+    SKIN_PRECISE mat4 matrix = transform * skinMatrix(skin);
+    SKIN_PRECISE vec4 result = matrix * vec4(position, 1.0);
+#endif
+    return result;
 }
 
-// Compatibility for less frequently used rigged permutations that have not yet
-// been converted to skinTransformH().  New consumers should use the local path
-// above; this keeps older shader variants source-compatible while they are phased in.
+vec3 skinNormal(mat3x4 skin, vec3 position, vec3 direction, mat4 transform)
+{
+#ifdef RIGGED_DIRECT_NORMALS
+    SKIN_PRECISE vec3 result = mat3(transform) * skinDirection(skin, direction);
+#else
+    // Deliberately retain point subtraction for the normal-precision A/B test.
+    SKIN_PRECISE vec3 endpoint = position + direction;
+    SKIN_PRECISE vec3 result = skinTransformH(skin, endpoint, transform).xyz
+        - skinTransformH(skin, position, transform).xyz;
+#endif
+    return result;
+}
+
 mat4 getObjectSkinnedTransform()
 {
-    mat3x4 skin = getSkinBlend();
-    mat4 ret;
-    ret[0] = vec4(skin[0].xyz, 0.0);
-    ret[1] = vec4(skin[1].xyz, 0.0);
-    ret[2] = vec4(skin[2].xyz, 0.0);
-    ret[3] = vec4(skinPoint(skin, vec3(0.0)) + skin_origin, 1.0);
-    return ret;
+    return skinMatrix(getSkinBlend());
 }

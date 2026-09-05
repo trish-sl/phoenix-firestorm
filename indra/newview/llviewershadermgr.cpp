@@ -561,8 +561,14 @@ void LLViewerShaderMgr::setShaders()
             gSavedSettings.setString("RenderShaderCacheVersion", current_cache_version.asString());
         }
 
+        bool use_shader_cache = shader_cache_enabled;
+#if LL_WINDOWS
+        use_shader_cache = use_shader_cache &&
+            !(gGLManager.mIsAMD && gSavedSettings.getBOOL("RenderAMDDisableShaderCache"));
+#endif
+        LL_INFOS("ShaderLoading") << "Shader binary cache enabled: " << use_shader_cache << LL_ENDL;
         initShaderCache(
-            shader_cache_enabled,
+            use_shader_cache,
             old_cache_version,
             current_cache_version,
             LLAppViewer::instance()->isSecondInstance());
@@ -809,6 +815,28 @@ std::string LLViewerShaderMgr::loadBasicShaders()
     std::map<std::string, std::string> attribs;
     attribs["MAX_JOINTS_PER_MESH_OBJECT"] =
         std::to_string(LLSkinningUtil::getMaxJointCount());
+
+    // Keep these choices in the global defines so shader binaries and all
+    // separately compiled skinning dependencies use the same test permutation.
+    if (gSavedSettings.getBOOL("RenderRiggedLocalOrigin"))
+    {
+        attribs["RIGGED_LOCAL_ORIGIN"] = "1";
+    }
+    if (gSavedSettings.getBOOL("RenderRiggedDirectNormals"))
+    {
+        attribs["RIGGED_DIRECT_NORMALS"] = "1";
+    }
+    const bool precise_skinning = gSavedSettings.getBOOL("RenderRiggedPreciseMath") &&
+        gGLManager.mGLSLVersionMajor >= 4;
+    attribs["SKIN_PRECISE"] = precise_skinning ? "precise" : "";
+    if (precise_skinning)
+    {
+        attribs["RIGGED_PRECISE_MATH"] = "1";
+    }
+    LL_INFOS("ShaderLoading") << "Rigged skinning tests: local origin="
+        << gSavedSettings.getBOOL("RenderRiggedLocalOrigin") << ", direct normals="
+        << gSavedSettings.getBOOL("RenderRiggedDirectNormals") << ", precise math="
+        << precise_skinning << LL_ENDL;
 
     static LLCachedControl<bool> emissive(gSavedSettings, "RenderEnableEmissiveBuffer", false);
 

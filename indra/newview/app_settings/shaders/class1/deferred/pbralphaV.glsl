@@ -23,6 +23,11 @@
  * $/LicenseInfo$
  */
 
+#ifdef RIGGED_PRECISE_MATH
+invariant gl_Position;
+precise gl_Position;
+#endif
+
 
 #ifndef IS_HUD
 
@@ -32,7 +37,7 @@
 uniform mat4 modelview_matrix;
 uniform mat4 projection_matrix;
 mat3x4 getSkinBlend();
-vec3 skinDirection(mat3x4 b, vec3 dir);
+vec3 skinNormal(mat3x4 b, vec3 pos, vec3 dir, mat4 m);
 vec4 skinTransformH(mat3x4 b, vec3 pos, mat4 m);
 #else
 uniform mat3 normal_matrix;
@@ -95,8 +100,8 @@ void main()
     emissive_texcoord = texture_transform(texcoord0, texture_emissive_transform, texture_matrix0);
 
 #ifdef HAS_SKIN
-    vec3 n = mat3(modelview_matrix) * skinDirection(skin, normal.xyz);
-    vec3 t = mat3(modelview_matrix) * skinDirection(skin, tangent.xyz);
+    vec3 n = skinNormal(skin, position.xyz, normal.xyz, modelview_matrix);
+    vec3 t = skinNormal(skin, position.xyz, tangent.xyz, modelview_matrix);
 #else //HAS_SKIN
     vec3 n = normal_matrix * normal;
     vec3 t = normal_matrix * tangent.xyz;

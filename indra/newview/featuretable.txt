@@ -419,9 +419,9 @@ RenderGLMultiThreadedMedia  1   0
 RenderDownScaleMethod       1   0
 
 list AMD
-// AMD Windows drivers have historically been sensitive to shared OpenGL
-// contexts during texture and media upload. Keep both worker paths disabled
-// so the main context owns all AMD/Windows uploads.
+// Texture uploads are already off in the all mask. These are recommendations;
+// the Windows AMD test override is enforced at LLImageGL initialization so existing
+// saved settings cannot accidentally leave threaded uploads enabled.
 RenderGLMultiThreadedTextures       1   0
 RenderGLMultiThreadedMedia           1   0
 

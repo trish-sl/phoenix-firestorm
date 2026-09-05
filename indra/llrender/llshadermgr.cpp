@@ -639,6 +639,19 @@ GLuint LLShaderMgr::loadShaderFile(const std::string& filename, S32 & shader_lev
     extra_code_text[extra_code_count++] = strdup("#define GBUFFER_FLAG_HAS_HDRI      1.0\n");  // bit 2
     extra_code_text[extra_code_count++] = strdup("#define GET_GBUFFER_FLAG(data, flag)    (abs(data-flag)< 0.1)\n");
 
+    // Skinning helpers and their consumers are compiled as separate shader
+    // objects. Supply the test defines to both without changing the scope of
+    // the other global defines used to load basic shader dependencies.
+    for (const char* name : { "RIGGED_LOCAL_ORIGIN", "RIGGED_DIRECT_NORMALS", "RIGGED_PRECISE_MATH", "SKIN_PRECISE" })
+    {
+        auto global = LLGLSLShader::sGlobalDefines.find(name);
+        if (global != LLGLSLShader::sGlobalDefines.end() && (!defines || defines->count(name) == 0))
+        {
+            std::string define = "#define " + global->first + " " + global->second + "\n";
+            extra_code_text[extra_code_count++] = (GLchar*)strdup(define.c_str());
+        }
+    }
+
     if (defines)
     {
         for (auto iter = defines->begin(); iter != defines->end(); ++iter)

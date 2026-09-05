@@ -23,6 +23,11 @@
  * $/LicenseInfo$
  */
 
+#ifdef RIGGED_PRECISE_MATH
+invariant gl_Position;
+precise gl_Position;
+#endif
+
 
 #ifdef HAS_SKIN
 uniform mat4 modelview_matrix;

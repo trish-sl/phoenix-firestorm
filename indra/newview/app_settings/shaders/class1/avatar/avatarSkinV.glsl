@@ -30,9 +30,9 @@ uniform vec4 matrixPalette[45];
 
 mat4 getSkinnedTransform()
 {
-    mat4 ret;
+    SKIN_PRECISE mat4 ret;
     int i = int(floor(weight.x));
-    float x = fract(weight.x);
+    SKIN_PRECISE float x = fract(weight.x);
 
     // The palette is laid out as three 15-entry planes.  The final joint
     // cannot be interpolated with a following entry, since that would read

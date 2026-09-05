@@ -23,6 +23,11 @@
  * $/LicenseInfo$
  */
 
+#ifdef RIGGED_PRECISE_MATH
+invariant gl_Position;
+precise gl_Position;
+#endif
+
 uniform mat4 texture_matrix0;
 uniform mat4 modelview_projection_matrix;
 

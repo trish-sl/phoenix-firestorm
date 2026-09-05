@@ -23,6 +23,11 @@
  * $/LicenseInfo$
  */
 
+#ifdef RIGGED_PRECISE_MATH
+invariant gl_Position;
+precise gl_Position;
+#endif
+
 uniform mat3 normal_matrix;
 uniform mat4 texture_matrix0;
 uniform mat4 modelview_projection_matrix;
@@ -44,7 +49,7 @@ uniform mat4 modelview_matrix;
 
 #ifdef HAS_SKIN
 mat3x4 getSkinBlend();
-vec3 skinDirection(mat3x4 b, vec3 dir);
+vec3 skinNormal(mat3x4 b, vec3 pos, vec3 dir, mat4 m);
 vec4 skinTransformH(mat3x4 b, vec3 pos, mat4 m);
 uniform mat4 projection_matrix;
 
@@ -57,7 +62,7 @@ void main()
     vec4 pos = skinTransformH(skin, position.xyz, modelview_matrix);
     vary_position = pos.xyz;
     gl_Position = projection_matrix * pos;
-    vary_normal = normalize(mat3(modelview_matrix) * skinDirection(skin, normal.xyz));
+    vary_normal = normalize(skinNormal(skin, position.xyz, normal.xyz, modelview_matrix));
 #else
     vary_position = (modelview_matrix * vec4(position.xyz, 1.0)).xyz;
     gl_Position = modelview_projection_matrix * vec4(position.xyz, 1.0);

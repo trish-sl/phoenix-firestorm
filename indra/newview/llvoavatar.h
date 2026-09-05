@@ -947,10 +947,12 @@ public:
         // uploading them.  Keeping this separate from the palette avoids feeding
         // kilometre-scale coordinates through per-vertex fp32 skinning math.
         LLVector3 mSkinOrigin;
+        bool mUsesLocalOrigin;
 
         MatrixPaletteCache() :
             mFrame(gFrameCount - 1),
-            mSkinOrigin(LLVector3::zero)
+            mSkinOrigin(LLVector3::zero),
+            mUsesLocalOrigin(false)
         {
         }
     };

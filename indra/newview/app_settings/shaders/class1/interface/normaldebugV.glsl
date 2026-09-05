@@ -23,6 +23,11 @@
  * $/LicenseInfo$
  */
 
+#ifdef RIGGED_PRECISE_MATH
+invariant gl_Position;
+precise gl_Position;
+#endif
+
 in vec3 position;
 in vec3 normal;
 out vec4 normal_g;
@@ -35,7 +40,7 @@ uniform float debug_normal_draw_length;
 
 #ifdef HAS_SKIN
 mat3x4 getSkinBlend();
-vec3 skinDirection(mat3x4 b, vec3 dir);
+vec3 skinNormal(mat3x4 b, vec3 pos, vec3 dir, mat4 m);
 vec4 skinTransformH(mat3x4 b, vec3 pos, mat4 m);
 #else
 uniform mat3 normal_matrix;
@@ -57,9 +62,9 @@ void main()
 #ifdef HAS_SKIN
     mat3x4 skin = getSkinBlend();
     vec4 world_pos = skinTransformH(skin, position.xyz, modelview_matrix);
-    vec3 view_normal = mat3(modelview_matrix) * skinDirection(skin, normal.xyz);
+    vec3 view_normal = skinNormal(skin, position.xyz, normal.xyz, modelview_matrix);
 #ifdef HAS_ATTRIBUTE_TANGENT
-    vec3 view_tangent = mat3(modelview_matrix) * skinDirection(skin, tangent.xyz);
+    vec3 view_tangent = skinNormal(skin, position.xyz, tangent.xyz, modelview_matrix);
 #endif
 #else
     vec4 world_pos = modelview_matrix * vec4(position.xyz, 1.0);
