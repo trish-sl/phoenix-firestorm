@@ -49,7 +49,7 @@ void unpackMaterial()
         emissiveColor = gltf_material_data[idx+10].rgb;
         roughnessFactor = gltf_material_data[idx+11].g;
         metallicFactor = gltf_material_data[idx+11].b;
-        minimum_alpha -= gltf_material_data[idx+11].a;
+        minimum_alpha = gltf_material_data[idx+11].a;
     }
 }
 
@@ -109,7 +109,6 @@ vec4 applySkyAndWaterFog(vec3 pos, vec3 additive, vec3 atten, vec4 color);
 
 #ifdef HAS_SUN_SHADOW
 uniform sampler2D lightMap;
-uniform vec2 screen_res;
 #endif
 uniform vec2 screen_res;
 
@@ -284,8 +283,8 @@ void main()
     scol = sampleDirectionalShadow(pos.xyz, norm.xyz, frag);
 #endif
 
-    float perceptualRoughness = orm.g * roughnessFactor;
-    float metallic = orm.b * metallicFactor;
+    float perceptualRoughness = orm.g;
+    float metallic = orm.b;
 
     // PBR IBL
     float gloss      = 1.0 - perceptualRoughness;
@@ -318,7 +317,7 @@ void main()
 
     color.rgb = applySkyAndWaterFog(pos.xyz, additive, atten, vec4(color, 1.0)).rgb;
 
-    float a = basecolor.a*vertex_color.a;
+    float a = basecolor.a;
 
     frag_color = max(vec4(color.rgb,a), vec4(0));
 #else // UNLIT
@@ -328,4 +327,3 @@ void main()
 #endif
 #endif  // ALPHA_BLEND
 }
-
