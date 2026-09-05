@@ -111,6 +111,7 @@ vec4 applySkyAndWaterFog(vec3 pos, vec3 additive, vec3 atten, vec4 color);
 uniform sampler2D lightMap;
 uniform vec2 screen_res;
 #endif
+uniform vec2 screen_res;
 
 // Lights
 // See: LLRender::syncLightState()
@@ -290,7 +291,7 @@ void main()
     float gloss      = 1.0 - perceptualRoughness;
     vec3  irradiance = vec3(0);
     vec3  radiance  = vec3(0);
-    sampleReflectionProbes(irradiance, radiance, vary_position.xy*0.5+0.5, pos.xyz, norm.xyz, gloss, true, amblit);
+    sampleReflectionProbes(irradiance, radiance, gl_FragCoord.xy / screen_res, pos.xyz, norm.xyz, gloss, true, amblit);
 
     vec3 diffuseColor;
     vec3 specularColor;
