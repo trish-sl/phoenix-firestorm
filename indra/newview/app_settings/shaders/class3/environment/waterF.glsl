@@ -357,6 +357,6 @@ void main()
 
     float spec = min(max(max(punctual.r, punctual.g), punctual.b), 0);
 
-    frag_color = min(vec4(1),max(vec4(color.rgb, spec * water_mask), vec4(0)));
+    // Keep HDR highlights for the exposure/tone-map pass and bound half-float output.
+    frag_color = vec4(clamp(color.rgb, vec3(0), vec3(65504)), clamp(spec * water_mask, 0.0, 1.0));
 }
-
