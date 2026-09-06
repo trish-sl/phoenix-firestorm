@@ -43,6 +43,7 @@
 #include "pipeline.h"
 
 #include "llfile.h"
+#include "lldiriterator.h"
 #include "llviewerwindow.h"
 #include "llwindow.h"
 
@@ -523,6 +524,61 @@ S32 LLViewerShaderMgr::getShaderLevel(S32 type)
 //============================================================================
 // Shader Management
 
+// Hash sorted relative names and contents, including shared GLSL helpers. Run once
+// per reload so same-version developer edits cannot reuse stale program binaries.
+static bool hashShaderSources(HBXXH128& hash, const std::string& root, const std::string& relative = "")
+{
+    const std::string directory = root + relative;
+    if (!LLFile::isdir(directory))
+    {
+        return false;
+    }
+    LLDirIterator iterator(directory, "*");
+    std::vector<std::string> names;
+    std::string name;
+    while (iterator.next(name))
+    {
+        if (name != "." && name != "..")
+        {
+            names.push_back(name);
+        }
+    }
+    std::sort(names.begin(), names.end());
+    for (const auto& entry : names)
+    {
+        const std::string path = directory + entry;
+        if (LLFile::isdir(path))
+        {
+            if (!hashShaderSources(hash, root, relative + entry + "/"))
+            {
+                return false;
+            }
+        }
+        else if (entry.size() >= 5 && entry.compare(entry.size() - 5, 5, ".glsl") == 0)
+        {
+            LLFILE* file = LLFile::fopen(path, "rb");
+            if (!file)
+            {
+                return false;
+            }
+            hash.update(relative + entry);
+            char buffer[8192];
+            size_t count;
+            while ((count = fread(buffer, 1, sizeof(buffer), file)) > 0)
+            {
+                hash.update(buffer, count);
+            }
+            const bool failed = ferror(file) != 0;
+            fclose(file);
+            if (failed)
+            {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 void LLViewerShaderMgr::setShaders()
 {
     LL_PROFILE_ZONE_SCOPED;
@@ -545,9 +601,9 @@ void LLViewerShaderMgr::setShaders()
 
     {
         static LLCachedControl<bool> shader_cache_enabled(gSavedSettings, "RenderShaderCacheEnabled", true);
-        static LLUUID old_cache_version;
-        static LLUUID current_cache_version;
-        if (current_cache_version.isNull())
+        LLUUID old_cache_version;
+        LLUUID current_cache_version;
+        bool sources_read = false;
         {
             HBXXH128 hash_obj;
             hash_obj.update(LLVersionInfo::instance().getVersion());
@@ -555,13 +611,15 @@ void LLViewerShaderMgr::setShaders()
             // after an OpenGL driver update even when the viewer version is
             // unchanged.
             hash_obj.update(gGLManager.mDriverVersionVendorString);
+            sources_read = hashShaderSources(hash_obj,
+                gDirUtilp->getExpandedFilename(LL_PATH_APP_SETTINGS, "shaders") + "/");
             current_cache_version = hash_obj.digest();
 
             old_cache_version = LLUUID(gSavedSettings.getString("RenderShaderCacheVersion"));
             gSavedSettings.setString("RenderShaderCacheVersion", current_cache_version.asString());
         }
 
-        bool use_shader_cache = shader_cache_enabled;
+        bool use_shader_cache = shader_cache_enabled && sources_read;
 #if LL_WINDOWS
         use_shader_cache = use_shader_cache &&
             !(gGLManager.mIsAMD && gSavedSettings.getBOOL("RenderAMDDisableShaderCache"));

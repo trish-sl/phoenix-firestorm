@@ -1039,9 +1039,11 @@ void LLShaderMgr::initShaderCache(bool enabled, const LLUUID& old_cache_version,
         }
     }
 
-    if(!mShaderCacheEnabled || mShaderCacheVersion.notNull())
+    if (!mShaderCacheEnabled || mShaderCacheVersion == current_cache_version)
         return;
 
+    // Source edits can change the version during an in-process shader reload.
+    mShaderBinaryCache.clear();
     mShaderCacheVersion = current_cache_version;
 
     mShaderCacheDir = gDirUtilp->getExpandedFilename(LL_PATH_CACHE, "shader_cache");
