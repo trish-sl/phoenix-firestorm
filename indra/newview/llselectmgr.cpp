@@ -6382,6 +6382,16 @@ void LLSelectMgr::processObjectProperties(LLMessageSystem* msg, void** user_data
             node->mFromTaskID = from_task_id;
             node->mName.assign(name);
             node->mDescription.assign(desc);
+
+            LLViewerObject* obj = node->getObject();
+            if (obj && LLViewerObject::isObjectInPendingUpdate(owner_id, obj))
+            {
+                // The object properties response does not update the viewer's
+                // modify flag, so request an object update when edit rights
+                // changed while this object was already in the region.
+                obj->requestObjectUpdate();
+            }
+
             node->mSaleInfo = sale_info;
             node->mAggregatePerm = ag_perms;
             node->mAggregateTexturePerm = ag_texture_perms;
