@@ -160,6 +160,7 @@ set(viewer_SOURCE_FILES
     fsmoneytracker.cpp
     fsregionluascripts.cpp
     fsnamelistavatarmenu.cpp
+    fsnativepopout.cpp
     fsnearbychatbarlistener.cpp
     fsnearbychatcontrol.cpp
     fsnearbychathub.cpp
@@ -996,6 +997,9 @@ set(viewer_HEADER_FILES
     fsfloaterim.h
     fsfloaterimcontainer.h
     fsfloaternearbychat.h
+    fsnativepopout.h
+    fsnativepopoutpolicy.h
+    fsnativepopoutedit.h
     fsfloateravataralign.h
     fsfloaterpartialinventory.h
     fsfloaterplacedetails.h
