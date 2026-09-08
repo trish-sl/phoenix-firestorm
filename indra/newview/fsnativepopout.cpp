@@ -46,6 +46,8 @@ namespace
 constexpr wchar_t WINDOW_CLASS[] = L"FirestormExperimentalPopout";
 constexpr F32 FRAME_INTERVAL = 0.1f;
 constexpr S32 MAX_SURFACE_SIZE = 2048;
+constexpr DWORD WINDOW_STYLE = WS_OVERLAPPEDWINDOW;
+constexpr DWORD WINDOW_EX_STYLE = WS_EX_APPWINDOW | WS_EX_TOPMOST;
 
 using FSNativePopoutPolicy::SPECS;
 // Graphics changes can call reset() from a Preferences callback. Keep its
@@ -57,7 +59,7 @@ std::vector<LLHandle<LLFloater>> sToggleRequests;
 std::map<LLHandle<LLFloater>, RECT> sDesktopPositions;
 // A native close hides the floater but keeps its opt-in setting. Do not
 // recreate it every frame; clear the suppression when the user opens it again.
-std::set<LLHandle<LLFloater>> sNativeClosed;
+std::set<std::string> sNativeClosed;
 
 MASK modifiers()
 {
@@ -86,17 +88,7 @@ public:
     const char* setting() const { return mSetting; }
     void requestReturn() { mCloseRequested = true; mFocusOnReturn = true; }
     bool wasNativeClose() const { return mCloseFloater; }
-    void closeFromNativeWindow()
-    {
-        mCloseRequested = true;
-        mCloseFloater = true;
-        mFocusOnReturn = false;
-        if (LLFloater* floater = mFloater.get())
-        {
-            sNativeClosed.insert(mFloater);
-            floater->closeFloater();
-        }
-    }
+    void closeFromNativeWindow();
     void releaseGL() { mTarget.release(); }
 
 private:
@@ -238,7 +230,7 @@ bool NativePopout::open()
     RECT rect = { 0, 0,
         llclamp(llceil(mOriginalRect.getWidth() * mDisplayScale.mV[VX]), 100, MAX_SURFACE_SIZE),
         llclamp(llceil(mOriginalRect.getHeight() * mDisplayScale.mV[VY]), 100, MAX_SURFACE_SIZE) };
-    AdjustWindowRectEx(&rect, WS_OVERLAPPEDWINDOW, FALSE, WS_EX_APPWINDOW);
+    AdjustWindowRectEx(&rect, WINDOW_STYLE, FALSE, WINDOW_EX_STYLE);
     S32 left = CW_USEDEFAULT;
     S32 top = CW_USEDEFAULT;
     if (auto saved = sDesktopPositions.find(mFloater); saved != sDesktopPositions.end())
@@ -257,8 +249,8 @@ bool NativePopout::open()
             rect = { 0, 0, width, height };
         }
     }
-    mWindow = CreateWindowExW(WS_EX_APPWINDOW | WS_EX_TOPMOST, WINDOW_CLASS, title.c_str(),
-        WS_OVERLAPPEDWINDOW, left, top,
+    mWindow = CreateWindowExW(WINDOW_EX_STYLE, WINDOW_CLASS, title.c_str(),
+        WINDOW_STYLE, left, top,
         rect.right - rect.left, rect.bottom - rect.top,
         nullptr, nullptr, wc.hInstance, this);
     if (!mWindow)
@@ -420,6 +412,23 @@ bool NativePopout::update()
     floater = mFloater.get();
     return !mCloseRequested && floater && !floater->isDead() && floater->getVisible()
         && floater->getParent() == mRoot.get();
+}
+
+void NativePopout::closeFromNativeWindow()
+{
+    if (mCloseRequested || sResetPending) return;
+    mCloseFloater = true;
+    mFocusOnReturn = false;
+    // The registry instance may be destroyed by closeFloater(). Remember the
+    // setting rather than its handle so a missing instance stays closed too.
+    if (mSetting) sNativeClosed.insert(mSetting);
+    if (LLFloater* floater = mFloater.get(); floater && !floater->isDead())
+    {
+        UIScope scope(*this);
+        floater->closeFloater();
+    }
+    // canClose() may defer to an unsaved-change prompt or reject the close.
+    // Leave the native host alive until the floater actually closes.
 }
 
 void NativePopout::releaseCapture()
@@ -809,11 +818,11 @@ LRESULT NativePopout::dispatch(UINT message, WPARAM wparam, LPARAM lparam)
             RECT rect = { 0, 0,
                 llceil(floater->getMinWidth() * mDisplayScale.mV[VX]),
                 llceil(floater->getMinHeight() * mDisplayScale.mV[VY]) };
-            AdjustWindowRectEx(&rect, WS_OVERLAPPEDWINDOW, FALSE, WS_EX_APPWINDOW);
+            AdjustWindowRectEx(&rect, WINDOW_STYLE, FALSE, WINDOW_EX_STYLE);
             auto* limits = reinterpret_cast<MINMAXINFO*>(lparam);
             limits->ptMinTrackSize = { rect.right - rect.left, rect.bottom - rect.top };
             RECT maximum = { 0, 0, MAX_SURFACE_SIZE, MAX_SURFACE_SIZE };
-            AdjustWindowRectEx(&maximum, WS_OVERLAPPEDWINDOW, FALSE, WS_EX_APPWINDOW);
+            AdjustWindowRectEx(&maximum, WINDOW_STYLE, FALSE, WINDOW_EX_STYLE);
             limits->ptMaxTrackSize = { maximum.right - maximum.left, maximum.bottom - maximum.top };
             limits->ptMaxSize = limits->ptMaxTrackSize;
         }
@@ -1006,7 +1015,20 @@ bool FSNativePopout::handleKey(KEY key, MASK mask, bool repeated)
     {
         for (LLView* view = dynamic_cast<LLView*>(gFocusMgr.getKeyboardFocus()); view; view = view->getParent())
         {
-            if ((selected = dynamic_cast<LLFloater*>(view))) break;
+            if (auto* floater = dynamic_cast<LLFloater*>(view))
+            {
+                // Chat and Contacts tabs are floaters themselves. Move their
+                // Conversations container as a unit when they are docked.
+                if (floater->getInstanceName() == "fs_im_container")
+                {
+                    selected = floater;
+                    break;
+                }
+                if (!selected && FSNativePopoutPolicy::find(floater->getInstanceName()))
+                {
+                    selected = floater;
+                }
+            }
         }
     }
     if (selected && !selected->isDead() && FSNativePopoutPolicy::find(selected->getInstanceName()))
@@ -1071,17 +1093,22 @@ void FSNativePopout::update(bool fullscreen, const LLVector2& display_scale)
     }
     for (const auto& spec : SPECS)
     {
-        if (!spec.setting || !gSavedSettings.getBOOL(spec.setting)) continue;
+        if (!spec.setting) continue;
+        if (!gSavedSettings.getBOOL(spec.setting))
+        {
+            sNativeClosed.erase(spec.setting);
+            continue;
+        }
         const bool hosted = std::any_of(sWindows.begin(), sWindows.end(),
             [&spec](const auto& window) { return window->setting() == spec.setting; });
         if (hosted) continue;
         const std::string name(spec.name);
         LLFloater* floater = LLFloaterReg::findInstance(name);
-        if (floater && floater->isInVisibleChain())
+        if (floater && !floater->isDead() && floater->isInVisibleChain())
         {
-            sNativeClosed.erase(floater->getHandle());
+            sNativeClosed.erase(spec.setting);
         }
-        if (floater && sNativeClosed.find(floater->getHandle()) != sNativeClosed.end())
+        if (sNativeClosed.find(spec.setting) != sNativeClosed.end())
         {
             continue;
         }
@@ -1117,6 +1144,7 @@ void FSNativePopout::shutdown()
 void FSNativePopout::reset()
 {
     sToggleRequests.clear();
+    sNativeClosed.clear();
     for (const auto& spec : SPECS)
     {
         if (spec.setting) gSavedSettings.setBOOL(spec.setting, false);

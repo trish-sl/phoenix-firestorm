@@ -31,10 +31,12 @@ Build the viewer normally from this source. Log in in windowed mode, open
 | `FSExperimentalPopoutSettings` | Debug Settings |
 | `FSExperimentalPopoutInventory` | Main inventory |
 
-Move the resulting desktop windows onto another monitor as desired. Set a
-setting back to false or close the **native title bar** to return the floater to
-the main viewer. Chat returns to its original conversation host if that host
-still exists. The floater's own close button still closes/hides the floater.
+Drag the native title bar to move a desktop window onto another monitor.
+Clicking its X closes the floater through its normal close behavior, including
+unsaved-change prompts. Its debug setting remains enabled, but the host waits
+until you open the floater again before popping it out. This also works when
+closing destroys the floater instance. Set the setting to false or press
+Ctrl+Shift+F12 to return an open floater to the main viewer.
 An existing toolbar action that hides or rehosts the floater also retires its
 native window. Graphics resets, fullscreen transitions, and disconnection
 return the floaters and disable their toggles.

@@ -1,0 +1,494 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes" ?>
+<panel
+ border="true"
+ follows="all"
+ height="480"
+ layout="topleft"
+ left="1"
+ top="1"
+ width="540"
+ label="Experimental"
+ name="experimental">
+    <scroll_container
+     follows="all"
+     height="478"
+     layout="topleft"
+     left="1"
+     name="experimental_scroll"
+     reserve_scroll_corner="false"
+     top="1"
+     width="538">
+        <panel
+         follows="left|top"
+         height="950"
+         layout="topleft"
+         left="0"
+         name="experimental_settings"
+         top="0"
+         width="510">
+            <text
+             follows="left|top"
+             height="32"
+             layout="topleft"
+             left="15"
+             name="experimental_warning"
+             text_color="EmphasisColor"
+             top="12"
+             width="475">
+                Experimental and diagnostic settings. Some changes require a viewer restart.
+            </text>
+
+            <text
+             follows="left|top"
+             font="SansSerifBold"
+             height="18"
+             layout="topleft"
+             left="15"
+             name="camera_heading"
+             top="52"
+             width="475">
+                Camera and movement
+            </text>
+            <check_box
+             control_name="FollowCamFollowSubjectRotation"
+             follows="left|top"
+             height="20"
+             label="Follow subject rotation in scripted camera"
+             layout="topleft"
+             left="15"
+             name="follow_subject_rotation"
+             tool_tip="Rotate the scripted follow-camera position with the seated avatar or vehicle, including pitch and roll"
+             top="75"
+             width="475" />
+            <check_box
+             control_name="FSReportCameraAtAvatar"
+             follows="left|top"
+             height="20"
+             label="Report avatar position instead of camera position"
+             layout="topleft"
+             left="15"
+             name="report_camera_at_avatar"
+             tool_tip="Developer diagnostic: report the avatar position to the simulator instead of the camera position"
+             top="98"
+             width="475" />
+            <check_box
+             control_name="FSMouseLookPassonFix"
+             follows="left|top"
+             height="20"
+             label="Enable passed-on mouselook controls"
+             layout="topleft"
+             left="15"
+             name="mouselook_passon_fix"
+             tool_tip="Allow passed-on mouselook controls to reach viewer picking and HUD touch"
+             top="121"
+             width="475" />
+
+            <text
+             follows="left|top"
+             font="SansSerifBold"
+             height="18"
+             layout="topleft"
+             left="15"
+             name="network_heading"
+             top="153"
+             width="475">
+                Region and network diagnostics
+            </text>
+            <check_box
+             control_name="FSRenderNeighborAdjacentOnly"
+             follows="left|top"
+             height="20"
+             label="Only connect to adjacent regions"
+             layout="topleft"
+             left="15"
+             name="render_neighbor_adjacent_only"
+             tool_tip="Only connect to the current and adjacent regions, plus the teleport target, to limit neighbor loading"
+             top="176"
+             width="475" />
+            <check_box
+             control_name="FSFetchOfflineIMsWhileOnline"
+             follows="left|top"
+             height="20"
+             label="Fetch offline messages while online"
+             layout="topleft"
+             left="15"
+             name="fetch_offline_ims"
+             tool_tip="Periodically request offline instant messages while online"
+             top="199"
+             width="475" />
+            <text
+             follows="left|top"
+             height="18"
+             layout="topleft"
+             left="35"
+             name="offline_im_interval_label"
+             top="225"
+             width="285">
+                Offline message fetch interval (seconds)
+            </text>
+            <spinner
+             control_name="FSOfflineIMFetchIntervalSeconds"
+             decimal_digits="0"
+             enabled_control="FSFetchOfflineIMsWhileOnline"
+             follows="left|top"
+             height="20"
+             increment="1"
+             layout="topleft"
+             left="330"
+             max_val="3600"
+             min_val="0"
+             name="offline_im_interval"
+             top="222"
+             width="100" />
+            <text
+             follows="left|top"
+             height="18"
+             layout="topleft"
+             left="35"
+             name="avatar_refresh_interval_label"
+             top="251"
+             width="285">
+                Nearby avatar refresh interval (seconds)
+            </text>
+            <spinner
+             control_name="FSAvatarPositionRefreshIntervalSeconds"
+             decimal_digits="0"
+             follows="left|top"
+             height="20"
+             increment="1"
+             layout="topleft"
+             left="330"
+             max_val="3600"
+             min_val="0"
+             name="avatar_refresh_interval"
+             top="248"
+             width="100" />
+            <text
+             follows="left|top"
+             height="18"
+             layout="topleft"
+             left="35"
+             name="dc_threshold_label"
+             top="277"
+             width="285">
+                Disconnect recovery threshold (seconds)
+            </text>
+            <spinner
+             control_name="FSDebugDcThreshold"
+             decimal_digits="1"
+             follows="left|top"
+             height="20"
+             increment="1"
+             layout="topleft"
+             left="330"
+             max_val="3600"
+             min_val="0"
+             name="dc_threshold"
+             top="274"
+             width="100" />
+            <text
+             follows="left|top"
+             font="SansSerifBold"
+             height="18"
+             layout="topleft"
+             left="15"
+             name="rendering_heading"
+             top="335"
+             width="475">
+                Rendering and diagnostics
+            </text>
+            <check_box
+             control_name="RenderAlphaBlendShadows"
+             follows="left|top"
+             height="20"
+             label="Render alpha-blended objects into shadow maps"
+             layout="topleft"
+             left="15"
+             name="render_alpha_blend_shadows"
+             tool_tip="Render alpha-blended objects into shadow maps; animated transparent effects may be expensive shadow casters"
+             top="358"
+             width="475" />
+            <text
+             follows="left|top"
+             height="18"
+             layout="topleft"
+             left="35"
+             name="texture_memory_bias_label"
+             top="384"
+             width="285">
+                Texture memory usage bias (0.25 - 4.0)
+            </text>
+            <spinner
+             control_name="RenderTextureMemoryUsageBias"
+             decimal_digits="2"
+             follows="left|top"
+             height="20"
+             increment="0.05"
+             layout="topleft"
+             left="330"
+             max_val="4"
+             min_val="0.25"
+             name="texture_memory_usage_bias"
+             top="381"
+             width="100" />
+            <check_box
+             control_name="RLVaDebugSphereUseOpaqueDepth"
+             follows="left|top"
+             height="20"
+             label="Use opaque depth for the RLVa debug sphere"
+             layout="topleft"
+             left="15"
+             name="rlva_debug_sphere_opaque_depth"
+             tool_tip="Use a pre-alpha depth snapshot so alpha wearables do not punch through the RLVa sphere effect"
+             top="410"
+             width="475" />
+            <check_box
+             control_name="TextureFetchPipelineDiagnostics"
+             follows="left|top"
+             height="20"
+             label="Log texture fetch pipeline diagnostics"
+             layout="topleft"
+             left="15"
+             name="texture_fetch_pipeline_diagnostics"
+             tool_tip="Periodically log a texture HTTP pipeline snapshot for diagnosing stalled texture fetches"
+             top="433"
+             width="475" />
+            <check_box
+             control_name="RenderAMDDisableShaderCache"
+             follows="left|top"
+             height="20"
+             label="Disable AMD shader binary cache"
+             layout="topleft"
+             left="15"
+             name="render_amd_disable_shader_cache"
+             tool_tip="Bypass viewer shader binary caching on Windows AMD; restart required"
+             top="456"
+             width="475" />
+            <check_box
+             control_name="RenderAMDDisableTextureThreading"
+             follows="left|top"
+             height="20"
+             label="Disable AMD texture and media threading"
+             layout="topleft"
+             left="15"
+             name="render_amd_disable_texture_threading"
+             tool_tip="Force main-thread texture and media uploads on Windows AMD; restart required"
+             top="479"
+             width="475" />
+            <check_box
+             control_name="RenderRiggedDirectNormals"
+             follows="left|top"
+             height="20"
+             label="Use direct rigged-mesh normals"
+             layout="topleft"
+             left="15"
+             name="render_rigged_direct_normals"
+             tool_tip="Transform rigged mesh normals and tangents as directions; restart required"
+             top="502"
+             width="475" />
+            <check_box
+             control_name="RenderRiggedLocalOrigin"
+             follows="left|top"
+             height="20"
+             label="Use local-origin rigged mesh skinning"
+             layout="topleft"
+             left="15"
+             name="render_rigged_local_origin"
+             tool_tip="Test avatar-root-relative rigged mesh skinning; restart required"
+             top="525"
+             width="475" />
+            <check_box
+             control_name="RenderRiggedPreciseMath"
+             follows="left|top"
+             height="20"
+             label="Use precise rigged-mesh shader math"
+             layout="topleft"
+             left="15"
+             name="render_rigged_precise_math"
+             tool_tip="Test precise arithmetic and invariant positions in skinning shaders; restart required and may reduce performance"
+             top="548"
+             width="475" />
+
+            <text
+             follows="left|top"
+             font="SansSerifBold"
+             height="18"
+             layout="topleft"
+             left="15"
+             name="popouts_heading"
+             top="580"
+             width="475">
+                Experimental desktop windows
+            </text>
+            <check_box
+             control_name="FSExperimentalPopoutChat"
+             follows="left|top"
+             height="20"
+             label="Move Conversations into a desktop window"
+             layout="topleft"
+             left="15"
+             name="experimental_popout_chat"
+             tool_tip="Windows prototype: move the whole Conversations floater into a desktop window"
+             top="603"
+             width="475" />
+            <check_box
+             control_name="FSExperimentalPopoutInventory"
+             follows="left|top"
+             height="20"
+             label="Move Inventory into a desktop window"
+             layout="topleft"
+             left="15"
+             name="experimental_popout_inventory"
+             tool_tip="Windows prototype: move Inventory into a desktop window"
+             top="626"
+             width="475" />
+            <check_box
+             control_name="FSExperimentalPopoutMap"
+             follows="left|top"
+             height="20"
+             label="Move the world map into a desktop window"
+             layout="topleft"
+             left="15"
+             name="experimental_popout_map"
+             tool_tip="Windows prototype: move the world map into a desktop window"
+             top="649"
+             width="475" />
+            <check_box
+             control_name="FSExperimentalPopoutNearby"
+             follows="left|top"
+             height="20"
+             label="Move Nearby People into a desktop window"
+             layout="topleft"
+             left="15"
+             name="experimental_popout_nearby"
+             tool_tip="Windows prototype: move Nearby People (Radar) into a desktop window"
+             top="672"
+             width="475" />
+            <check_box
+             control_name="FSExperimentalPopoutAreaSearch"
+             follows="left|top"
+             height="20"
+             label="Move Area Search into a desktop window"
+             layout="topleft"
+             left="15"
+             name="experimental_popout_area_search"
+             tool_tip="Windows prototype: move Area Search into a desktop window"
+             top="695"
+             width="475" />
+            <check_box
+             control_name="FSExperimentalPopoutPreferences"
+             follows="left|top"
+             height="20"
+             label="Move Preferences into a desktop window"
+             layout="topleft"
+             left="15"
+             name="experimental_popout_preferences"
+             tool_tip="Windows prototype: move Preferences into a desktop window"
+             top="718"
+             width="475" />
+            <check_box
+             control_name="FSExperimentalPopoutSettings"
+             follows="left|top"
+             height="20"
+             label="Move Debug Settings into a desktop window"
+             layout="topleft"
+             left="15"
+             name="experimental_popout_settings"
+             tool_tip="Windows prototype: move Debug Settings into a desktop window"
+             top="741"
+             width="475" />
+
+            <text
+             follows="left|top"
+             font="SansSerifBold"
+             height="18"
+             layout="topleft"
+             left="15"
+             name="developer_heading"
+             top="775"
+             width="475">
+                Developer tools and performance
+            </text>
+            <check_box
+             control_name="ExternalWebsocketSyncEnable"
+             follows="left|top"
+             height="20"
+             label="Enable external script editing server"
+             layout="topleft"
+             left="15"
+             name="external_websocket_sync_enable"
+             tool_tip="Enable the WebSocket JSONRPC server used for external script editing"
+             top="798"
+             width="475" />
+            <check_box
+             control_name="ExternalWebsocketSyncLocal"
+             follows="left|top"
+             height="20"
+             label="Restrict external script editing to local connections"
+             layout="topleft"
+             left="15"
+             name="external_websocket_sync_local"
+             tool_tip="Make the external script editing JSONRPC server listen only for local connections"
+             top="821"
+             width="475" />
+            <check_box
+             control_name="ExternalWebsocketForwardDebug"
+             follows="left|top"
+             height="20"
+             label="Forward script messages and errors to the JSONRPC client"
+             layout="topleft"
+             left="15"
+             name="external_websocket_forward_debug"
+             tool_tip="Forward messages and runtime errors for a script to the external JSONRPC client"
+             top="844"
+             width="475" />
+            <text
+             follows="left|top"
+             height="18"
+             layout="topleft"
+             left="35"
+             name="external_websocket_port_label"
+             top="870"
+             width="285">
+                External script editing port
+            </text>
+            <spinner
+             control_name="ExternalWebsocketSyncPort"
+             decimal_digits="0"
+             enabled_control="ExternalWebsocketSyncEnable"
+             follows="left|top"
+             height="20"
+             increment="1"
+             layout="topleft"
+             left="330"
+             max_val="65535"
+             min_val="1"
+             name="external_websocket_port"
+             top="867"
+             width="100" />
+            <text
+             follows="left|top"
+             height="18"
+             layout="topleft"
+             left="35"
+             name="mass_object_edit_workers_label"
+             top="896"
+             width="285">
+                Mass Object Edit inventory workers
+            </text>
+            <spinner
+             control_name="FSMassObjectEditInventoryWorkers"
+             decimal_digits="0"
+             increment="1"
+             follows="left|top"
+             height="20"
+             layout="topleft"
+             left="330"
+             max_val="32"
+             min_val="1"
+             name="mass_object_edit_workers"
+             top="893"
+             width="100" />
+        </panel>
+    </scroll_container>
+</panel>
