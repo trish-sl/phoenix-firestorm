@@ -2,6 +2,94 @@
 <llsd xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
   xsi:noNamespaceSchemaLocation="llsd.xsd">
 <map>
+  <key>FSExperimentalPopoutChat</key>
+  <map>
+    <key>Comment</key>
+    <string>Windows prototype: move the whole Conversations floater into a desktop window. Close the desktop window or disable to return it. See doc/native-popouts.md for limitations.</string>
+    <key>Persist</key>
+    <integer>0</integer>
+    <key>Type</key>
+    <string>Boolean</string>
+    <key>Value</key>
+    <integer>0</integer>
+  </map>
+  <key>FSExperimentalPopoutMap</key>
+  <map>
+    <key>Comment</key>
+    <string>Windows prototype: move the world map into a desktop window. Close the desktop window or disable to return it. See doc/native-popouts.md for limitations.</string>
+    <key>Persist</key>
+    <integer>0</integer>
+    <key>Type</key>
+    <string>Boolean</string>
+    <key>Value</key>
+    <integer>0</integer>
+  </map>
+  <key>FSExperimentalPopoutNearby</key>
+  <map>
+    <key>Comment</key>
+    <string>Windows prototype: move nearby people (Radar) into a desktop window. Close the desktop window or disable to return it. See doc/native-popouts.md for limitations.</string>
+    <key>Persist</key>
+    <integer>0</integer>
+    <key>Type</key>
+    <string>Boolean</string>
+    <key>Value</key>
+    <integer>0</integer>
+  </map>
+  <key>FSExperimentalPopoutAreaSearch</key>
+  <map>
+    <key>Comment</key>
+    <string>Windows prototype: move Area Search into a desktop window. Ctrl+Shift+F12 toggles the focused supported floater. See doc/native-popouts.md for limitations.</string>
+    <key>Persist</key>
+    <integer>0</integer>
+    <key>Type</key>
+    <string>Boolean</string>
+    <key>Value</key>
+    <integer>0</integer>
+  </map>
+  <key>FSExperimentalPopoutPreferences</key>
+  <map>
+    <key>Comment</key>
+    <string>Windows prototype: move Preferences into a desktop window. Ctrl+Shift+F12 toggles the focused supported floater. See doc/native-popouts.md for limitations.</string>
+    <key>Persist</key>
+    <integer>0</integer>
+    <key>Type</key>
+    <string>Boolean</string>
+    <key>Value</key>
+    <integer>0</integer>
+  </map>
+  <key>FSExperimentalPopoutSettings</key>
+  <map>
+    <key>Comment</key>
+    <string>Windows prototype: move Debug Settings into a desktop window. Ctrl+Shift+F12 toggles the focused supported floater. See doc/native-popouts.md for limitations.</string>
+    <key>Persist</key>
+    <integer>0</integer>
+    <key>Type</key>
+    <string>Boolean</string>
+    <key>Value</key>
+    <integer>0</integer>
+  </map>
+  <key>FSExperimentalPopoutInventory</key>
+  <map>
+    <key>Comment</key>
+    <string>Windows prototype: move Inventory into a desktop window. Ctrl+Shift+F12 toggles the focused supported floater. See doc/native-popouts.md for limitations.</string>
+    <key>Persist</key>
+    <integer>0</integer>
+    <key>Type</key>
+    <string>Boolean</string>
+    <key>Value</key>
+    <integer>0</integer>
+  </map>
+  <key>FSExperimentalPopoutNotifications</key>
+  <map>
+    <key>Comment</key>
+    <string>Windows prototype: move the Notification Well into a desktop window. Ctrl+Shift+F12 toggles the focused supported floater. See doc/native-popouts.md for limitations.</string>
+    <key>Persist</key>
+    <integer>0</integer>
+    <key>Type</key>
+    <string>Boolean</string>
+    <key>Value</key>
+    <integer>0</integer>
+  </map>
   <key>FSMouseLookPassonFix</key>
   <map>
     <key>Comment</key>
