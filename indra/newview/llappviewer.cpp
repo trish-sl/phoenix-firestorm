@@ -27,6 +27,7 @@
 #include "llviewerprecompiledheaders.h"
 
 #include "llappviewer.h"
+#include "fsnativepopout.h"
 
 // Viewer includes
 #include "llversioninfo.h"
@@ -1783,6 +1784,7 @@ bool LLAppViewer::doFrame()
                 gGLActive = true;
 
                 display();
+                FSNativePopout::draw();
 
                 if (LLStartUp::getStartupState() == STATE_STARTED) // <FS:Beq/> FIRE-34590 - Bugsplat caused by updating maps before world is loaded.
                 {
@@ -2008,6 +2010,9 @@ void LLAppViewer::flushLFSIO()
 
 bool LLAppViewer::cleanup()
 {
+    // <FS> Return experimental pop-outs before saving floater/tab settings.
+    FSNativePopout::shutdown();
+
 #if LL_VELOPACK
     // Apply any pending Velopack update before shutdown
     if (velopack_is_update_pending())
@@ -5048,6 +5053,8 @@ void LLAppViewer::fastQuit(S32 error_code)
 
 void LLAppViewer::requestQuit()
 {
+    // Include detached document editors in the normal unsaved-change checks.
+    FSNativePopout::reset();
     LL_INFOS() << "requestQuit" << LL_ENDL;
 
     LLViewerRegion* region = gAgent.getRegion();
@@ -6198,6 +6205,10 @@ void LLAppViewer::idle()
         gEventNotifier.update();
 
         gIdleCallbacks.callFunctions();
+        if (gViewerWindow)
+        {
+            FSNativePopout::update(gViewerWindow->getWindow()->getFullscreen(), gViewerWindow->getDisplayScale());
+        }
         gInventory.idleNotifyObservers();
         LLAvatarTracker::instance().idleNotifyObservers();
     }
