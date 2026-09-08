@@ -879,12 +879,24 @@ void LLVOVolume::onDrawableUpdateFromServer()
 
 void LLVOVolume::animateTextures()
 {
+    if (mDead || !mDrawable || !mTextureAnimp || mDrawable->getNumFaces() == 0)
+    {
+        mTextureAnimWasVisible = false;
+        return;
+    }
+
+    const bool visible = isVisible();
+    const bool became_visible = visible && !mTextureAnimWasVisible;
+    mTextureAnimWasVisible = visible;
+
     // Prepare the texture matrix and render batch once even while off-screen,
     // then avoid ongoing animation work until the object is visible.
-    if (!mDead && mDrawable && // <FS:Beq/> FIRE-34601 - bugsplat accessing null drawable.
-        mDrawable->getNumFaces() > 0 &&
-        (!mTextureAnimPrepared || isVisible()))
+    if (!mTextureAnimPrepared || visible)
     {
+        if (became_visible)
+        {
+            updateTextureVirtualSize();
+        }
         mTextureAnimPrepared = true;
         shrinkWrap();
         F32 off_s = 0.f, off_t = 0.f, scale_s = 1.f, scale_t = 1.f, rot = 0.f;
