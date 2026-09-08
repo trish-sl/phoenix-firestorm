@@ -28,6 +28,7 @@
 #include "llviewerprecompiledheaders.h"
 #include "llfollowcam.h"
 #include "llagent.h"
+#include "llviewercontrol.h"
 
 #include "permissionstracker.h"
 
@@ -295,6 +296,7 @@ void LLFollowCam::update()
 
     LLVector3 simulated_pos_agent = gAgent.getPosAgentFromGlobal(mSimulatedPositionGlobal);
     LLVector3 vectorFromCameraToSubject = offsetSubjectPosition - simulated_pos_agent;
+    static LLCachedControl<bool> follow_subject_rotation(gSavedSettings, "FollowCamFollowSubjectRotation", false);
     F32 distanceFromCameraToSubject = vectorFromCameraToSubject.magVec();
 
     LLVector3 whereFocusWantsToBe = mFocus;
@@ -345,6 +347,12 @@ void LLFollowCam::update()
         // I determine the horizontal vector from the camera to the subject
         //-------------------------------------------------------------------------
         LLVector3 horizontalVectorFromCameraToSubject = vectorFromCameraToSubject;
+        if (follow_subject_rotation)
+        {
+            // Build the follow-camera offset in subject space so the subject's
+            // pitch and roll can be carried into the camera's world position.
+            horizontalVectorFromCameraToSubject *= ~mSubjectRotation;
+        }
         horizontalVectorFromCameraToSubject.mV[VZ] = 0.0f;
 
         //---------------------------------------------------------
@@ -384,6 +392,11 @@ void LLFollowCam::update()
                 horizontalDirectionFromCameraToSubject.mV[ VY ] * mPitchCos,
                 -mPitchSin
             );
+
+        if (follow_subject_rotation)
+        {
+            positionOffsetFromSubject *= mSubjectRotation;
+        }
 
         positionOffsetFromSubject *= mSimulatedDistance;
 
