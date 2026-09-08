@@ -26,6 +26,7 @@
 
 #include "llviewerprecompiledheaders.h"
 #include "llviewerwindow.h"
+#include "fsnativepopout.h"
 
 
 // system library includes
@@ -2657,6 +2658,8 @@ void LLViewerWindow::initWorldUI()
 // Destroy the UI
 void LLViewerWindow::shutdownViews()
 {
+    FSNativePopout::shutdown();
+
     // clean up warning logger
     RecordToChatConsole::getInstance()->stopRecorder();
     LL_INFOS() << "Warning logger is cleaned." << LL_ENDL ;
@@ -3352,6 +3355,11 @@ bool LLViewerWindow::handleKey(KEY key, MASK mask)
     {
         LL_DEBUGS() << "Key handled by LLSetKeyBindDialog" << LL_ENDL;
         LLViewerEventRecorder::instance().logKeyEvent(key,mask);
+        return true;
+    }
+
+    if (FSNativePopout::handleKey(key, mask, gKeyboard->getKeyRepeated(key)))
+    {
         return true;
     }
 
@@ -7151,6 +7159,8 @@ void LLViewerWindow::dumpState()
 
 void LLViewerWindow::stopGL()
 {
+    FSNativePopout::reset();
+
     //Note: --bao
     //if not necessary, do not change the order of the function calls in this function.
     //if change something, make sure it will not break anything.
