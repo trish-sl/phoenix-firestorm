@@ -3419,6 +3419,19 @@ LLPanelPreference::LLPanelPreference()
 //virtual
 bool LLPanelPreference::postBuild()
 {
+    // This developer diagnostic is intentionally restricted to the account
+    // that owns the matching Develop menu action.
+    if (LLCheckBoxCtrl* report_camera_at_avatar = findChild<LLCheckBoxCtrl>("report_camera_at_avatar"))
+    {
+        const bool allowed = gAgentAvatarp
+            && LLStringUtil::compareInsensitive(gAgentAvatarp->getFullname(), "Trishace") == 0;
+        report_camera_at_avatar->setEnabled(allowed);
+        if (!allowed)
+        {
+            report_camera_at_avatar->setValue(false);
+        }
+    }
+
     ////////////////////// PanelGeneral ///////////////////
     if (hasChild("display_names_check", true))
     {
