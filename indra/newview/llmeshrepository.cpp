@@ -1204,16 +1204,10 @@ void LLMeshRepoThread::run()
                     else
                     {
                         // too many fails -- can't get the header so none of the LODs will
-                        // be available either.  Without this, objects waiting on this
-                        // header never learn it's gone and stay at their placeholder
-                        // shape forever (mirrors LLMeshHeaderHandler::processFailure).
+                        // be available either. headerUnavailable() tells every object
+                        // waiting on it, so none keeps its placeholder shape forever.
                         LL_WARNS() << "mHeaderReqQ failed too many times: " << req.mMeshParams << " , skip" << LL_ENDL;
-
-                        LLMutexLock lock(mLoadedMutex);
-                        for (int i = 0; i < LLVolumeLODGroup::NUM_LODS; ++i)
-                        {
-                            mUnavailableQ.push_back(LODRequest(req.mMeshParams, i));
-                        }
+                        headerUnavailable(req.mMeshParams);
                     }
                 }
             }
@@ -2094,7 +2088,7 @@ bool LLMeshRepoThread::fetchMeshHeader(const LLVolumeParams& mesh_params)
     }
 
     //either cache entry doesn't exist or is corrupt, request header from simulator
-    bool retval = true;
+    bool retval = false;
     std::string http_url;
     // <FS:Ansariel> [UDP Assets]
     //constructUrl(mesh_params.getSculptID(), &http_url);
@@ -2143,16 +2137,42 @@ bool LLMeshRepoThread::fetchMeshHeader(const LLVolumeParams& mesh_params)
                                << ".  Reason:  " << mHttpStatus.toString()
                                << " (" << mHttpStatus.toTerseString() << ")"
                                << LL_ENDL;
-            retval = false;
+            // The scheduler owns retries when HTTP submission fails.
+            handler->mProcessed = true;
         }
         else
         {
             handler->mHttpHandle = handle;
             mHttpRequestSet.insert(handler);
+            retval = true;
         }
     }
 
     return retval;
+}
+
+void LLMeshRepoThread::headerUnavailable(const LLVolumeParams& mesh_params)
+{
+    std::array<S32, LLModel::NUM_LODS> pending_lods;
+    {
+        LLMutexLock lock(mPendingMutex);
+        auto iter = mPendingLOD.find(mesh_params.getSculptID());
+        if (iter == mPendingLOD.end())
+        {
+            return;
+        }
+        pending_lods = iter->second;
+        mPendingLOD.erase(iter);
+    }
+
+    LLMutexLock lock(mLoadedMutex);
+    for (S32 lod = 0; lod < LLModel::NUM_LODS; ++lod)
+    {
+        if (pending_lods[lod] > 0)
+        {
+            mUnavailableQ.emplace_back(mesh_params, lod);
+        }
+    }
 }
 
 //return false if failed to get mesh lod.
@@ -2524,6 +2544,11 @@ EMeshProcessingResult LLMeshRepoThread::headerReceived(const LLVolumeParams& mes
                         mLODReqQ.push(req);
                         LLMeshRepository::sLODProcessing++;
                     }
+                }
+                else if (pending_lods[i] > 0)
+                {
+                    LLMutexLock lock(mLoadedMutex);
+                    mUnavailableQ.emplace_back(mesh_params, i);
                 }
             }
         }
@@ -3856,12 +3881,7 @@ void LLMeshHeaderHandler::processFailure(LLCore::HttpStatus status)
                        << " (" << status.toTerseString() << ").  Not retrying."
                        << LL_ENDL;
 
-    // Can't get the header so none of the LODs will be available
-    LLMutexLock lock(gMeshRepo.mThread->mLoadedMutex);
-    for (int i(0); i < LLVolumeLODGroup::NUM_LODS; ++i)
-    {
-        gMeshRepo.mThread->mUnavailableQ.push_back(LLMeshRepoThread::LODRequest(mMeshParams, i));
-    }
+    gMeshRepo.mThread->headerUnavailable(mMeshParams);
 }
 
 void LLMeshHeaderHandler::processData(LLCore::BufferArray * /* body */, S32 /* body_offset */,
@@ -3886,12 +3906,7 @@ void LLMeshHeaderHandler::processData(LLCore::BufferArray * /* body */, S32 /* b
                            << ", Reason: " << res << " Not retrying."
                            << LL_ENDL;
 
-        // Can't get the header so none of the LODs will be available
-        LLMutexLock lock(gMeshRepo.mThread->mLoadedMutex);
-        for (int i(0); i < LLVolumeLODGroup::NUM_LODS; ++i)
-        {
-            gMeshRepo.mThread->mUnavailableQ.push_back(LLMeshRepoThread::LODRequest(mMeshParams, i));
-        }
+        gMeshRepo.mThread->headerUnavailable(mMeshParams);
     }
     else if (data && data_size > 0)
     {
@@ -3968,12 +3983,7 @@ void LLMeshHeaderHandler::processData(LLCore::BufferArray * /* body */, S32 /* b
 
             gMeshRepo.mThread->mHeaderMutex->unlock();
 
-            // headerReceived() parsed header, but header's data is invalid so none of the LODs will be available
-            LLMutexLock lock(gMeshRepo.mThread->mLoadedMutex);
-            for (int i(0); i < LLVolumeLODGroup::NUM_LODS; ++i)
-            {
-                gMeshRepo.mThread->mUnavailableQ.push_back(LLMeshRepoThread::LODRequest(mMeshParams, i));
-            }
+            // headerReceived() has already notified the pending LODs.
         }
     }
 }
@@ -5188,6 +5198,10 @@ void LLMeshRepository::notifyMeshUnavailable(const LLVolumeParams& mesh_params, 
     mesh_load_map::iterator obj_iter = mLoadingMeshes[request_lod].find(mesh_id);
     if (obj_iter != mLoadingMeshes[request_lod].end())
     {
+        // Detach these waiters before callbacks can register fallback requests.
+        auto volumes = std::move(obj_iter->second.mVolumes);
+        mLoadingMeshes[request_lod].erase(obj_iter);
+
         F32 detail = LLVolumeLODGroup::getVolumeScaleFromDetail(volume_lod);
 
         LLVolume* sys_volume = LLPrimitive::getVolumeManager()->refVolume(mesh_params, volume_lod);
@@ -5197,7 +5211,7 @@ void LLMeshRepository::notifyMeshUnavailable(const LLVolumeParams& mesh_params, 
             LLPrimitive::getVolumeManager()->unrefVolume(sys_volume);
         }
 
-        for (LLVOVolume* vobj : obj_iter->second.mVolumes)
+        for (LLVOVolume* vobj : volumes)
         {
             if (vobj)
             {
@@ -5205,14 +5219,14 @@ void LLMeshRepository::notifyMeshUnavailable(const LLVolumeParams& mesh_params, 
 
                 if (obj_volume &&
                     obj_volume->getDetail() == detail &&
-                    obj_volume->getParams() == mesh_params)
-                { //should force volume to find most appropriate LOD
+                    obj_volume->getParams() == mesh_params &&
+                    getActualMeshLOD(mesh_params, vobj->getLOD()) != volume_lod)
+                {
+                    // Select a fallback without restarting the failed LOD request.
                     vobj->setVolume(obj_volume->getParams(), volume_lod);
                 }
             }
         }
-
-        mLoadingMeshes[request_lod].erase(obj_iter);
     }
 }
 
