@@ -118,6 +118,49 @@ namespace
 constexpr size_t LARGE_LINKSET_RESYNC_THRESHOLD = 128;
 constexpr F64 LARGE_LINKSET_RESYNC_INTERVAL_SEC = 0.5;
 
+void requestTEFullResync(LLViewerObject* objectp)
+{
+    LLViewerRegion* regionp = objectp->getRegion();
+    const U32 local_id = objectp->getLocalID();
+    if (!regionp || !local_id) return;
+
+    struct Retry
+    {
+        F64 expires;
+        F64 last_request;
+        U32 attempts;
+    };
+    static std::unordered_map<LLUUID, Retry> retries;
+    static F64 next_window = 0.;
+    static U32 requests = 0;
+    const F64 now = LLFrameTimer::getTotalSeconds();
+    if (now >= next_window)
+    {
+        next_window = now + 1.;
+        requests = 0;
+        for (auto it = retries.begin(); it != retries.end();)
+        {
+            if (now >= it->second.expires) it = retries.erase(it);
+            else ++it;
+        }
+    }
+    if (requests >= 32) return;
+    auto it = retries.find(objectp->getID());
+    if (it == retries.end())
+    {
+        if (retries.size() >= 4096) return;
+        it = retries.emplace(objectp->getID(), Retry{ now + 60., now - 1., 0 }).first;
+    }
+    Retry& retry = it->second;
+    if (retry.attempts >= 3 || now - retry.last_request < 1.) return;
+    retry.last_request = now;
+    ++retry.attempts;
+    ++requests;
+    // The normal world cache-miss pass sends these together. Do not flush all
+    // regions' pending recovery work for every individual malformed update.
+    regionp->addCacheMissFull(local_id);
+}
+
 // Terse updates are unreliable; for very large linksets, alpha/TE bursts can
 // leave random child links visually stale. Throttle a full linkset resync.
 void requestLargeLinksetResync(LLVOVolume* objectp)
@@ -781,32 +824,26 @@ U32 LLVOVolume::processUpdateMessage(LLMessageSystem *mesgsys,
                 // which adds a 4-byte length prefix in front of the TE payload.
                 constexpr S32 max_texture_dp_size = (S32)LLTEContents::MAX_TE_BUFFER + (S32)sizeof(S32);
                 U8 tdpbuffer[max_texture_dp_size];
-                S32 texture_dp_size = llmin(texture_length, max_texture_dp_size);
-                if (texture_length > max_texture_dp_size)
+                S32 result = TEM_INVALID;
+                if (texture_length >= max_texture_dp_size)
                 {
                     LL_WARNS("TEXTUREENTRY") << "Excessive terse TextureEntry size " << texture_length
-                                             << " for object " << getID() << ". Truncating to "
-                                             << max_texture_dp_size << LL_ENDL;
+                                             << " for object " << getID() << ". Rejecting update." << LL_ENDL;
                 }
-
-                LLDataPackerBinaryBuffer tdp(tdpbuffer, texture_dp_size);
-                mesgsys->getBinaryDataFast(_PREHASH_ObjectData, _PREHASH_TextureEntry, tdpbuffer, 0, block_num, texture_dp_size);
-                S32 result = unpackTEMessage(tdp);
+                else
+                {
+                    LLDataPackerBinaryBuffer tdp(tdpbuffer, texture_length);
+                    mesgsys->getBinaryDataFast(_PREHASH_ObjectData, _PREHASH_TextureEntry,
+                        tdpbuffer, 0, block_num, texture_length);
+                    result = unpackTEMessage(tdp);
+                }
 
                 // If a terse TE update arrives before this object has valid TE state,
                 // the update can be effectively dropped. Ask for a full update to resync.
                 if (update_type == OUT_TERSE_IMPROVED &&
                     (result == TEM_INVALID || (result == TEM_CHANGE_NONE && getNumTEs() == 0)))
                 {
-                    if (LLViewerRegion* regionp = getRegion())
-                    {
-                        U32 local_id = getLocalID();
-                        if (local_id)
-                        {
-                            regionp->addCacheMissFull(local_id);
-                            regionp->requestCacheMisses();
-                        }
-                    }
+                    requestTEFullResync(this);
                 }
                 else if (update_type == OUT_TERSE_IMPROVED && texture_length > 0)
                 {
