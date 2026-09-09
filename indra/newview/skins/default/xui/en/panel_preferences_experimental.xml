@@ -397,6 +397,17 @@
              tool_tip="Windows prototype: move Debug Settings into a desktop window"
              top="741"
              width="475" />
+            <check_box
+             control_name="FSExperimentalPopoutNotifications"
+             follows="left|top"
+             height="20"
+             label="Move Notifications into a desktop window"
+             layout="topleft"
+             left="15"
+             name="experimental_popout_notifications"
+             tool_tip="Windows prototype: move the Notification Well into a desktop window"
+             top="764"
+             width="475" />
 
             <text
              follows="left|top"
@@ -405,7 +416,7 @@
              layout="topleft"
              left="15"
              name="developer_heading"
-             top="775"
+             top="798"
              width="475">
                 Developer tools and performance
             </text>
@@ -418,7 +429,7 @@
              left="15"
              name="external_websocket_sync_enable"
              tool_tip="Enable the WebSocket JSONRPC server used for external script editing"
-             top="798"
+             top="821"
              width="475" />
             <check_box
              control_name="ExternalWebsocketSyncLocal"
@@ -429,7 +440,7 @@
              left="15"
              name="external_websocket_sync_local"
              tool_tip="Make the external script editing JSONRPC server listen only for local connections"
-             top="821"
+             top="844"
              width="475" />
             <check_box
              control_name="ExternalWebsocketForwardDebug"
@@ -440,7 +451,7 @@
              left="15"
              name="external_websocket_forward_debug"
              tool_tip="Forward messages and runtime errors for a script to the external JSONRPC client"
-             top="844"
+             top="867"
              width="475" />
             <text
              follows="left|top"
@@ -448,7 +459,7 @@
              layout="topleft"
              left="35"
              name="external_websocket_port_label"
-             top="870"
+             top="893"
              width="285">
                 External script editing port
             </text>
@@ -464,7 +475,7 @@
              max_val="65535"
              min_val="1"
              name="external_websocket_port"
-             top="867"
+             top="890"
              width="100" />
             <text
              follows="left|top"
@@ -472,7 +483,7 @@
              layout="topleft"
              left="35"
              name="mass_object_edit_workers_label"
-             top="896"
+             top="919"
              width="285">
                 Mass Object Edit inventory workers
             </text>
@@ -487,7 +498,7 @@
              max_val="32"
              min_val="1"
              name="mass_object_edit_workers"
-             top="893"
+             top="916"
              width="100" />
         </panel>
     </scroll_container>

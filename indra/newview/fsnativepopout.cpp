@@ -17,10 +17,12 @@
 #include "llfloaterreg.h"
 #include "llfocusmgr.h"
 #include "llfolderview.h"
+#include "lldockablefloater.h"
 #include "llpanel.h"
 #include "llglslshader.h"
 #include "llkeyboard.h"
 #include "lllineeditor.h"
+#include "llmenugl.h"
 #include "llmodaldialog.h"
 #include "llmultifloater.h"
 #include "llrender.h"
@@ -100,11 +102,13 @@ private:
         explicit UIScope(NativePopout& host)
             : mHost(host), mRoot(LLUI::getInstance()->getRootView()),
               mFloaters(gFloaterView), mScale(LLUI::getScaleFactor()),
-              mAppFocus(gFocusMgr.getAppHasFocus())
+              mAppFocus(gFocusMgr.getAppHasFocus()),
+              mMenuContainer(LLMenuGL::sMenuContainer)
         {
             ++sDispatchDepth;
             LLUI::getInstance()->setRootView(host.mRoot.get());
             gFloaterView = host.mRoot.get();
+            LLMenuGL::sMenuContainer = host.mMenuHolder.get();
             LLUI::setScaleFactor(host.mDisplayScale);
             if (GetFocus() == host.mWindow)
             {
@@ -116,6 +120,7 @@ private:
         {
             LLUI::getInstance()->setRootView(mRoot);
             gFloaterView = mFloaters;
+            LLMenuGL::sMenuContainer = mMenuContainer;
             LLUI::setScaleFactor(mScale);
             gFocusMgr.setAppHasFocus(mAppFocus);
 
@@ -124,7 +129,7 @@ private:
             auto children = *mHost.mRoot->getChildList();
             for (LLView* child : children)
             {
-                if (child != mHost.mFloater.get())
+                if (child != mHost.mFloater.get() && child != mHost.mMenuHolder.get())
                 {
                     mFloaters->addChild(child);
                 }
@@ -138,6 +143,7 @@ private:
         LLFloaterView* mFloaters;
         LLVector2 mScale;
         bool mAppFocus;
+        LLMenuHolderGL* mMenuContainer;
     };
 
     static LRESULT CALLBACK windowProc(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
@@ -165,6 +171,9 @@ private:
     bool mCanDrag = false;
     bool mCanResize = false;
     bool mCanMinimize = false;
+    bool mWasDocked = false;
+    LLHandle<LLView> mDockWidget;
+    std::unique_ptr<LLMenuHolderGL> mMenuHolder;
     bool mCloseRequested = false;
     bool mCloseFloater = false;
     bool mFocusOnReturn = false;
@@ -263,6 +272,30 @@ bool NativePopout::open()
     params.name = "native_popout_root";
     params.rect = LLRect(0, mOriginalRect.getHeight(), mOriginalRect.getWidth(), 0);
     mRoot.reset(LLUICtrlFactory::create<LLFloaterView>(params));
+    LLMenuHolderGL::Params menu_params;
+    menu_params.name = "native_popout_menu_holder";
+    menu_params.rect = mRoot->getLocalRect();
+    menu_params.follows.flags(FOLLOWS_ALL);
+    mMenuHolder.reset(LLUICtrlFactory::create<LLMenuHolderGL>(menu_params));
+    mWasDocked = floater->isDocked();
+    if (mWasDocked)
+    {
+        if (auto* dockable = dynamic_cast<LLDockableFloater*>(floater))
+        {
+            if (auto* dockControl = dockable->getDockControl())
+            {
+                if (auto* dockWidget = dockControl->getDock())
+                {
+                    mDockWidget = dockWidget->getHandle();
+                }
+            }
+            dockable->setDocked(false, false);
+            if (auto* dockControl = dockable->getDockControl())
+            {
+                dockControl->setDock(nullptr);
+            }
+        }
+    }
     if (LLMultiFloater* host = floater->getHost())
     {
         mOriginalHost = host->getHandle();
@@ -278,6 +311,7 @@ bool NativePopout::open()
     floater->setCanDrag(false);
     floater->setCanResize(false);
     floater->setCanMinimize(false);
+    mRoot->addChild(mMenuHolder.get());
     // Leave close/tear-off controls intact. Rehosting from the usual UI is
     // detected by update(), which retires this native host without stealing it.
     floater->setVisible(true);
@@ -338,6 +372,20 @@ NativePopout::~NativePopout()
             if (destination)
             {
                 destination->addFloater(floater, visible && !sShuttingDown);
+            }
+            if (mWasDocked)
+            {
+                if (auto* dockable = dynamic_cast<LLDockableFloater*>(floater))
+                {
+                    if (auto* dockControl = dockable->getDockControl())
+                    {
+                        dockControl->setDock(mDockWidget.get());
+                    }
+                }
+                if (returning)
+                {
+                    floater->setDocked(true, false);
+                }
             }
             // A close/restriction must not be undone by reattachment.
             floater->setVisible(visible);
@@ -509,6 +557,14 @@ void NativePopout::mouse(UINT message, WPARAM wparam, LPARAM lparam)
         {
             target->handleMouseUp(local_x, local_y, mask);
         }
+        break;
+    case WM_RBUTTONDBLCLK:
+    case WM_RBUTTONDOWN:
+        SetFocus(mWindow);
+        target->handleRightMouseDown(local_x, local_y, mask);
+        break;
+    case WM_RBUTTONUP:
+        target->handleRightMouseUp(local_x, local_y, mask);
         break;
     case WM_MOUSEMOVE:
         if (map)
@@ -857,6 +913,9 @@ LRESULT NativePopout::dispatch(UINT message, WPARAM wparam, LPARAM lparam)
     case WM_LBUTTONDOWN:
     case WM_LBUTTONUP:
     case WM_LBUTTONDBLCLK:
+    case WM_RBUTTONDOWN:
+    case WM_RBUTTONUP:
+    case WM_RBUTTONDBLCLK:
     case WM_MOUSEMOVE:
     case WM_MOUSEWHEEL:
         if (interactive) mouse(message, wparam, lparam);

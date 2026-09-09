@@ -20,11 +20,12 @@ struct Spec
     const char* setting; // Optional convenience toggle for a singleton.
 };
 
-inline constexpr std::array<Spec, 18> SPECS = {{
+inline constexpr std::array<Spec, 19> SPECS = {{
     { "fs_im_container", "FSExperimentalPopoutChat" },
     { "world_map", "FSExperimentalPopoutMap" },
     { "fs_radar", "FSExperimentalPopoutNearby" },
     { "area_search", "FSExperimentalPopoutAreaSearch" },
+    { "notification_well_window", "FSExperimentalPopoutNotifications" },
     { "preferences", "FSExperimentalPopoutPreferences" },
     { "settings_debug", "FSExperimentalPopoutSettings" },
     { "inventory", "FSExperimentalPopoutInventory" },

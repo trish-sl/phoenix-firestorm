@@ -89,11 +89,13 @@ int main()
     check(!isToggleShortcut('P', MASK_CONTROL), "Preferences shortcut intercepted");
     check(!isToggleShortcut(KEY_F12, MASK_NONE), "Plain F12 intercepted");
     check(!isToggleShortcut(KEY_F12, MASK_CONTROL | MASK_SHIFT | MASK_ALT), "Alt shortcut intercepted");
-    for (const char* name : { "area_search", "preferences", "settings_debug", "inventory",
+    for (const char* name : { "area_search", "notification_well_window", "preferences",
+        "settings_debug", "inventory",
         "secondary_inventory", "preview_script", "preview_scriptedit", "preview_notecard" })
     {
         check(find(name) != nullptr, "Requested floater unsupported");
     }
+    check(find("notification_well_window")->setting != nullptr, "Notification well missing singleton toggle");
     check(!find("unknown_floater"), "Arbitrary floater allowed");
     check(find("preview_notecard")->setting == nullptr, "Document gets a singleton toggle");
     Editor editor;
