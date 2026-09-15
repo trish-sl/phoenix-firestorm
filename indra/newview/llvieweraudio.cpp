@@ -408,28 +408,44 @@ void init_audio()
         gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndClickRelease")), true);
         gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndHealthReductionF")), true);
         gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndHealthReductionM")), true);
+        gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndFriendOffline")), true);
+        gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndFriendOnline")), true);
+        gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndFriendshipOffer")), true);
+        gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndGroupInvitation")), true);
+        gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndGroupNotice")), true);
+        gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndIncomingVoiceCall")), true);
         //gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndIncomingChat")), true);
         //gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndIncomingIM")), true);
         //gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndInvApplyToObject")), true);
         gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndInvalidOp")), true);
+        gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndInventoryOffer")), true);
         //gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndInventoryCopyToInv")), true);
         gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndMoneyChangeDown")), true);
         gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndMoneyChangeUp")), true);
+        gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndMovelockToggle")), true);
+        gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndNearbyChat")), true);
+        gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndNewIncomingConfIMSession")), true);
+        gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndNewIncomingGroupIMSession")), true);
         gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndNewIncomingIMSession")), true);
         //gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndObjectCopyToInv")), true);
         gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndObjectCreate")), true);
         gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndObjectDelete")), true);
+        gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndQuestionExperience")), true);
         gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndObjectRezIn")), true);
         gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndObjectRezOut")), true);
         gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndSnapshot")), true);
         //gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndStartAutopilot")), true);
         //gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndStartFollowpilot")), true);
         gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndStartIM")), true);
+        gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndTeleportOffer")), true);
         //gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndStopAutopilot")), true);
         gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndTeleportOut")), true);
         //gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndTextureApplyToObject")), true);
         //gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndTextureCopyToInv")), true);
         gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndTyping")), true);
+        gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndFootsteps")), true);
+        gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndMicToggle")), true);
+        gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndTrackerBeacon")), true);
         gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndWindowClose")), true);
         gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndWindowOpen")), true);
         gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndRestart")), true);
@@ -438,6 +454,15 @@ void init_audio()
         gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndRestartOpenSim")), true); // <FS:Ansariel> Preload OpenSim restart sound
         gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndScriptFloaterOpen")), true); // <FS:PP> Separate sound for opening script dialogs
         gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndScriptFloaterClose")), true); // <FS:Zi> Separate sound for closing script dialogs
+
+        // <FS:Ansariel> Radar notification sounds
+        gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndRadarAgeAlert")), true);
+        gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndRadarChatEnter")), true);
+        gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndRadarChatLeave")), true);
+        gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndRadarDrawEnter")), true);
+        gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndRadarDrawLeave")), true);
+        gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndRadarSimEnter")), true);
+        gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndRadarSimLeave")), true);
         // <FS:Zi> Pie menu
         gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndPieMenuAppear")), true);
         gAudiop->preloadSound(LLUUID(gSavedSettings.getString("UISndPieMenuHide")), true);
