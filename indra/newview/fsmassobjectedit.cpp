@@ -47,13 +47,15 @@
 
 namespace
 {
-    constexpr F32 PROPERTY_TIMEOUT = 15.f;
     constexpr F32 INVENTORY_TIMEOUT = 20.f;
     constexpr F32 TARGET_LIST_UPDATE_BUDGET = 0.003f;
     constexpr F32 FILTER_REFRESH_DELAY = 0.25f;
     constexpr F32 NAME_LIST_REFRESH_DELAY = 0.5f;
     constexpr S32 MAX_OBJECTS_PER_PACKET = 50;
     constexpr S32 MAX_PROPERTY_REQUESTS_IN_FLIGHT = MAX_OBJECTS_PER_PACKET * 3;
+    constexpr S32 MAX_PROPERTY_RETRIES = 8;
+    constexpr F32 PROPERTY_RETRY_INTERVAL = 8.f;
+    constexpr F32 OBJECT_RECONCILE_INTERVAL = 1.5f;
     constexpr S32 TARGET_SCAN_WORKERS = 3;
     constexpr S32 TARGET_SCAN_RETRIES = 10;
     constexpr F32 TARGET_SCAN_RETRY_DELAY = 1.f;
@@ -412,6 +414,33 @@ bool FSMassObjectEdit::postBuild()
 void FSMassObjectEdit::draw()
 {
     LLFloater::draw();
+
+    // Full-region interest mode can be restored by another floater or a
+    // region transition. Reclaim it while this tool is open, as Scene
+    // Explorer does, and periodically discover objects that streamed in
+    // after the initial snapshot.
+    if (gAgent.getInterestListMode() != IL_MODE_360)
+    {
+        gAgent.changeInterestListMode(IL_MODE_360);
+    }
+    LLViewerRegion* current_region = gAgent.getRegion();
+    if (current_region && mRegionID.notNull() &&
+        current_region->getRegionID() != mRegionID && !mWaitingForInterestList)
+    {
+        mRegionID = current_region->getRegionID();
+        mInterestListTimer.reset();
+        mWaitingForInterestList = true;
+        gIdleCallbacks.addFunction(onIdle, this);
+        setStatus("Region changed; waiting for the new region object stream...");
+        updateButtons();
+    }
+    if (!mBusy && !mWaitingForInterestList &&
+        mReconcileTimer.getElapsedTimeF32() >= OBJECT_RECONCILE_INTERVAL)
+    {
+        mReconcileTimer.reset();
+        reconcileObjects();
+    }
+
     if (LLViewerObject* object = gObjectList.findObject(mBeaconObjectID))
     {
         static LLCachedControl<S32> beacon_line_width(gSavedSettings, "DebugBeaconLineWidth");
@@ -432,6 +461,7 @@ void FSMassObjectEdit::onOpen(const LLSD&)
     // The InterestList capability does not report completion. Give the sim a
     // short head start before taking the first complete-region snapshot.
     mInterestListTimer.reset();
+    mReconcileTimer.reset();
     mWaitingForInterestList = true;
     gIdleCallbacks.addFunction(onIdle, this);
     setStatus("Requesting all region objects...");
@@ -530,6 +560,7 @@ void FSMassObjectEdit::refreshObjects()
     mPropertyRequestIDs.clear();
     mPropertyRequestIndex = 0;
     mPropertyRequestsInFlight = 0;
+    mPropertyRetryCount = 0;
     mRegionID = region->getRegionID();
 
     // Clear the previous scan over multiple frames, then append each prim as
@@ -579,6 +610,103 @@ void FSMassObjectEdit::refreshObjects()
     {
         finishObjectScan();
     }
+}
+
+void FSMassObjectEdit::reconcileObjects()
+{
+    LLViewerRegion* region = gAgent.getRegion();
+    if (!region || region->getRegionID() != mRegionID)
+    {
+        return;
+    }
+
+    S32 discovered = 0;
+    for (S32 i = 0; i < gObjectList.getNumObjects(); ++i)
+    {
+        LLViewerObject* object = gObjectList.getObject(i);
+        if (!object || object->isDead() || object->getRegion() != region ||
+            object->isAvatar() || object->isAttachment() ||
+            object->getPCode() == LLViewerObject::LL_VO_SURFACE_PATCH ||
+            !object->mbCanSelect || mObjects.find(object->getID()) != mObjects.end())
+        {
+            continue;
+        }
+
+        ObjectInfo info;
+        info.id = object->getID();
+        info.local_id = object->getLocalID();
+        LLViewerObject* root = object->getRootEdit();
+        info.root_id = root ? root->getID() : info.id;
+        if (mObjects.emplace(info.id, info).second)
+        {
+            mPropertyRequestIDs.push_back(info.id);
+            ++mPendingProperties;
+            ++discovered;
+        }
+    }
+
+    // ObjectSelect/ObjectDeselect is used to request full properties. Do not
+    // disturb an object the user is actively editing; queue it once selection
+    // has moved elsewhere.
+    for (auto& entry : mObjects)
+    {
+        ObjectInfo& info = entry.second;
+        if (info.property_request != PropertyRequestState::DEFERRED)
+        {
+            continue;
+        }
+        LLViewerObject* object = gObjectList.findObject(info.id);
+        if (object && !object->isDead() && !object->isSelected())
+        {
+            info.property_request = PropertyRequestState::NEED;
+            mPropertyRequestIDs.push_back(info.id);
+            ++discovered;
+        }
+    }
+
+    if (discovered > 0)
+    {
+        mPropertyRetryCount = 0;
+        mScanning = true;
+        mScanTimer.reset();
+        gIdleCallbacks.addFunction(onIdle, this);
+        setStatus(llformat("Queued %d new or deferred prims; fetching %d pending properties...",
+            discovered, mPendingProperties));
+        updateButtons();
+    }
+}
+
+bool FSMassObjectEdit::retryUnresolvedProperties()
+{
+    if (mPropertyRetryCount >= MAX_PROPERTY_RETRIES)
+    {
+        return false;
+    }
+
+    uuid_vec_t unresolved;
+    unresolved.reserve(mPendingProperties);
+    for (auto& entry : mObjects)
+    {
+        ObjectInfo& info = entry.second;
+        if (!info.received && info.property_request != PropertyRequestState::DEFERRED)
+        {
+            info.property_request = PropertyRequestState::NEED;
+            unresolved.push_back(info.id);
+        }
+    }
+    if (unresolved.empty())
+    {
+        return false;
+    }
+
+    mPropertyRequestIDs.swap(unresolved);
+    mPropertyRequestIndex = 0;
+    mPropertyRequestsInFlight = 0;
+    ++mPropertyRetryCount;
+    mScanTimer.reset();
+    setStatus(llformat("Retrying %d unresolved prim properties (attempt %d/%d)...",
+        mPendingProperties, mPropertyRetryCount, MAX_PROPERTY_RETRIES));
+    return true;
 }
 
 void FSMassObjectEdit::requestObjectProperties(const std::vector<U32>& local_ids, bool select)
@@ -648,6 +776,12 @@ void FSMassObjectEdit::processPropertyRequestQueue()
         auto found = mObjects.find(id);
         if (found == mObjects.end() || found->second.property_request != PropertyRequestState::NEED)
         {
+            continue;
+        }
+        LLViewerObject* object = gObjectList.findObject(id);
+        if (object && object->isSelected())
+        {
+            found->second.property_request = PropertyRequestState::DEFERRED;
             continue;
         }
         found->second.property_request = PropertyRequestState::SENT;
@@ -724,10 +858,13 @@ void FSMassObjectEdit::onIdle(void* userdata)
     if (self->mScanning)
     {
         self->processPropertyRequestQueue();
+        const bool queue_drained =
+            self->mPropertyRequestIndex >= self->mPropertyRequestIDs.size() &&
+            self->mPropertyRequestsInFlight == 0;
+        const bool retry_due = queue_drained ||
+            self->mScanTimer.getElapsedTimeF32() >= PROPERTY_RETRY_INTERVAL;
         if (self->mPendingProperties == 0 ||
-            (self->mPropertyRequestIndex >= self->mPropertyRequestIDs.size() &&
-                self->mPropertyRequestsInFlight == 0) ||
-            self->mScanTimer.getElapsedTimeF32() >= PROPERTY_TIMEOUT)
+            (retry_due && !self->retryUnresolvedProperties()))
         {
             self->finishObjectScan();
         }
