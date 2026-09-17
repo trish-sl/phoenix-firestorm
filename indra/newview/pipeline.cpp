@@ -1048,6 +1048,19 @@ bool LLPipeline::allocateScreenBufferInternal(U32 resX, U32 resY)
             mSMAABlendBuffer.release();
         }
 
+        static LLCachedControl<bool> rlv_sphere_opaque_depth(gSavedSettings, "RLVaDebugSphereUseOpaqueDepth", false);
+        if (rlv_sphere_opaque_depth())
+        {
+            if (!mRlvSphereDepth.allocate(resX, resY, 0, true))
+            {
+                return false;
+            }
+        }
+        else
+        {
+            mRlvSphereDepth.release();
+        }
+
         //water reflection texture (always needed as scratch space whether or not transparent water is enabled)
         mWaterDis.allocate(resX, resY, screenFormat, true);
 
@@ -9894,6 +9907,33 @@ void LLPipeline::renderDeferredLighting()
         }
 
         gGL.setColorMask(true, true);
+    }
+
+    static LLCachedControl<bool> rlv_sphere_opaque_depth(gSavedSettings, "RLVaDebugSphereUseOpaqueDepth", false);
+    if (rlv_sphere_opaque_depth() && RlvActions::hasBehaviour(RLV_BHVR_SETSPHERE))
+    {
+        const U32 depth_w = mRT->deferredScreen.getWidth();
+        const U32 depth_h = mRT->deferredScreen.getHeight();
+        if (!mRlvSphereDepth.isComplete() || mRlvSphereDepth.getWidth() != depth_w || mRlvSphereDepth.getHeight() != depth_h)
+        {
+            if (!mRlvSphereDepth.allocate(depth_w, depth_h, 0, true))
+            {
+                mRlvSphereDepth.release();
+            }
+        }
+
+        if (mRlvSphereDepth.isComplete())
+        {
+            LL_PROFILE_GPU_ZONE("rlv sphere depth snapshot");
+            LLGLDepthTest depth(GL_TRUE, GL_TRUE, GL_ALWAYS);
+            mRlvSphereDepth.copyContents(mRT->deferredScreen,
+                0, 0, depth_w, depth_h, 0, 0, depth_w, depth_h,
+                GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+        }
+    }
+    else if (mRlvSphereDepth.isComplete() && !rlv_sphere_opaque_depth())
+    {
+        mRlvSphereDepth.release();
     }
 
     {  // render non-deferred geometry (alpha, fullbright, glow)
