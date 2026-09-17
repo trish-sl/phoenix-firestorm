@@ -10336,10 +10336,10 @@ void LLPipeline::bindReflectionProbes(LLGLSLShader& shader)
         bound = true;
     }
 
-    channel = shader.enableTexture(LLShaderMgr::IRRADIANCE_PROBES, LLTexUnit::TT_CUBE_MAP_ARRAY);
-    if (channel > -1 && mReflectionMapManager.mIrradianceMaps.notNull())
+    channel = shader.enableTexture(LLShaderMgr::SH_COEFFS, LLTexUnit::TT_TEXTURE);
+    if (channel > -1 && mReflectionMapManager.mSHCoeffs.isComplete())
     {
-        mReflectionMapManager.mIrradianceMaps->bind(channel);
+        mReflectionMapManager.mSHCoeffs.bindTexture(0, channel, LLTexUnit::TFO_POINT);
         bound = true;
     }
 
