@@ -124,6 +124,7 @@ private:
     LLScrollListCtrl* mTargetContentsList{ nullptr };
     LLScrollListCtrl* mOccurrenceList{ nullptr };
     LLTextBox* mSourceLabel{ nullptr };
+    LLTextBox* mTargetContentsLabel{ nullptr };
     LLTextBox* mOccurrenceLabel{ nullptr };
     LLTextBox* mOperationScopeLabel{ nullptr };
     LLTextBox* mStatusText{ nullptr };
