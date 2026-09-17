@@ -35,13 +35,32 @@
 // wrapper for vsnprintf to be called from llformatXXX functions.
 static void va_format(std::string& out, const char *fmt, va_list va)
 {
-    char tstr[1024];    /* Flawfinder: ignore */
-#if LL_WINDOWS
-    _vsnprintf(tstr, 1024, fmt, va);
-#else
-    vsnprintf(tstr, 1024, fmt, va); /* Flawfinder: ignore */
-#endif
-    out.assign(tstr);
+    char stack_buffer[1024];    /* Flawfinder: ignore */
+
+    // Unlike _vsnprintf(), standard vsnprintf() reports the required length
+    // and terminates the destination when the formatted value is truncated.
+    // Keep a copy of the arguments so long values can be formatted again into
+    // a correctly-sized string instead of reading past the stack buffer.
+    va_list retry;
+    va_copy(retry, va);
+    const int needed = vsnprintf(stack_buffer, sizeof(stack_buffer), fmt, va); /* Flawfinder: ignore */
+
+    if (needed < 0)
+    {
+        out.clear();
+    }
+    else if (static_cast<size_t>(needed) < sizeof(stack_buffer))
+    {
+        out.assign(stack_buffer, static_cast<size_t>(needed));
+    }
+    else
+    {
+        out.resize(static_cast<size_t>(needed) + 1);
+        vsnprintf(out.data(), out.size(), fmt, retry); /* Flawfinder: ignore */
+        out.resize(static_cast<size_t>(needed));
+    }
+
+    va_end(retry);
 }
 
 std::string llformat(const char *fmt, ...)
