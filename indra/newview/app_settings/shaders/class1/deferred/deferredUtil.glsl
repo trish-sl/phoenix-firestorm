@@ -112,14 +112,12 @@ vec3 clampHDRRange(vec3 color)
     // There are situations where the color range will go to something insane - potentially producing infs and NaNs even.
     // This is a safety measure to prevent that.
     // -Geenz 2025-03-05
-    // Infinity becomes the largest value the frame can carry, not 1.0. Substituting 1.0 turns
-    // the brightest pixel in a linear frame into mid grey, so an overflow reads as a dark hole
-    // exactly where something should be searing -- a failure that inverts the error rather than
-    // bounding it. NaN still goes to black, which is the only safe answer for a value that
-    // carries no magnitude at all.
-    color = mix(color, vec3(MAX_PUNCTUAL_RADIANCE), isinf(color));
+    // Keep exceptional and extreme values from flooding bloom and tonemapping. Firestorm's
+    // post-processing is tuned for this bounded HDR range; passing FP16-scale radiance through
+    // here can wash the entire frame toward the colour of one bright probe or light.
+    color = mix(color, vec3(1.0), isinf(color));
     color = mix(color, vec3(0.0), isnan(color));
-    return color;
+    return clamp(color, vec3(0.0), vec3(11.2));
 }
 
 float calcLegacyDistanceAttenuation(float distance, float falloff)
@@ -595,51 +593,11 @@ void pbrIbl(vec3 diffuseColor,
             out vec3 diffuseOut,
             out vec3 specularOut)
 {
-    nv = clamp(nv, 0.0, 1.0);
-
-    // retrieve a scale and bias to F0. See [1], Figure 3
-    vec2 brdf = BRDF(nv, 1.0-perceptualRough);
-
-    // Multiple-scattering IBL, Fdez-Aguera 2019, "A Multiple-Scattering Microfacet Model for
-    // Real-Time Image-Based Lighting".
-    //
-    // The split-sum approximation integrates one bounce off the microsurface and discards
-    // everything that leaves after a second or later one. That loss grows with roughness and
-    // with F0, so it is worst exactly where it is most visible: rough metal, which reads far
-    // too dark under a bright probe. FmsEms is the missing energy returned.
-    //
-    // It also settles how the two lobes divide the incoming light. k_D is what the specular
-    // lobe did not take, derived per-pixel from the surface's own directional albedo, which
-    // is why calcDiffuseSpecular hands the full base colour to the diffuse term instead of
-    // pre-splitting it by a constant.
-    vec3 Fr = max(vec3(1.0 - perceptualRough), specularColor) - specularColor;
-    vec3 k_S = specularColor + Fr * pow(1.0 - nv, 5.0);
-    vec3 FssEss = k_S * brdf.x + brdf.y;
-
-    float Ems = 1.0 - (brdf.x + brdf.y);
-    vec3 F_avg = specularColor + (1.0 - specularColor) / 21.0;
-    // The denominator is bounded away from zero for any real LUT sample; the guard costs
-    // nothing and keeps a degenerate one (a white metal against a fully absorbing tap) from
-    // reaching the rest of the frame as an inf.
-    vec3 FmsEms = Ems * FssEss * F_avg / max(vec3(1.0) - F_avg * Ems, vec3(1e-4));
-    vec3 k_D = diffuseColor * (1.0 - FssEss + FmsEms);
-
-    // Both lobes off the one visibility.
-    //
-    // The screen-space term used to be multiplied into irradiance before this function was
-    // called, which made it a different kind of quantity from the material's own occlusion
-    // instead of the same measurement at a different scale. Three things followed from that.
-    // It was bounded in absolute radiometric units, so how hard a corner darkened depended on
-    // how bright the sky was rather than on the geometry. It went through a saturation matrix,
-    // so occluded ambient lost its hue -- chroma surgery on the term that carries all of the
-    // ambient colour. And it never met the multi-bounce fit, which is the correction it needed
-    // most, being the larger of the two and the one that makes creases look dirty.
-    //
-    // Whatever the caller combines is what both lobes get. The specular side had no
-    // screen-space occlusion at all before, so a corner darkened diffusely still returned a
-    // full-strength reflection of the sky.
-    diffuseOut = (FmsEms + k_D) * irradiance * gtaoMultiBounce(ao, diffuseColor);
-    specularOut = radiance * FssEss * computeSpecularAO(nv, ao, perceptualRough * perceptualRough);
+    // Keep Firestorm's established single-scatter response. The added multiple-scattering
+    // compensation raised rough reflective materials enough to look self-lit under probes.
+    vec2 brdf = BRDF(clamp(nv, 0.0, 1.0), 1.0-perceptualRough);
+    diffuseOut = irradiance * diffuseColor * ao;
+    specularOut = radiance * (specularColor * brdf.x + brdf.y) * ao;
 }
 
 
@@ -810,7 +768,6 @@ vec3 pbrCalcPointLightOrSpotLight(vec3 diffuseColor, vec3 specularColor,
         vec3 specPunc = vec3(0);
 
         pbrPunctual(diffuseColor, specularColor, perceptualRoughness, metallic, n.xyz, v, lv, nl, diffPunc, specPunc);
-        specPunc *= pbrEnergyCompensation(specularColor, perceptualRoughness, dot(n.xyz, v));
         color = intensity * clampRadiance(nl * (diffPunc + specPunc));
     }
     float final_scale = 1.0;
@@ -970,7 +927,8 @@ vec3 calcLegacyPointLightOrSpotLight(vec3 diffuse, vec4 spec,
 void calcDiffuseSpecular(vec3 baseColor, float metallic, inout vec3 diffuseColor, inout vec3 specularColor)
 {
     vec3 f0 = vec3(0.04);
-    diffuseColor = baseColor * (1.0 - metallic);
+    diffuseColor = baseColor * (vec3(1.0) - f0);
+    diffuseColor *= 1.0 - metallic;
     specularColor = mix(f0, baseColor, metallic);
 }
 
@@ -994,7 +952,6 @@ vec3 pbrBaseLight(vec3 diffuseColor, vec3 specularColor, float metallic, vec3 v,
     // is what gives a polished surface a sun highlight with a real edge, and is why
     // MIN_PBR_ROUGHNESS no longer has to invent one for every light at once.
     pbrPunctual(diffuseColor, specularColor, sunDiscRoughness(perceptualRoughness), metallic, norm, v, normalize(light_dir), nl, diffPunc, specPunc);
-    specPunc *= pbrEnergyCompensation(specularColor, perceptualRoughness, NdotV);
 
     // Depending on the sky, we combine these differently.
     if (classic_mode > 0)
