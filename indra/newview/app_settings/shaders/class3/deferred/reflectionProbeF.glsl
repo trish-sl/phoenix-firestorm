@@ -647,13 +647,11 @@ vec3 tapIrradianceMap(vec3 pos, vec3 dir, out float w, out float dw, vec3 c, int
 
     vec3 col = evalSHIrradiance(sampleDir, refIndex[i].x);
 
-    // refParams.x is an irradiance scale that may exceed 1, so it has two regimes and must be
-    // spent in exactly one of them. Above 1 it is a boost, which only the multiply can apply
-    // because the mix weight saturates. At or below 1 it is a fade toward the sky's own
-    // ambient, which the mix already applies -- multiplying as well puts the probe term on
-    // ambiance squared while the ambient term stays linear, so a half-ambiance probe
-    // contributes a quarter of its irradiance instead of half.
-    col *= max(refParams[i].x, 1.0);
+    // Preserve Firestorm's established probe ambiance response. Besides controlling the blend
+    // with the sky ambient below, this value attenuates the probe irradiance itself. Omitting
+    // that attenuation makes low-ambiance probes much brighter than they were before the SH
+    // representation was introduced and can wash the scene toward the probe's average colour.
+    col *= refParams[i].x;
 
     col = mix(amblit, col, min(refParams[i].x, 1.0));
 

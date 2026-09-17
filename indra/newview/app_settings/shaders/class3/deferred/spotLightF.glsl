@@ -156,7 +156,6 @@ void main()
         vec3 diffuseColor;
         vec3 specularColor;
         calcDiffuseSpecular(baseColor, metallic, diffuseColor, specularColor);
-        vec3 energyComp = pbrEnergyCompensation(specularColor, perceptualRoughness, dot(n.xyz, v));
         vec3 diffPunc = vec3(0);
         vec3 specPunc = vec3(0);
 
@@ -178,7 +177,7 @@ void main()
 
                 vec3 intensity = dist_atten * dlit * PUNCTUAL_LIGHT_SCALE * shadow;
 
-                final_color += intensity * clampRadiance(nl * (diffPunc + specPunc * energyComp));
+                final_color += intensity * clampRadiance(nl * (diffPunc + specPunc));
                 lit = clamp(nl * dist_atten, 0.0, 1.0);
             }
 

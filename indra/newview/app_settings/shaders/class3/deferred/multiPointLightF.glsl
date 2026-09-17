@@ -103,10 +103,6 @@ void main()
         vec3 specularColor;
         calcDiffuseSpecular(baseColor, metallic, diffuseColor, specularColor);
 
-        // Hoisted: the compensation depends only on the surface and the view, so it is one LUT
-        // fetch per fragment rather than one per light or per lobe.
-        vec3 energyComp = pbrEnergyCompensation(specularColor, perceptualRoughness, dot(n.xyz, v));
-
         for (int light_idx = 0; light_idx < LIGHT_COUNT; ++light_idx)
         {
             vec3  lightColor = light_col[ light_idx ].rgb; // Already in linear, see pipeline.cpp: volume->getLightLinearColor();
@@ -128,7 +124,7 @@ void main()
                 vec3 diff = vec3(0);
                 vec3 specPunc = vec3(0);
                 pbrPunctual(diffuseColor, specularColor, perceptualRoughness, metallic, n.xyz, v, lv, nl, diff, specPunc);
-                final_color += intensity * clampRadiance(nl * (diff + specPunc * energyComp));
+                final_color += intensity * clampRadiance(nl * (diff + specPunc));
             }
         }
     }
