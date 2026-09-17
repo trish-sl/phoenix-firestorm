@@ -310,7 +310,7 @@ public:
     void renderGeomDeferred(LLCamera& camera, bool do_occlusion = false);
     void renderGeomPostDeferred(LLCamera& camera);
     void renderGeomShadow(LLCamera& camera);
-    void bindLightFunc(LLGLSLShader& shader);
+    void bindBrdfLut(LLGLSLShader& shader);
 
     // bind shadow maps
     // if setup is true, wil lset texture compare mode function and filtering options
@@ -830,7 +830,6 @@ public:
     //noise map
     U32                 mNoiseMap;
     U32                 mTrueNoiseMap;
-    U32                 mLightFunc;
 
     //smaa
     U32                 mSMAAAreaMap = 0;
