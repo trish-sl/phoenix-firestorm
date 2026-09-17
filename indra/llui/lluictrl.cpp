@@ -261,6 +261,16 @@ LLUICtrl::~LLUICtrl()
         gFocusMgr.removeTopCtrlWithoutCallback( this );
     }
 
+    // boost::signals2::connection does not disconnect when the connection
+    // object is destroyed. These controls can be short-lived while their
+    // setting variables live for the session, so explicitly release every
+    // binding before this control and its handle disappear.
+    mControlConnection.disconnect();
+    mEnabledControlConnection.disconnect();
+    mDisabledControlConnection.disconnect();
+    mMakeVisibleControlConnection.disconnect();
+    mMakeInvisibleControlConnection.disconnect();
+
     delete mCommitSignal;
     delete mValidateSignal;
     delete mMouseEnterSignal;
