@@ -43,7 +43,7 @@ public:
 
 private:
     enum class Operation { ADD, REPLACE, DELETE_ITEMS };
-    enum class PropertyRequestState { NEED, SENT, RECEIVED };
+    enum class PropertyRequestState { NEED, DEFERRED, SENT, RECEIVED };
 
     struct ObjectInfo
     {
@@ -96,6 +96,8 @@ private:
 
     static void onIdle(void* userdata);
     void requestObjectProperties(const std::vector<U32>& local_ids, bool select);
+    void reconcileObjects();
+    bool retryUnresolvedProperties();
     void processPropertyRequestQueue();
     void finishObjectScan();
     void rebuildTargetList();
@@ -161,8 +163,10 @@ private:
     LLFrameTimer mContentFilterRefreshTimer;
     LLFrameTimer mTargetContentRefreshTimer;
     LLFrameTimer mInterestListTimer;
+    LLFrameTimer mReconcileTimer;
     S32 mPendingProperties{ 0 };
     S32 mPropertyRequestsInFlight{ 0 };
+    S32 mPropertyRetryCount{ 0 };
     S32 mTargetScanTotal{ 0 };
     S32 mTargetScanProcessed{ 0 };
     S32 mTargetScanSucceeded{ 0 };
