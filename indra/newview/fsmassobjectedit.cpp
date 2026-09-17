@@ -355,6 +355,7 @@ bool FSMassObjectEdit::postBuild()
     mTargetContentsList = getChild<LLScrollListCtrl>("target_contents_list");
     mOccurrenceList = getChild<LLScrollListCtrl>("occurrence_list");
     mSourceLabel = getChild<LLTextBox>("source_label");
+    mTargetContentsLabel = getChild<LLTextBox>("target_contents_label");
     mOccurrenceLabel = getChild<LLTextBox>("occurrence_label");
     mOperationScopeLabel = getChild<LLTextBox>("operation_scope_label");
     mStatusText = getChild<LLTextBox>("status_text");
@@ -531,6 +532,20 @@ void FSMassObjectEdit::refreshObjects()
     mPropertyRequestsInFlight = 0;
     mRegionID = region->getRegionID();
 
+    // Clear the previous scan over multiple frames, then append each prim as
+    // its properties arrive so discovery is visible instead of appearing
+    // frozen until the entire region has replied.
+    mTargetRebuildSelection.clear();
+    for (LLScrollListItem* row : mTargetList->getAllSelected())
+    {
+        mTargetRebuildSelection.insert(row->getValue().asUUID());
+    }
+    mTargetRebuildIDs.clear();
+    mTargetRebuildIndex = 0;
+    mTargetRebuildEditableCount = 0;
+    mTargetRebuildClearing = mTargetList->getItemCount() > 0;
+    mTargetRebuildPending = true;
+
     for (S32 i = 0; i < gObjectList.getNumObjects(); ++i)
     {
         LLViewerObject* object = gObjectList.getObject(i);
@@ -687,6 +702,7 @@ void FSMassObjectEdit::processObjectProperties(LLMessageSystem* msg)
         }
         info.property_request = PropertyRequestState::RECEIVED;
         info.received = true;
+        mTargetRebuildIDs.push_back(id);
         --mPendingProperties;
         mScanTimer.reset();
     }
@@ -955,6 +971,14 @@ void FSMassObjectEdit::processTargetListRebuild()
         setStatus(llformat("Updating target list: %d/%d prims...",
             static_cast<S32>(mTargetRebuildIndex),
             static_cast<S32>(mTargetRebuildIDs.size())));
+        return;
+    }
+
+    if (mScanning)
+    {
+        setStatus(llformat("Discovering target prims: %d/%d replies, %d editable shown...",
+            static_cast<S32>(mObjects.size()) - mPendingProperties,
+            static_cast<S32>(mObjects.size()), mTargetRebuildEditableCount));
         return;
     }
 
@@ -1360,6 +1384,11 @@ void FSMassObjectEdit::refreshTargetContentsList()
     mTargetContentsRebuildIndex = 0;
     mTargetContentsRebuildClearing = mTargetContentsList->getItemCount() > 0;
     mTargetContentsRebuildPending = true;
+    if (mTargetContentsLabel)
+    {
+        mTargetContentsLabel->setText(llformat("3. Review contents (updating 0/%d)",
+            static_cast<S32>(mTargetContentsRebuildKeys.size())));
+    }
     gIdleCallbacks.addFunction(onIdle, this);
     updateButtons();
 }
@@ -1418,6 +1447,12 @@ void FSMassObjectEdit::processTargetContentsListRebuild()
     }
     if (mTargetContentsRebuildIndex < mTargetContentsRebuildKeys.size())
     {
+        if (mTargetContentsLabel)
+        {
+            mTargetContentsLabel->setText(llformat("3. Review contents (updating %d/%d)",
+                static_cast<S32>(mTargetContentsRebuildIndex),
+                static_cast<S32>(mTargetContentsRebuildKeys.size())));
+        }
         return;
     }
 
@@ -1428,6 +1463,11 @@ void FSMassObjectEdit::processTargetContentsListRebuild()
         mTargetContentsRebuildDirty = false;
         refreshTargetContentsList();
         return;
+    }
+    if (mTargetContentsLabel)
+    {
+        mTargetContentsLabel->setText(llformat("3. Review contents (%d shown)",
+            mTargetContentsList->getItemCount()));
     }
     refreshOccurrenceList();
     updateButtons();
