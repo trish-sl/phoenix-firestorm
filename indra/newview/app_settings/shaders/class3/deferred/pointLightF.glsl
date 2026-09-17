@@ -114,10 +114,6 @@ void main()
         vec3 specularColor;
         calcDiffuseSpecular(baseColor, metallic, diffuseColor, specularColor);
 
-        // Hoisted: the compensation depends only on the surface and the view, so it is one LUT
-        // fetch per fragment rather than one per light or per lobe.
-        vec3 energyComp = pbrEnergyCompensation(specularColor, perceptualRoughness, dot(n.xyz, v));
-
         vec3 intensity = dist_atten * color * PUNCTUAL_LIGHT_SCALE; // see deferredUtil.glsl -- must match every other site
 
         float nl = 0;
@@ -126,7 +122,7 @@ void main()
 
         pbrPunctual(diffuseColor, specularColor, perceptualRoughness, metallic, n.xyz, v, normalize(lv), nl, diffPunc, specPunc);
 
-        final_color += intensity* clampRadiance(nl * (diffPunc + specPunc * energyComp));
+        final_color += intensity* clampRadiance(nl * (diffPunc + specPunc));
     }
     else
     {
