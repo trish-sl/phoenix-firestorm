@@ -37,6 +37,8 @@ uniform sampler2DShadow shadowMap4;
 uniform sampler2DShadow shadowMap5;
 #endif
 
+uniform int cube_snapshot;
+
 uniform vec3 sun_dir;
 uniform vec3 moon_dir;
 uniform vec2 shadow_res;
@@ -57,6 +59,10 @@ float pcfShadow(sampler2DShadow shadowMap, vec3 norm, vec4 stc, float bias_mul, 
     float offset = shadow_bias * bias_mul;
     stc.xyz /= stc.w;
     stc.z += offset * 2.0;
+    if (cube_snapshot != 0)
+    {
+        return texture(shadowMap, stc.xyz);
+    }
     stc.x = floor(stc.x*shadow_res.x + fract(pos_screen.y*shadow_res.y))/shadow_res.x; // add some chaotic jitter to X sample pos according to Y to disguise the snapping going on here
     float cs = texture(shadowMap, stc.xyz);
     float shadow = cs * 4.0;
@@ -75,6 +81,10 @@ float pcfSpotShadow(sampler2DShadow shadowMap, vec4 stc, float bias_scale, vec2 
 #if defined(SPOT_SHADOW)
     stc.xyz /= stc.w;
     stc.z += spot_shadow_bias * bias_scale;
+    if (cube_snapshot != 0)
+    {
+        return texture(shadowMap, stc.xyz);
+    }
     stc.x = floor(proj_shadow_res.x * stc.x + fract(pos_screen.y*0.666666666)) / proj_shadow_res.x; // snap
 
     float cs = texture(shadowMap, stc.xyz);
@@ -239,4 +249,3 @@ float sampleSpotShadow(vec3 pos, vec3 norm, int index, vec2 pos_screen)
     return 1.0;
 #endif
 }
-
