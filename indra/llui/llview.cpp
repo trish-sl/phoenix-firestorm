@@ -629,9 +629,12 @@ void LLView::deleteAllChildren()
     while (!mChildList.empty())
     {
         LLView* viewp = mChildList.front();
+        // Detach before destruction. Child destructors can call removeChild()
+        // through LLView::~LLView(); leaving this entry in the list until after
+        // delete can remove two entries and strand a dangling child pointer.
+        mChildList.pop_front();
         viewp->mParentView = NULL;
         delete viewp;
-        mChildList.pop_front();
     }
     updateBoundingRect();
 }
