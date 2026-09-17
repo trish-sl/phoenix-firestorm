@@ -20,7 +20,7 @@
      width="538">
         <panel
          follows="left|top"
-         height="950"
+         height="973"
          layout="topleft"
          left="0"
          name="experimental_settings"
@@ -251,6 +251,17 @@
              left="15"
              name="texture_fetch_pipeline_diagnostics"
              tool_tip="Periodically log a texture HTTP pipeline snapshot for diagnosing stalled texture fetches"
+             top="456"
+             width="475" />
+            <check_box
+             control_name="RLVaExperimentalLoginPrivacy"
+             follows="left|top"
+             height="20"
+             label="Protect privacy while RLVa attachments load"
+             layout="topleft"
+             left="15"
+             name="rlva_experimental_login_privacy"
+             tool_tip="Temporarily hide the world, names, location, maps, and nearby avatars during login; restrictions not resent by attachments are released after loading or a safety timeout"
              top="433"
              width="475" />
             <check_box
@@ -262,7 +273,7 @@
              left="15"
              name="render_amd_disable_shader_cache"
              tool_tip="Bypass viewer shader binary caching on Windows AMD; restart required"
-             top="456"
+             top="479"
              width="475" />
             <check_box
              control_name="RenderAMDDisableTextureThreading"
@@ -273,7 +284,7 @@
              left="15"
              name="render_amd_disable_texture_threading"
              tool_tip="Force main-thread texture and media uploads on Windows AMD; restart required"
-             top="479"
+             top="502"
              width="475" />
             <check_box
              control_name="RenderRiggedDirectNormals"
@@ -284,7 +295,7 @@
              left="15"
              name="render_rigged_direct_normals"
              tool_tip="Transform rigged mesh normals and tangents as directions; restart required"
-             top="502"
+             top="525"
              width="475" />
             <check_box
              control_name="RenderRiggedLocalOrigin"
@@ -295,7 +306,7 @@
              left="15"
              name="render_rigged_local_origin"
              tool_tip="Test avatar-root-relative rigged mesh skinning; restart required"
-             top="525"
+             top="548"
              width="475" />
             <check_box
              control_name="RenderRiggedPreciseMath"
@@ -306,7 +317,7 @@
              left="15"
              name="render_rigged_precise_math"
              tool_tip="Test precise arithmetic and invariant positions in skinning shaders; restart required and may reduce performance"
-             top="548"
+             top="571"
              width="475" />
 
             <text
@@ -316,7 +327,7 @@
              layout="topleft"
              left="15"
              name="popouts_heading"
-             top="580"
+             top="603"
              width="475">
                 Experimental desktop windows
             </text>
@@ -329,7 +340,7 @@
              left="15"
              name="experimental_popout_chat"
              tool_tip="Windows prototype: move the whole Conversations floater into a desktop window"
-             top="603"
+             top="626"
              width="475" />
             <check_box
              control_name="FSExperimentalPopoutInventory"
@@ -340,7 +351,7 @@
              left="15"
              name="experimental_popout_inventory"
              tool_tip="Windows prototype: move Inventory into a desktop window"
-             top="626"
+             top="649"
              width="475" />
             <check_box
              control_name="FSExperimentalPopoutMap"
@@ -351,7 +362,7 @@
              left="15"
              name="experimental_popout_map"
              tool_tip="Windows prototype: move the world map into a desktop window"
-             top="649"
+             top="672"
              width="475" />
             <check_box
              control_name="FSExperimentalPopoutNearby"
@@ -362,7 +373,7 @@
              left="15"
              name="experimental_popout_nearby"
              tool_tip="Windows prototype: move Nearby People (Radar) into a desktop window"
-             top="672"
+             top="695"
              width="475" />
             <check_box
              control_name="FSExperimentalPopoutAreaSearch"
@@ -373,7 +384,7 @@
              left="15"
              name="experimental_popout_area_search"
              tool_tip="Windows prototype: move Area Search into a desktop window"
-             top="695"
+             top="718"
              width="475" />
             <check_box
              control_name="FSExperimentalPopoutPreferences"
@@ -384,7 +395,7 @@
              left="15"
              name="experimental_popout_preferences"
              tool_tip="Windows prototype: move Preferences into a desktop window"
-             top="718"
+             top="741"
              width="475" />
             <check_box
              control_name="FSExperimentalPopoutSettings"
@@ -395,7 +406,7 @@
              left="15"
              name="experimental_popout_settings"
              tool_tip="Windows prototype: move Debug Settings into a desktop window"
-             top="741"
+             top="764"
              width="475" />
             <check_box
              control_name="FSExperimentalPopoutNotifications"
@@ -406,7 +417,7 @@
              left="15"
              name="experimental_popout_notifications"
              tool_tip="Windows prototype: move the Notification Well into a desktop window"
-             top="764"
+             top="787"
              width="475" />
 
             <text
@@ -416,7 +427,7 @@
              layout="topleft"
              left="15"
              name="developer_heading"
-             top="798"
+             top="821"
              width="475">
                 Developer tools and performance
             </text>
@@ -429,7 +440,7 @@
              left="15"
              name="external_websocket_sync_enable"
              tool_tip="Enable the WebSocket JSONRPC server used for external script editing"
-             top="821"
+             top="844"
              width="475" />
             <check_box
              control_name="ExternalWebsocketSyncLocal"
@@ -440,7 +451,7 @@
              left="15"
              name="external_websocket_sync_local"
              tool_tip="Make the external script editing JSONRPC server listen only for local connections"
-             top="844"
+             top="867"
              width="475" />
             <check_box
              control_name="ExternalWebsocketForwardDebug"
@@ -451,7 +462,7 @@
              left="15"
              name="external_websocket_forward_debug"
              tool_tip="Forward messages and runtime errors for a script to the external JSONRPC client"
-             top="867"
+             top="890"
              width="475" />
             <text
              follows="left|top"
@@ -459,7 +470,7 @@
              layout="topleft"
              left="35"
              name="external_websocket_port_label"
-             top="893"
+             top="916"
              width="285">
                 External script editing port
             </text>
@@ -475,7 +486,7 @@
              max_val="65535"
              min_val="1"
              name="external_websocket_port"
-             top="890"
+             top="913"
              width="100" />
             <text
              follows="left|top"
@@ -483,7 +494,7 @@
              layout="topleft"
              left="35"
              name="mass_object_edit_workers_label"
-             top="919"
+             top="942"
              width="285">
                 Mass Object Edit inventory workers
             </text>
@@ -498,7 +509,7 @@
              max_val="32"
              min_val="1"
              name="mass_object_edit_workers"
-             top="916"
+             top="939"
              width="100" />
         </panel>
     </scroll_container>
