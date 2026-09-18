@@ -2225,8 +2225,11 @@ void LLTextureFetchWorker::onCompleted(LLCore::HttpHandle handle, LLCore::HttpRe
     bool success = true;
     bool partial = false;
     LLCore::HttpStatus status(response->getStatus());
+    const bool forbidden_capability =
+        status == LLCore::HttpStatus(HTTP_FORBIDDEN) && mLastRegionId.notNull();
     if (!status && mFTType != FTT_SERVER_BAKE && mFTType != FTT_MAP_TILE &&
-        status.isRetryable() && mHttpRetryAttempt < MAX_TRANSIENT_HTTP_RETRIES)
+        (status.isRetryable() || forbidden_capability) &&
+        mHttpRetryAttempt < MAX_TRANSIENT_HTTP_RETRIES)
     {
         ++mHttpRetryAttempt;
         const F32 delay = TRANSIENT_HTTP_RETRY_DELAY * static_cast<F32>(1U << (mHttpRetryAttempt - 1));
@@ -2243,7 +2246,9 @@ void LLTextureFetchWorker::onCompleted(LLCore::HttpHandle handle, LLCore::HttpRe
             mUrl.clear();
         }
         setState(LOAD_FROM_NETWORK);
-        LL_INFOS(LOG_TXT) << mID << " transient HTTP failure " << status.toTerseString()
+        LL_INFOS(LOG_TXT) << mID
+                          << (forbidden_capability ? " stale texture capability " : " transient HTTP failure ")
+                          << status.toTerseString()
                           << "; retry " << mHttpRetryAttempt << "/" << MAX_TRANSIENT_HTTP_RETRIES
                           << " in " << delay << "s" << LL_ENDL;
         return;
