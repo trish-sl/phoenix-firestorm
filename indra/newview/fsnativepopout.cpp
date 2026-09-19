@@ -72,6 +72,15 @@ MASK modifiers()
     return mask;
 }
 
+class NativeFloaterView final : public LLFloaterView
+{
+public:
+    explicit NativeFloaterView(const LLFloaterView::Params& params) : LLFloaterView(params) {}
+
+    // The native host controls positioning; drawing must not snap its floater.
+    void draw() override { LLView::draw(); }
+};
+
 class NativePopout
 {
 public:
@@ -107,7 +116,7 @@ private:
         {
             ++sDispatchDepth;
             LLUI::getInstance()->setRootView(host.mRoot.get());
-            gFloaterView = host.mRoot.get();
+            gFloaterView = host.mFloaterView.get();
             LLMenuGL::sMenuContainer = host.mMenuHolder.get();
             LLUI::setScaleFactor(host.mDisplayScale);
             if (GetFocus() == host.mWindow)
@@ -126,10 +135,10 @@ private:
 
             // Profiles and other secondary floaters still belong to the main
             // viewer. Do not accidentally take ownership of them at teardown.
-            auto children = *mHost.mRoot->getChildList();
+            auto children = *mHost.mFloaterView->getChildList();
             for (LLView* child : children)
             {
-                if (child != mHost.mFloater.get() && child != mHost.mMenuHolder.get())
+                if (child != mHost.mFloater.get())
                 {
                     mFloaters->addChild(child);
                 }
@@ -163,7 +172,8 @@ private:
     std::string mTitle;
     LLHandle<LLFloater> mFloater;
     LLHandle<LLFloater> mOriginalHost;
-    std::unique_ptr<LLFloaterView> mRoot;
+    std::unique_ptr<LLView> mRoot;
+    std::unique_ptr<NativeFloaterView> mFloaterView;
     LLRect mOriginalRect;
     LLVector2 mDisplayScale;
     S32 mSurfaceWidth = 1;
@@ -268,10 +278,18 @@ bool NativePopout::open()
         return false;
     }
 
-    LLFloaterView::Params params;
+    LLView::Params params;
     params.name = "native_popout_root";
     params.rect = LLRect(0, mOriginalRect.getHeight(), mOriginalRect.getWidth(), 0);
-    mRoot.reset(LLUICtrlFactory::create<LLFloaterView>(params));
+    mRoot.reset(LLUICtrlFactory::create<LLView>(params));
+    // LLFloaterView requires all direct children to be floaters. Menus belong
+    // in a sibling layer so reshape, focus and ordering never cast them.
+    LLFloaterView::Params floater_params;
+    floater_params.name = "native_popout_floaters";
+    floater_params.rect = mRoot->getLocalRect();
+    floater_params.follows.flags(FOLLOWS_ALL);
+    mFloaterView.reset(LLUICtrlFactory::create<NativeFloaterView>(floater_params));
+    mRoot->addChild(mFloaterView.get());
     LLMenuHolderGL::Params menu_params;
     menu_params.name = "native_popout_menu_holder";
     menu_params.rect = mRoot->getLocalRect();
@@ -307,7 +325,7 @@ bool NativePopout::open()
     mCanDrag = floater->getCanDrag();
     mCanResize = floater->isResizable();
     mCanMinimize = floater->isMinimizeable();
-    mRoot->addChild(floater);
+    mFloaterView->addChild(floater);
     floater->setCanDrag(false);
     floater->setCanResize(false);
     floater->setCanMinimize(false);
@@ -344,7 +362,7 @@ NativePopout::~NativePopout()
         if (LLFloater* floater = mFloater.get(); floater && !floater->isDead())
         {
             const bool visible = floater->getVisible();
-            const bool returning = floater->getParent() == mRoot.get();
+            const bool returning = floater->getParent() == mFloaterView.get();
             LLMultiFloater* destination = floater->getHost();
             if (destination)
             {
@@ -429,7 +447,7 @@ bool NativePopout::update()
 {
     LLFloater* floater = mFloater.get();
     if (mCloseRequested || !floater || floater->isDead() || !floater->getVisible()
-        || floater->getParent() != mRoot.get()
+        || floater->getParent() != mFloaterView.get()
         || !LLFloaterReg::canShowInstance(floater->getInstanceName(), floater->getKey()))
     {
         return false;
@@ -459,7 +477,7 @@ bool NativePopout::update()
     }
     floater = mFloater.get();
     return !mCloseRequested && floater && !floater->isDead() && floater->getVisible()
-        && floater->getParent() == mRoot.get();
+        && floater->getParent() == mFloaterView.get();
 }
 
 void NativePopout::closeFromNativeWindow()
@@ -851,7 +869,7 @@ LRESULT NativePopout::dispatch(UINT message, WPARAM wparam, LPARAM lparam)
 {
     LLFloater* floater = mFloater.get();
     const bool interactive = mReady && !sResetPending && floater && !floater->isDead() && floater->getVisible()
-        && floater->getParent() == mRoot.get() && !mCloseRequested;
+        && floater->getParent() == mFloaterView.get() && !mCloseRequested;
     switch (message)
     {
     case WM_CLOSE:
@@ -957,7 +975,7 @@ void NativePopout::paint()
 void NativePopout::draw()
 {
     LLFloater* floater = mFloater.get();
-    if (!floater || floater->isDead() || mCloseRequested || floater->getParent() != mRoot.get() || !floater->getVisible()
+    if (!floater || floater->isDead() || mCloseRequested || floater->getParent() != mFloaterView.get() || !floater->getVisible()
         || IsIconic(mWindow) || mFrameTimer.getElapsedTimeF32() < FRAME_INTERVAL)
     {
         return;
