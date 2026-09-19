@@ -401,12 +401,6 @@ void main()
     }
 
     float minimum_alpha = terrain_mix(tm, minimum_alphas);
-    if (pbr_mix.col.a < minimum_alpha)
-    {
-        discard;
-    }
-    float base_color_factor_alpha = terrain_mix(tm, vec4(baseColorFactors[0].z, baseColorFactors[1].z, baseColorFactors[2].z, baseColorFactors[3].z));
-
 #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_NORMAL)
     vec3 tnorm = normalize(pbr_mix.vNt);
 #else
@@ -428,6 +422,17 @@ void main()
 // Matte plastic potato terrain
 #define mix_orm vec3(1.0, 1.0, 0.0)
 #endif
+    // Terrain is the worst case for this: a ground plane runs to the horizon, so its normal
+    // maps reach their minification limit within the visible frame every time.
+    vec3 orm_out = mix_orm;
+    orm_out.g = filterSpecularRoughness(orm_out.g, tnorm);
+
+    mirrorClip(vary_position);
+    if (pbr_mix.col.a < minimum_alpha)
+    {
+        discard;
+    }
+
     frag_data[0] = max(vec4(pbr_mix.col.xyz, 0.0), vec4(0));                                                   // Diffuse
     frag_data[1] = max(vec4(mix_orm.rgb, base_color_factor_alpha), vec4(0));                                    // PBR linear packed Occlusion, Roughness, Metal.
     frag_data[2] = encodeNormal(tnorm, 0, GBUFFER_FLAG_HAS_PBR); // normal, flags
@@ -436,4 +441,3 @@ void main()
     frag_data[3] = max(vec4(mix_emissive,0), vec4(0));                                                // PBR sRGB Emissive
 #endif
 }
-
