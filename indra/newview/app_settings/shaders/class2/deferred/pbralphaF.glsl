@@ -125,14 +125,12 @@ vec3 pbrCalcPointLightOrSpotLight(vec3 diffuseColor, vec3 specularColor,
 
 void main()
 {
-    mirrorClip(vary_position);
 
     vec3 color = vec3(0,0,0);
 
     vec3  light_dir   = (sun_up_factor == 1) ? sun_dir : moon_dir;
     vec3  pos         = vary_position;
 
-    waterClip(pos);
 
     vec4 basecolor = texture(diffuseMap, base_color_texcoord.xy).rgba;
     basecolor.rgb = srgb_to_linear(basecolor.rgb);

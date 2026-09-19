@@ -34,7 +34,7 @@ uniform float clipSign;
 
 void mirrorClip(vec3 pos)
 {
-    if (mirror_flag > 0)
+    if (mirror_flag > 0.0 && dot(pos, clipPlane.xyz) + clipPlane.w < 0.0)
     {
         if ((dot(pos.xyz, clipPlane.xyz) + clipPlane.w) < 0.0)
         {

@@ -293,19 +293,21 @@ float getShadow(vec3 pos, vec3 norm)
 
 void main()
 {
-    mirrorClip(vary_position);
-    applyWaterClip();
-
     // diffcol == diffuse map combined with vertex color
     vec4 diffcol = texture(diffuseMap, vary_texcoord0.xy);
     diffcol.rgb *= vertex_color.rgb;
-    alphaMask(diffcol.a);
 
     // spec == specular map combined with specular color
     vec4 spec = getSpecular();
     float env = env_intensity * spec.a;
     float glossiness = specular_color.a;
     vec3 norm = getNormal(glossiness);
+    glossiness = 1.0 - filterSpecularRoughness(1.0 - glossiness, norm);
+
+    // Evaluate normal derivatives before any potentially non-uniform discard.
+    mirrorClip(vary_position);
+    applyWaterClip();
+    alphaMask(diffcol.a);
 
     float emissive = getEmissive(diffcol);
 
