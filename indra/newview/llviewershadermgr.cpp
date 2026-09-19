@@ -720,7 +720,7 @@ void LLViewerShaderMgr::setShaders()
         return;
     }
 
-    gPipeline.mShadersLoaded = true;
+    gPipeline.mShadersLoaded = false;
 
     bool loaded = loadShadersWater();
 
@@ -730,8 +730,7 @@ void LLViewerShaderMgr::setShaders()
     }
     else
     {
-        LL_WARNS() << "Failed to load water shaders." << LL_ENDL;
-        llassert(loaded);
+        LL_ERRS("Shader") << "Failed to load required water shaders. See preceding shader compilation/link errors." << LL_ENDL;
     }
 
     if (loaded)
@@ -743,8 +742,7 @@ void LLViewerShaderMgr::setShaders()
         }
         else
         {
-            LL_WARNS() << "Failed to load effects shaders." << LL_ENDL;
-            llassert(loaded);
+            LL_ERRS("Shader") << "Failed to load required effects shaders. See preceding shader compilation/link errors." << LL_ENDL;
         }
     }
 
@@ -757,8 +755,7 @@ void LLViewerShaderMgr::setShaders()
         }
         else
         {
-            LL_WARNS() << "Failed to load interface shaders." << LL_ENDL;
-            llassert(loaded);
+            LL_ERRS("Shader") << "Failed to load required interface shaders. See preceding shader compilation/link errors." << LL_ENDL;
         }
     }
 
@@ -777,7 +774,10 @@ void LLViewerShaderMgr::setShaders()
             mShaderLevel[SHADER_AVATAR] = avatar_class;
 
             loaded = loadShadersAvatar();
-            llassert(loaded);
+            if (!loaded)
+            {
+                LL_ERRS("Shader") << "Failed to load required avatar shaders. See preceding shader compilation/link errors." << LL_ENDL;
+            }
         }
         else
         {
@@ -790,7 +790,13 @@ void LLViewerShaderMgr::setShaders()
 
     llassert(loaded);
     loaded = loaded && loadShadersDeferred();
-    llassert(loaded);
+    if (!loaded)
+    {
+        LL_ERRS("Shader") << "Failed to load required deferred shaders. See preceding shader compilation/link errors." << LL_ENDL;
+        reentrance = false;
+        return;
+    }
+    gPipeline.mShadersLoaded = true;
 
     if (!LLAppViewer::instance()->isSecondInstance())
     {
