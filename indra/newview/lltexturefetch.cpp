@@ -1191,13 +1191,31 @@ bool LLTextureFetchWorker::doWork(S32 param)
 
     if (mImagePriority < F_ALMOST_ZERO)
     {
+        // A texture can lose all visible interest while it is waiting for an
+        // HTTP slot.  Leaving it in WAIT_HTTP_RESOURCE2 keeps it in the
+        // global fetch map and lets a departed region's requests accumulate
+        // behind the HTTP high-water mark.
+        //
+        // Do not abort an active HTTP request here.  Its callback still owns
+        // this worker and will release the slot when it completes.
         // <FS:Ansariel> OpenSim compatibility
         //if (mState == INIT || mState == LOAD_FROM_NETWORK)
-        if (mState == INIT || mState == LOAD_FROM_NETWORK || mState == LOAD_FROM_SIMULATOR)
+        if (mState == INIT || mState == LOAD_FROM_NETWORK || mState == LOAD_FROM_SIMULATOR ||
+            mState == WAIT_HTTP_RESOURCE || mState == WAIT_HTTP_RESOURCE2 ||
+            mState == SEND_HTTP_REQ)
         // </FS:Ansariel>
         {
             LL_PROFILE_ZONE_NAMED_CATEGORY_TEXTURE("tfwdw - priority < 0"); //<FS:Beq/> fix incorrect category
             LL_DEBUGS(LOG_TXT) << mID << " abort: mImagePriority < F_ALMOST_ZERO" << LL_ENDL;
+
+            if (mState == WAIT_HTTP_RESOURCE2)
+            {
+                mFetcher->removeHttpWaiter(mID);
+            }
+            if (mHttpHasResource && !mHttpActive)
+            {
+                releaseHttpSemaphore();
+            }
             return true; // abort
         }
     }
