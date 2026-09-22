@@ -1827,6 +1827,15 @@ bool LLTextureFetchWorker::doWork(S32 param)
                 }
             }
         }
+        if (cur_size > 0 && cur_size >= mDesiredSize)
+        {
+            // A lower-resolution target may now fit in bytes already cached.
+            // Do not turn a zero/negative remaining range into a full GET.
+            mLoadedDiscard = mDesiredDiscard;
+            setState(DECODE_IMAGE);
+            releaseHttpSemaphore();
+            return doWork(param);
+        }
         mRequestedSize = mDesiredSize;
         mRequestedDiscard = mDesiredDiscard;
         mRequestedSize -= cur_size;
@@ -2208,6 +2217,12 @@ bool LLTextureFetchWorker::doWork(S32 param)
 
         llassert_always(mFormattedImage.notNull());
         S32 discard = mHaveAllData && mFormattedImage->getCodec() != IMG_CODEC_J2C ? 0 : mLoadedDiscard;
+        if (mFormattedImage->getCodec() == IMG_CODEC_J2C)
+        {
+            // Demand may have fallen while the network request was active.
+            // Keep its bytes, but avoid decoding an unnecessarily large image.
+            discard = llmax(discard, mDesiredDiscard);
+        }
         if (discard > MAX_DISCARD_LEVEL) // only warn for j2c
         {
             // We encode j2c with fixed amount of discard levels,
