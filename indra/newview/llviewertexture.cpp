@@ -838,6 +838,11 @@ LLViewerTexture::~LLViewerTexture()
 void LLViewerTexture::init(bool firstinit)
 {
     mMaxVirtualSize = 0.f;
+    mAdditionalVirtualSize = 0.f;
+    mAdditionalStatsTime = sCurrentTime;
+    mSceneVirtualSize = 0.f;
+    mSceneStatsTime = sCurrentTime;
+    mHadSceneFaces = false;
     mMaxVirtualSizeResetInterval = 1;
     mMaxVirtualSizeResetCounter = mMaxVirtualSizeResetInterval;
     mParcelMedia = NULL;
@@ -982,6 +987,13 @@ void LLViewerTexture::addTextureStats(F32 virtual_size, bool needs_gltexture) co
 
     virtual_size = llmin(virtual_size, LLViewerFetchedTexture::sMaxVirtualSize);
 
+    if (sCurrentTime - mAdditionalStatsTime > 2.f)
+    {
+        mAdditionalVirtualSize = 0.f;
+        mAdditionalStatsTime = sCurrentTime;
+    }
+    mAdditionalVirtualSize = llmax(mAdditionalVirtualSize, virtual_size);
+
     if (virtual_size > mMaxVirtualSize)
     {
         mMaxVirtualSize = virtual_size;
@@ -991,6 +1003,8 @@ void LLViewerTexture::addTextureStats(F32 virtual_size, bool needs_gltexture) co
 void LLViewerTexture::resetTextureStats()
 {
     mMaxVirtualSize = 0.0f;
+    mAdditionalVirtualSize = 0.f;
+    mSceneVirtualSize = 0.f;
     mMaxVirtualSizeResetCounter = 0;
 }
 
@@ -1019,6 +1033,7 @@ void LLViewerTexture::addFace(U32 ch, LLFace* facep)
     mFaceList[ch][mNumFaces[ch]] = facep;
     facep->setIndexInTex(ch, mNumFaces[ch]);
     mNumFaces[ch]++;
+    mHadSceneFaces = true;
     mLastFaceListUpdateTimer.reset();
 }
 
@@ -1261,6 +1276,7 @@ void LLViewerFetchedTexture::init(bool firstinit)
     mNeedsAux = false;
     mLastWorkerDiscardLevel = -1;
     mRequestedDiscardLevel = -1;
+    mLastRequestedDesiredDiscard = -1;
     mRequestedDownloadPriority = 0.f;
     mFullyLoaded = false;
     mCanUseHTTP = true;
@@ -1964,6 +1980,33 @@ void LLViewerFetchedTexture::processTextureStats()
 
 //============================================================================
 
+void LLViewerFetchedTexture::updateSceneTextureStats(F32 virtual_size)
+{
+    mNeedsGLTexture = true;
+    virtual_size = llmin(virtual_size, sMaxVirtualSize);
+
+    // Explicit consumers must keep their requested resolution even if this
+    // texture also happens to be used by a scene face.
+    if (getBoostLevel() != BOOST_NONE || !mHadSceneFaces || forSculpt() ||
+        hasCallbacks() || needsToSaveRawImage() || mKnownDrawWidth || mKnownDrawHeight ||
+        !getUseDiscard() || mMinDesiredDiscardLevel <= getMaxDiscardLevel() || !mMaterialList.empty())
+    {
+        mMaxVirtualSize = llmax(mMaxVirtualSize, virtual_size);
+        return;
+    }
+
+    // Hold peaks briefly to avoid repeated downscale/refetch cycles as faces
+    // move across mip boundaries. Losing the last face clears scene demand.
+    if (!getTotalNumFaces() || sCurrentTime - mSceneStatsTime > 2.f)
+    {
+        mSceneVirtualSize = 0.f;
+        mSceneStatsTime = sCurrentTime;
+    }
+    mSceneVirtualSize = llmax(mSceneVirtualSize, virtual_size);
+    const F32 additional = sCurrentTime - mAdditionalStatsTime <= 2.f ? mAdditionalVirtualSize : 0.f;
+    mMaxVirtualSize = llmax(mSceneVirtualSize, additional);
+}
+
 void LLViewerFetchedTexture::updateVirtualSize()
 {
     LL_PROFILE_ZONE_SCOPED_CATEGORY_TEXTURE;
@@ -2204,7 +2247,7 @@ bool LLViewerFetchedTexture::updateFetch()
 
     S32 current_discard = getCurrentDiscardLevelForFetching();
     S32 desired_discard = getDesiredDiscardLevel();
-    F32 decode_priority = mMaxVirtualSize;
+    F32 decode_priority = desired_discard <= getMaxDiscardLevel() ? mMaxVirtualSize : 0.f;
 
     if (mIsFetching)
     {
@@ -2253,6 +2296,14 @@ bool LLViewerFetchedTexture::updateFetch()
 
     desired_discard = llmin(desired_discard, getMaxDiscardLevel());
 
+    // Compare against the same target that will be sent to the worker.
+    static LLCachedControl<U32> sTextureDiscardLevel(gSavedSettings, "TextureDiscardLevel");
+    const U32 override_tex_discard_level = sTextureDiscardLevel();
+    if (override_tex_discard_level != 0 && override_tex_discard_level <= MAX_DISCARD_LEVEL)
+    {
+        desired_discard = override_tex_discard_level;
+    }
+
     bool make_request = true;
     if (decode_priority <= 0)
     {
@@ -2279,8 +2330,10 @@ bool LLViewerFetchedTexture::updateFetch()
     {
         if (mIsFetching)
         {
-            // already requested a higher resolution mip
-            if (mRequestedDiscardLevel <= desired_discard)
+            // Propagate both increases and decreases in resolution demand.
+            // A lower-quality target can avoid another range fetch or decode.
+            if (mRequestedDiscardLevel == desired_discard ||
+                (mRequestedDiscardLevel < desired_discard && mLastRequestedDesiredDiscard == desired_discard))
             {
                 LL_PROFILE_ZONE_NAMED_CATEGORY_TEXTURE("vftuf - requested < desired");
                 make_request = false;
@@ -2308,16 +2361,6 @@ bool LLViewerFetchedTexture::updateFetch()
             c = mComponents;
         }
 
-        // <FS:Ansariel> Replace frequently called gSavedSettings
-        //const U32 override_tex_discard_level = gSavedSettings.getU32("TextureDiscardLevel");
-        static LLCachedControl<U32> sTextureDiscardLevel(gSavedSettings, "TextureDiscardLevel");
-        const U32 override_tex_discard_level = sTextureDiscardLevel();
-        // </FS:Ansariel>
-        if (override_tex_discard_level != 0 && override_tex_discard_level <= MAX_DISCARD_LEVEL)
-        {
-            desired_discard = override_tex_discard_level;
-        }
-
         // bypass texturefetch directly by pulling from LLTextureCache
         S32 fetch_request_response = -1;
         S32 worker_discard = -1;
@@ -2333,6 +2376,7 @@ bool LLViewerFetchedTexture::updateFetch()
             // in some cases createRequest can modify discard, as an example
             // bake textures are always at discard 0
             mRequestedDiscardLevel = llmin(desired_discard, fetch_request_response);
+            mLastRequestedDesiredDiscard = desired_discard;
             mFetchState = LLAppViewer::getTextureFetch()->getFetchState(mID, mDownloadProgress, mRequestedDownloadPriority,
                 mFetchPriority, mFetchDeltaTime, mRequestDeltaTime, mCanUseHTTP);
         }
@@ -2361,6 +2405,12 @@ bool LLViewerFetchedTexture::updateFetch()
                     sAuxCount++;
                 }
                 processFetchResults(desired_discard, current_discard, decoded_discard, decode_priority);
+            }
+
+            if (LLAppViewer::getTextureFetch()->deleteRequestIfFinished(getID()))
+            {
+                mHasFetcher = false;
+                mLastFetchState = -1;
             }
         }
 
