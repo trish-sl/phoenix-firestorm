@@ -24,6 +24,8 @@
 #include "stringize.h"
 
 #include <boost/fiber/algo/round_robin.hpp>
+#include <condition_variable> // <FS:Perf>
+#include <mutex> // <FS:Perf>
 
 /*****************************************************************************
 *   Custom fiber scheduler for worker threads
@@ -33,29 +35,50 @@
 // anticipate doing so. So a worker thread that's simply waiting for incoming
 // tasks should really sleep a little. Override the default fiber scheduler to
 // implement that.
+// <FS:Perf> The previous implementation slept for 1 ms in a loop and
+// ignored notify(), so every task posted to an idle worker (image decode,
+// texture fetch/cache, mesh LOD processing, ...) waited 1-2 ms before it
+// even started, and replies to the main thread were delayed the same way.
+// Block on a condition variable instead and wake up on notify().
+//
+// round_robin's own implementation calls wait_until() with
+// time_point::max() when there is nothing scheduled; on MSVC converting
+// that to an absolute system time overflows and the wait returns
+// immediately, which is the "busier than it ought to be" behaviour seen
+// on Windows. Wait without a deadline in that case, and cap long waits.
 struct sleepy_robin: public boost::fibers::algo::round_robin
 {
-    virtual void suspend_until( std::chrono::steady_clock::time_point const&) noexcept
+    virtual void suspend_until( std::chrono::steady_clock::time_point const& abs_time) noexcept
     {
-#if LL_WINDOWS
-        // round_robin holds a std::condition_variable, and
-        // round_robin::suspend_until() calls
-        // std::condition_variable::wait_until(). On Windows, that call seems
-        // busier than it ought to be. Try just sleeping.
-        Sleep(1);
-#else
-        // currently unused other than windows, but might as well have something here
-        // different units than Sleep(), but we actually just want to sleep for any de-minimis duration
-        usleep(1);
-#endif
+        std::unique_lock<std::mutex> lock(mMutex);
+        if (abs_time == (std::chrono::steady_clock::time_point::max)())
+        {
+            mCondition.wait(lock, [this]() { return mNotified; });
+        }
+        else
+        {
+            // bounded wait; spurious early wake-ups are harmless here
+            const auto max_wait = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+            mCondition.wait_until(lock, (std::min)(abs_time, max_wait), [this]() { return mNotified; });
+        }
+        mNotified = false;
     }
 
     virtual void notify() noexcept
     {
-        // Since our Sleep() call above will wake up on its own, we need not
-        // take any special action to wake it.
+        {
+            std::lock_guard<std::mutex> lock(mMutex);
+            mNotified = true;
+        }
+        mCondition.notify_all();
     }
+
+private:
+    std::mutex mMutex;
+    std::condition_variable mCondition;
+    bool mNotified = false;
 };
+// </FS:Perf>
 
 /*****************************************************************************
 *   ThreadPoolBase
