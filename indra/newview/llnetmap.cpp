@@ -783,7 +783,7 @@ void LLNetMap::draw()
                     {
                         closest_dist_squared = dist_to_cursor_squared;
                         mClosestAgentToCursor = uuid;
-                        mClosestAgentPosition = sorted_positions[i];
+                        mClosestAgentPosition = positions[i];
                     }
                     mClosestAgentsToCursor.push_back(uuid);
                 }
