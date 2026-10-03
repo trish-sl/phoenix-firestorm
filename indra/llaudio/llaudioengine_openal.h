@@ -33,7 +33,6 @@
 #include "llaudioengine.h"
 #include "lllistener_openal.h"
 #include "llwindgen.h"
-#include "llatomic.h"
 
 class LLAudioEngine_OpenAL : public LLAudioEngine
 {
@@ -45,7 +44,6 @@ class LLAudioEngine_OpenAL : public LLAudioEngine
         virtual std::string getDriverName(bool verbose);
         virtual LLStreamingAudioInterface* createDefaultStreamingAudioImpl() const { return nullptr; }
         virtual void allocateListener();
-        virtual void idle();
 
         virtual void shutdown();
 
@@ -58,13 +56,7 @@ class LLAudioEngine_OpenAL : public LLAudioEngine
         /*virtual*/ void cleanupWind();
         /*virtual*/ void updateWind(LLVector3 direction, F32 camera_altitude);
 
-        // <FS:Ansariel> Output device selection
-        virtual output_device_map_t getDevices();
-        virtual void setDevice(const LLUUID& device_uuid);
         virtual void idle();
-        void changeDevice();
-        void setupDeviceEvents(ALCdevice* device);
-        // </FS:Ansariel>
 
     private:
         bool reopenDevice();
@@ -86,13 +78,8 @@ class LLAudioEngine_OpenAL : public LLAudioEngine
         static const int MAX_NUM_WIND_BUFFERS = 80;
         static const float WIND_BUFFER_SIZE_SEC; // 1/20th sec
 
-        // <FS:Ansariel> Output device selection
-        LLUUID mSelectedDeviceUUID{};
         ALCdevice* mCurrentDevice{ nullptr };
         ALCcontext* mCurrentContext{ nullptr };
-public:
-        LLAtomicBool mDeviceListChanged{ false };
-        // </FS:Ansariel>
 };
 
 class LLAudioChannelOpenAL : public LLAudioChannel
