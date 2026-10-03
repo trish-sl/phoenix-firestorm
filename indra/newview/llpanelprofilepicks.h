@@ -150,6 +150,8 @@ public:
 
     void addLocationChangedCallbacks();
 
+    void updateButtons();
+
   protected:
 
     /**
