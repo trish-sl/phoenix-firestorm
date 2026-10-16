@@ -395,14 +395,15 @@ namespace Details
                                 LLSDSerialize::toBinary((*i)["body"], body_stream);
                                 std::string body_str = body_stream.str();
                                 (*i)["body"].clear();
-                                work = [this, msg_name, body_str]()
+                                // Crossing crash on linux: Queued messages can outlive the coroutine.
+                                work = [self = shared_from_this(), msg_name, body_str]()
                                 {
                                     try
                                     {
                                         LLSD body;
                                         std::istringstream istr(body_str);
                                         LLSDSerialize::fromBinary(body, istr, body_str.size());
-                                        handleMessage(msg_name, body);
+                                        self->handleMessage(msg_name, body);
                                     }
                                     catch (std::bad_alloc&)
                                     {
