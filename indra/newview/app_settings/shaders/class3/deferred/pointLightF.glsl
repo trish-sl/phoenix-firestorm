@@ -27,8 +27,6 @@
 
 out vec4 frag_color;
 
-uniform sampler2D lightFunc;
-
 uniform vec3 env_mat[3];
 uniform float sun_wash;
 
@@ -137,6 +135,7 @@ void main()
         {
             discard;
         }
+
         diffuse = srgb_to_linear(diffuse);
         spec.rgb = srgb_to_linear(spec.rgb);
 
@@ -155,10 +154,17 @@ void main()
 
             if (nh > 0.0)
             {
-                float scol = fres*texture(lightFunc, vec2(nh, spec.a)).r*gt/(nh*nl);
+                float scol = fres*blinnPhongLobe(nh, spec.a)*gt/(nh*max(nl, 1e-6));
                 final_color += lit*scol*color.rgb*spec.rgb;
             }
         }
+
+        // Bounded the same way the PBR branch above is. The specular term divides by two
+        // cosines that calcHalfVectors only floors at 1e-6, and the Blinn-Phong LUT carries a
+        // normalization of its own on top -- at grazing angles that product runs past what a
+        // half-float target can hold, and an inf here spreads to the whole frame through bloom.
+        // Colour-preserving, so a highlight that hits the ceiling dims rather than changing hue.
+        final_color = clampRadiance(final_color);
 
         if (dot(final_color, final_color) <= 0.0)
         {
