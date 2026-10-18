@@ -1327,15 +1327,12 @@ void LLReflectionMapManager::updateUniforms()
     mReflectionMaps.resize(mReflectionProbeCount);
     getReflectionMaps(mReflectionMaps);
 
-    F32 minDepth[256];
-
     for (int i = 0; i < 256; ++i)
     {
         mProbeData.refBucket[i][0] = mReflectionProbeCount;
-        mProbeData.refBucket[i][1] = mReflectionProbeCount;
+        mProbeData.refBucket[i][1] = 0;
         mProbeData.refBucket[i][2] = mReflectionProbeCount;
         mProbeData.refBucket[i][3] = mReflectionProbeCount;
-        minDepth[i] = FLT_MAX;
     }
 
     // load modelview matrix into matrix 4a
@@ -1374,18 +1371,18 @@ void LLReflectionMapManager::updateUniforms()
             //      1. Determine minimum and maximum depth of each influence volume and store in mDepth (done in getReflectionMaps)
             //      2. Sort by minimum depth
             //      3. Prepare a bucket for each 1m of depth out to 256m
-            //      4. For each bucket, store the index of the nearest probe that might influence pixels in that bucket
-            //      5. In the shader, lookup the bucket for the pixel depth to get the index of the first probe that could possibly influence
-            //          the current pixel.
+            //      4. Store the first and one-past-last probe indices for each bucket.
+            //      5. Limit the shader's depth-sorted scan to that range. Neighbor lists may
+            //         still refer to any active probe, including the overflow fallback.
             unsigned int depth_min = llclamp(llfloor(refmap->mMinDepth), 0, 255);
             unsigned int depth_max = llclamp(llfloor(refmap->mMaxDepth), 0, 255);
             for (U32 i = depth_min; i <= depth_max; ++i)
             {
-                if (refmap->mMinDepth < minDepth[i])
+                if (mProbeData.refBucket[i][0] == mReflectionProbeCount)
                 {
-                    minDepth[i] = refmap->mMinDepth;
                     mProbeData.refBucket[i][0] = refmap->mProbeIndex;
                 }
+                mProbeData.refBucket[i][1] = refmap->mProbeIndex + 1;
             }
         }
 
@@ -1421,6 +1418,7 @@ void LLReflectionMapManager::updateUniforms()
             0.f); // unused
 
         S32 ni = nc; // neighbor ("index") - index into refNeighbor to write indices for current reflection probe's neighbors
+        bool neighbors_truncated = false;
         {
             //LL_PROFILE_ZONE_NAMED_CATEGORY_DISPLAY("rmmsu - refNeighbors");
             //pack neghbor list
@@ -1441,16 +1439,22 @@ void LLReflectionMapManager::updateUniforms()
                     continue;
                 }
 
+                if (ni >= 4096 || neighbor_count >= max_neighbors)
+                {
+                    neighbors_truncated = true;
+                    break;
+                }
+
                 // this neighbor may be sampled
                 mProbeData.refNeighbor[ni++] = idx;
 
                 neighbor_count++;
-                if (neighbor_count >= max_neighbors)
-                {
-                    break;
-                }
             }
         }
+
+        // A partial list cannot justify ending the shader's probe search. Use a negative
+        // count to request a full scan without enlarging the uniform block.
+        mProbeData.refIndex[count][2] = neighbors_truncated ? -1 : ni - nc;
 
         if (nc == ni)
         {
@@ -1459,8 +1463,6 @@ void LLReflectionMapManager::updateUniforms()
         }
         else
         {
-            mProbeData.refIndex[count][2] = ni - nc;
-
             // move the cursor forward
             nc = ni;
             if (nc % 4 != 0)
@@ -1468,7 +1470,6 @@ void LLReflectionMapManager::updateUniforms()
                 nc += 4 - (nc % 4);
             }
         }
-
 
         count++;
     }
