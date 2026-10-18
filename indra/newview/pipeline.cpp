@@ -9434,7 +9434,10 @@ void LLPipeline::renderDeferredLighting()
             {  // paint shadow/SSAO light map (direct lighting lightmap)
                 LL_PROFILE_ZONE_NAMED_CATEGORY_PIPELINE("renderDeferredLighting - sun shadow");
 
-                LLGLSLShader& sun_shader = gCubeSnapshot ? gDeferredSunProbeProgram : gDeferredSunProgram;
+                // The existing shadow-only variant also covers zero-strength SSAO, without
+                // adding a per-fragment branch to the normal SSAO shader.
+                const bool skip_ssao = gCubeSnapshot || (RenderDeferredSSAO && RenderSSAOFactor == 0.f);
+                LLGLSLShader& sun_shader = skip_ssao ? gDeferredSunProbeProgram : gDeferredSunProgram;
                 bindDeferredShader(sun_shader, deferred_light_target);
                 mScreenTriangleVB->setBuffer();
                 glClearColor(1, 1, 1, 1);
@@ -9456,7 +9459,7 @@ void LLPipeline::renderDeferredLighting()
             deferred_light_target->flush();
         }
 
-        if (RenderDeferredSSAO && !gCubeSnapshot)
+        if (RenderDeferredSSAO && !gCubeSnapshot && RenderShadowBlurSize != 0.f)
         {
             // soften direct lighting lightmap
             LL_PROFILE_ZONE_NAMED_CATEGORY_PIPELINE("renderDeferredLighting - soften shadow");
