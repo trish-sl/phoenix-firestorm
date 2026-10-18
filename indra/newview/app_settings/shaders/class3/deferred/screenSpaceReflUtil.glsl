@@ -51,6 +51,20 @@ vec2 generateProjectedPosition(vec3 pos)
     return samplePosition.xy;
 }
 
+// Takes the point already in clip space. Projection is linear, so the march below carries its
+// position and step in clip space alongside view space and never multiplies by the matrix
+// inside the loop.
+bool projectScreenRay(vec4 clip, out vec2 tc)
+{
+    tc = vec2(0);
+    if (clip.w <= 0.0 || clip.z < -clip.w || clip.z > clip.w)
+    {
+        return false;
+    }
+    tc = clip.xy / clip.w * 0.5 + 0.5;
+    return all(greaterThanEqual(tc, vec2(0))) && all(lessThan(tc, vec2(1)));
+}
+
 bool isBinarySearchEnabled = true;
 bool isAdaptiveStepEnabled = true;
 bool isExponentialStepEnabled = true;
@@ -92,21 +106,26 @@ bool traceScreenRay(vec3 position, vec3 reflection, out vec4 hitColor, out float
     vec2 screenPosition;
     bool hit = false;
     hitColor = vec4(0);
+    hitDepth = 0.0;
+    bool haveFront = false;
+    bool bracketed = false;
+    vec3 frontPosition = position;
+    vec3 backPosition = position;
+    vec4 clipFront = clipMarch - clipStep;
+    vec4 clipBack = clipFront;
 
     int i = 0;
     if (depth > depthRejectBias)
     {
         for (; i < iterationCount && !hit; i++)
         {
-            screenPosition = generateProjectedPosition(marchingPosition);
-            if (screenPosition.x > 1 || screenPosition.x < 0 ||
-                screenPosition.y > 1 || screenPosition.y < 0)
+            if (!projectScreenRay(clipMarch, screenPosition))
             {
                 hit = false;
                 break;
             }
             depthFromScreen = getLinearDepth(screenPosition);
-            delta = abs(marchingPosition.z) - depthFromScreen;
+            delta = -marchingPosition.z - depthFromScreen;
 
             if (depth < depthFromScreen + epsilon && depth > depthFromScreen - epsilon)
             {
@@ -125,7 +144,16 @@ bool traceScreenRay(vec3 position, vec3 reflection, out vec4 hitColor, out float
             }
             if (isBinarySearchEnabled && delta > 0)
             {
+                bracketed = haveFront;
+                backPosition = marchingPosition;
+                clipBack = clipMarch;
                 break;
+            }
+            if (delta < 0.0)
+            {
+                haveFront = true;
+                frontPosition = marchingPosition;
+                clipFront = clipMarch;
             }
             if (isAdaptiveStepEnabled)
             {
@@ -145,22 +173,30 @@ bool traceScreenRay(vec3 position, vec3 reflection, out vec4 hitColor, out float
                 step *= adaptiveStepMultiplier;
             }
         }
-        if(isBinarySearchEnabled)
+        if (isBinarySearchEnabled && bracketed)
         {
             for(; i < iterationCount && !hit; i++)
             {
-                step *= 0.5;
-                marchingPosition = marchingPosition - step * sign(delta);
+                marchingPosition = mix(frontPosition, backPosition, 0.5);
+                clipMarch = mix(clipFront, clipBack, 0.5);
 
-                screenPosition = generateProjectedPosition(marchingPosition);
-                if (screenPosition.x > 1 || screenPosition.x < 0 ||
-                    screenPosition.y > 1 || screenPosition.y < 0)
+                if (!projectScreenRay(clipMarch, screenPosition))
                 {
                     hit = false;
                     break;
                 }
                 depthFromScreen = getLinearDepth(screenPosition);
-                delta = abs(marchingPosition.z) - depthFromScreen;
+                delta = -marchingPosition.z - depthFromScreen;
+                if (delta > 0.0)
+                {
+                    backPosition = marchingPosition;
+                    clipBack = clipMarch;
+                }
+                else
+                {
+                    frontPosition = marchingPosition;
+                    clipFront = clipMarch;
+                }
 
                 if (depth < depthFromScreen + epsilon && depth > depthFromScreen - epsilon)
                 {
@@ -319,7 +355,28 @@ vec3 getPoissonSample(int i) {
     return POISSON3D_SAMPLES[i] * 2 - 1;
 }
 
-float tapScreenSpaceReflection(int totalSamples, vec2 tc, vec3 viewPos, vec3 n, inout vec4 collectedColor, sampler2D source, float glossiness)
+// Roughness fade for the ray march, and the glossiness at which it reaches zero.
+//
+// The caller that decides whether to march at all lives in another compilation unit and cannot
+// see a constant declared here, so it asks for the threshold through a function. It used to
+// carry its own literal instead, and the two disagreed: this fade ramped up from 0.567 while the
+// gate rejected everything below 0.9, so the whole ramp was unreachable and screen-space
+// reflections switched on at full strength in a single step -- a hard visible edge across any
+// surface whose roughness crossed 0.1.
+#define SSR_GLOSS_FADE_SLOPE 3.0
+#define SSR_GLOSS_FADE_BIAS  1.7
+
+float ssrMinGlossiness()
+{
+    return SSR_GLOSS_FADE_BIAS / SSR_GLOSS_FADE_SLOPE;
+}
+
+// rayDir - the direction to march, supplied by the caller rather than derived here. The probe
+//          tap bends its lookup toward the normal as the surface roughens (the GGX dominant
+//          direction), and a mirror reflect() computed here pointed somewhere else, so the two
+//          reflections being mixed together came from measurably different directions on every
+//          rough surface. n is still wanted separately, for the grazing-angle fade below.
+float tapScreenSpaceReflection(int totalSamples, vec2 tc, vec3 viewPos, vec3 n, vec3 rayDir, inout vec4 collectedColor, sampler2D source, float glossiness)
 {
 #ifdef TRANSPARENT_SURFACE
 collectedColor = vec4(1, 0, 1, 1);
@@ -330,7 +387,7 @@ collectedColor = vec4(1, 0, 1, 1);
 
     float depth = -viewPos.z;
 
-    vec3 rayDirection = normalize(reflect(viewPos, normalize(n)));
+    vec3 rayDirection = normalize(rayDir);
 
     vec2 uv2 = tc * screen_res;
     float c = (uv2.x + uv2.y) * 0.125;
@@ -343,16 +400,18 @@ collectedColor = vec4(1, 0, 1, 1);
     float zFar = 128.0;
     vignette *= clamp(1.0+(viewPos.z/zFar), 0.0, 1.0);
 
-    vignette *= clamp(glossiness * 3 - 1.7, 0, 1);
+    vignette *= clamp(glossiness * SSR_GLOSS_FADE_SLOPE - SSR_GLOSS_FADE_BIAS, 0, 1);
 
     vec4 hitpoint;
 
-    glossiness = 1 - glossiness;
+    glossiness = clamp(1.0 - glossiness, 0.0, 1.0);
 
-    totalSamples = int(max(glossySampleCount, glossySampleCount * glossiness * vignette));
+    totalSamples = clamp(int(ceil(glossySampleCount * glossiness)), 1, max(1, int(glossySampleCount)));
 
-    totalSamples = max(totalSamples, 1);
-    if (glossiness < 0.35)
+    vec3 axis = abs(rayDirection.z) < 0.999 ? vec3(0, 0, 1) : vec3(0, 1, 0);
+    vec3 firstBasis = normalize(cross(axis, rayDirection));
+    vec3 secondBasis = cross(rayDirection, firstBasis);
+
     {
         if (vignette > 0)
         {
@@ -365,7 +424,8 @@ collectedColor = vec4(1, 0, 1, 1);
 
                 //float hitDepth;
 
-                bool hit = traceScreenRay(viewPos, normalize(reflectionDirectionRandomized), hitpoint, depth, depth, source);
+                float hitDepth;
+                bool hit = traceScreenRay(viewPos, normalize(reflectionDirectionRandomized), hitpoint, hitDepth, depth, source);
 
                 hitpoint.a = 0;
 
