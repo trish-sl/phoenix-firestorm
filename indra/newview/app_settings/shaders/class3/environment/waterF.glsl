@@ -198,53 +198,20 @@ void main()
 
     vec3 wavef = (wave1 + wave2 * 0.4 + wave3 * 0.6) * 0.5;
 
-    vec3 df3 = vec3(0);
-    vec2 df2 = vec2(0);
-
-    vec3 sunlit;
-    vec3 amblit;
-    vec3 additive;
-    vec3 atten;
-    calcAtmosphericVarsLinear(pos.xyz, wavef, vary_light_dir, sunlit, amblit, additive, atten);
-
-    calculateFresnelFactors(df3, df2, normalize(view.xyz), wave1, wave2, wave3, wavef);
-
     vec3 waver = wavef*3;
-
-    vec3 up = transform_normal(vec3(0,0,1));
-    float vdu = -dot(viewVec, up)*2;
-
-    vec3 wave_ibl = wavef * normScale;
-    wave_ibl.z *= 2.0;
-    wave_ibl = transform_normal(normalize(wave_ibl));
-
-    vec3 norm = transform_normal(normalize(wavef));
-
-    vdu = clamp(vdu, 0, 1);
-    //wavef.z *= max(vdu*vdu*vdu, 0.1);
-
-    wavef = normalize(wavef);
-
-    //wavef = vec3(0, 0, 1);
-    wavef = transform_normal(wavef);
-
-    float dist2 = dist;
-    dist = max(dist, 5.0);
 
     //figure out distortion vector (ripply)
     vec2 distort2 = distort + waver.xy * refScale / max(dmod, 1.0) * 2;
 
     distort2 = clamp(distort2, vec2(0), vec2(0.999));
 
-    float shadow = 1.0f;
-
     float water_mask = texture(exclusionTex, distort).r;
 
-#ifdef HAS_SUN_SHADOW
-    shadow = sampleDirectionalShadow(pos.xyz, norm.xyz, distort);
-#endif
-
-    vec3 sunlit_linear = sunlit;
+    // Settle the exclusion mask and the shoreline fade before any lighting. Where they reduce
+    // this fragment to the refraction colour (or to nothing), the atmospherics, shadow PCF,
+    // probe sampling and BRDF below would all be blended away by a weight of zero. Every
+    // fetch above that needs implicit derivatives has already happened, so leaving early here
+    // cannot disturb a neighbour's mip selection.
     float fade = 1;
 #ifdef TRANSPARENT_WATER
     float depth = texture(depthMap, distort).r;
@@ -270,12 +237,56 @@ void main()
 
     vec4 fb = texture(screenTex, distort2);
 
+    if (fade <= 0.0)
+    {
+        // The final mix below is mix(fb, color, 0), and the alpha term is never positive.
+        frag_color = vec4(clamp(fb.rgb, vec3(0), vec3(65504)), 0.0);
+        return;
+    }
 #else
-    vec4 fb = applyWaterFogViewLinear(viewVec*2048.0, vec4(1.0));
-
     if (water_mask < 1)
         discard;
+
+    vec4 fb = applyWaterFogViewLinear(viewVec*2048.0, vec4(1.0));
 #endif
+
+    vec3 df3 = vec3(0);
+    vec2 df2 = vec2(0);
+
+    vec3 sunlit;
+    vec3 amblit;
+    vec3 additive;
+    vec3 atten;
+    calcAtmosphericVarsLinear(pos.xyz, wavef, vary_light_dir, sunlit, amblit, additive, atten);
+
+    calculateFresnelFactors(df3, df2, normalize(view.xyz), wave1, wave2, wave3, wavef);
+
+    vec3 up = transform_normal(vec3(0,0,1));
+    float vdu = -dot(viewVec, up)*2;
+
+    vec3 wave_ibl = wavef * normScale;
+    wave_ibl.z *= 2.0;
+    wave_ibl = transform_normal(normalize(wave_ibl));
+
+    vec3 norm = transform_normal(normalize(wavef));
+
+    vdu = clamp(vdu, 0, 1);
+    //wavef.z *= max(vdu*vdu*vdu, 0.1);
+
+    wavef = normalize(wavef);
+
+    //wavef = vec3(0, 0, 1);
+    wavef = transform_normal(wavef);
+
+    dist = max(dist, 5.0);
+
+    float shadow = 1.0f;
+
+#ifdef HAS_SUN_SHADOW
+    shadow = sampleDirectionalShadow(pos.xyz, norm.xyz, distort);
+#endif
+
+    vec3 sunlit_linear = sunlit;
 
     float metallic = 1.0;
     float perceptualRoughness = blurMultiplier;
