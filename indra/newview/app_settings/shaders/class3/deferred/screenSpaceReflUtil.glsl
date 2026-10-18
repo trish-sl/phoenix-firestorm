@@ -34,7 +34,7 @@ uniform mat4 inv_proj;
 uniform mat4 modelview_delta;  // should be transform from last camera space to current camera space
 uniform mat4 inv_modelview_delta;
 
-vec4 getPositionWithDepth(vec2 pos_screen, float depth);
+float ndcZFromScreenDepth(float d);
 
 float random (vec2 uv)
 {
@@ -84,9 +84,13 @@ float getLinearDepth(vec2 tc)
 {
     float depth = texture(sceneDepth, tc).r;
 
-    vec4 pos = getPositionWithDepth(tc, depth);
+    // Only view-space z is wanted, so evaluate just the z and w rows of inv_proj rather than
+    // the full unprojection -- this runs once per march step.
+    vec4 ndc = vec4(tc * 2.0 - 1.0, ndcZFromScreenDepth(depth), 1.0);
+    float z = dot(vec4(inv_proj[0].z, inv_proj[1].z, inv_proj[2].z, inv_proj[3].z), ndc);
+    float w = dot(vec4(inv_proj[0].w, inv_proj[1].w, inv_proj[2].w, inv_proj[3].w), ndc);
 
-    return -pos.z;
+    return -z / w;
 }
 
 bool traceScreenRay(vec3 position, vec3 reflection, out vec4 hitColor, out float hitDepth, float depth, sampler2D textureFrame)
@@ -101,7 +105,14 @@ bool traceScreenRay(vec3 position, vec3 reflection, out vec4 hitColor, out float
 
     vec3 step = rayStep * reflection;
     vec3 marchingPosition = position + step;
-    float delta;
+
+    // Clip-space twins of the march state. Every update below is a scale, a sum or a midpoint,
+    // all of which commute with a linear map, so these stay exactly projection_matrix times
+    // their view-space counterparts (a direction carries w = 0, a point w = 1).
+    vec4 clipStep = projection_matrix * vec4(step, 0.0);
+    vec4 clipMarch = projection_matrix * vec4(marchingPosition, 1.0);
+
+    float delta = 0.0;
     float depthFromScreen;
     vec2 screenPosition;
     bool hit = false;
@@ -160,17 +171,22 @@ bool traceScreenRay(vec3 position, vec3 reflection, out vec4 hitColor, out float
                 float directionSign = sign(abs(marchingPosition.z) - depthFromScreen);
                 //this is sort of adapting step, should prevent lining reflection by doing sort of iterative converging
                 //some implementation doing it by binary search, but I found this idea more cheaty and way easier to implement
-                step = step * (1.0 - rayStep * max(directionSign, 0.0));
+                float stepScale = 1.0 - rayStep * max(directionSign, 0.0);
+                step *= stepScale;
+                clipStep *= stepScale;
                 marchingPosition += step * (-directionSign);
+                clipMarch += clipStep * (-directionSign);
             }
             else
             {
                 marchingPosition += step;
+                clipMarch += clipStep;
             }
 
             if (isExponentialStepEnabled)
             {
                 step *= adaptiveStepMultiplier;
+                clipStep *= adaptiveStepMultiplier;
             }
         }
         if (isBinarySearchEnabled && bracketed)
@@ -415,12 +431,22 @@ collectedColor = vec4(1, 0, 1, 1);
     {
         if (vignette > 0)
         {
+            // Per-pixel rotation of the Poisson set; the same for every sample, so hash once.
+            vec2 sampleRotation = vec2(random(tc), random(tc + vec2(17.0, 59.0)));
+
             for (int i = 0; i < totalSamples; i++)
             {
-                vec3 firstBasis = normalize(cross(getPoissonSample(i), rayDirection));
-                vec3 secondBasis = normalize(cross(rayDirection, firstBasis));
-                vec2 coeffs = vec2(random(tc + vec2(0, i)) + random(tc + vec2(i, 0)));
-                vec3 reflectionDirectionRandomized = rayDirection + ((firstBasis * coeffs.x + secondBasis * coeffs.y) * glossiness);
+                vec3 reflectionDirectionRandomized = rayDirection;
+                // Mirrors and transparent SSR use zero spread. Keep the same ray without
+                // computing the random disk sample (sqrt, sin and cos).
+                if (glossiness > 0.0)
+                {
+                    vec2 sampleUV = fract(POISSON3D_SAMPLES[i].xy + sampleRotation);
+                    float radius = sqrt(sampleUV.x);
+                    float angle = 6.28318530718 * sampleUV.y;
+                    vec2 coeffs = radius * vec2(cos(angle), sin(angle));
+                    reflectionDirectionRandomized += (firstBasis * coeffs.x + secondBasis * coeffs.y) * glossiness;
+                }
 
                 //float hitDepth;
 
