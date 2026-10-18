@@ -35,8 +35,15 @@ in vec2 vary_fragcoord;
 uniform vec3 sun_dir;
 uniform float shadow_bias;
 
+// Non-zero for a projector slot with no shadow-casting spot light this frame. Nothing reads that
+// slot's channel then (spotLightF only reads the slot its own light owns), so its five PCF taps
+// would be thrown away. Zero by default, so a binding that never sets it keeps sampling both.
+uniform ivec2 spot_shadow_inactive;
+
 vec4 getNorm(vec2 pos_screen);
-vec4 getPosition(vec2 pos_screen);
+vec4 getPositionWithDepth(vec2 pos_screen, float depth);
+float getDepth(vec2 pos_screen);
+bool isFarDepth(float d);
 
 float sampleDirectionalShadow(vec3 pos, vec3 norm, vec2 pos_screen);
 float sampleSpotShadow(vec3 pos, vec3 norm, int index, vec2 pos_screen);
@@ -44,14 +51,24 @@ float sampleSpotShadow(vec3 pos, vec3 norm, int index, vec2 pos_screen);
 void main()
 {
     vec2 pos_screen = vary_fragcoord.xy;
-    vec4 pos        = getPosition(pos_screen);
+    float depth     = getDepth(pos_screen);
+
+    // Sky: every term below already resolves to fully lit out here (beyond the last shadow
+    // split), so skip the normal fetch and the reconstruction.
+    if (isFarDepth(depth))
+    {
+        frag_color = vec4(1.0);
+        return;
+    }
+
+    vec4 pos        = getPositionWithDepth(pos_screen, depth);
     vec4 norm       = getNorm(pos_screen);
 
     vec4 col;
     col.r = sampleDirectionalShadow(pos.xyz, norm.xyz, pos_screen);
     col.g = 1.0f;
-    col.b = sampleSpotShadow(pos.xyz, norm.xyz, 0, pos_screen);
-    col.a = sampleSpotShadow(pos.xyz, norm.xyz, 1, pos_screen);
+    col.b = spot_shadow_inactive.x != 0 ? 1.0 : sampleSpotShadow(pos.xyz, norm.xyz, 0, pos_screen);
+    col.a = spot_shadow_inactive.y != 0 ? 1.0 : sampleSpotShadow(pos.xyz, norm.xyz, 1, pos_screen);
 
     frag_color = clamp(col, vec4(0), vec4(1));
 }

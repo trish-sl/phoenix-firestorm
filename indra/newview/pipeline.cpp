@@ -9439,6 +9439,14 @@ void LLPipeline::renderDeferredLighting()
                 const bool skip_ssao = gCubeSnapshot || (RenderDeferredSSAO && RenderSSAOFactor == 0.f);
                 LLGLSLShader& sun_shader = skip_ssao ? gDeferredSunProbeProgram : gDeferredSunProgram;
                 bindDeferredShader(sun_shader, deferred_light_target);
+
+                // A projector slot with no shadow-casting light is never read back (see
+                // PROJECTOR_SHADOW_INDEX in setupSpotLight), so let the shader skip its PCF taps.
+                static LLStaticHashedString sSpotShadowInactive("spot_shadow_inactive");
+                sun_shader.uniform2i(sSpotShadowInactive,
+                                     mShadowSpotLight[0].isNull() ? 1 : 0,
+                                     mShadowSpotLight[1].isNull() ? 1 : 0);
+
                 mScreenTriangleVB->setBuffer();
                 glClearColor(1, 1, 1, 1);
                 deferred_light_target->clear(GL_COLOR_BUFFER_BIT);

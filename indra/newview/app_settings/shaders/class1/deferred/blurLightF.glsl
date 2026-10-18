@@ -39,14 +39,27 @@ uniform float kern_scale;
 in vec2 vary_fragcoord;
 
 vec4 getPosition(vec2 pos_screen);
+vec4 getPositionWithDepth(vec2 pos_screen, float depth);
+float getDepth(vec2 pos_screen);
+bool isFarDepth(float d);
 vec4 getNorm(vec2 pos_screen);
 
 void main()
 {
     vec2 tc = vary_fragcoord.xy;
-    vec4 norm = getNorm(tc);
-    vec3 pos = getPosition(tc).xyz;
     vec4 ccol = texture(lightMap, tc).rgba;
+
+    // Sky: the lighting pass never reads the light map there, and a nearby surface rejects a sky
+    // sample by plane distance, so the twelve neighbour taps would be spent on nothing.
+    float depth = getDepth(tc);
+    if (isFarDepth(depth))
+    {
+        frag_color = max(ccol, vec4(0));
+        return;
+    }
+
+    vec4 norm = getNorm(tc);
+    vec3 pos = getPositionWithDepth(tc, depth).xyz;
 
     vec2 dlt = kern_scale * delta / (1.0+norm.xy*norm.xy);
     dlt /= max(-pos.z*dist_factor, 1.0);
