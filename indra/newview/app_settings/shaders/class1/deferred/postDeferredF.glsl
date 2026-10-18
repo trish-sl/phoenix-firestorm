@@ -118,13 +118,16 @@ void main()
             while (sc > 0.5)
             {
                 int its = int(max(1.0,(sc*3.7)));
+                // Walk the ring by rotating a unit vector through a fixed step instead of a sin and
+                // cos per tap; sc is the starting angle for rotary perturbance, as before.
+                vec2 ring = vec2(sin(sc), cos(sc));
+                float stepAng = 2*PI/its;
+                vec2 rot = vec2(sin(stepAng), cos(stepAng));
                 for (int i=0; i<its; ++i)
                 {
-                    float ang = sc+i*2*PI/its; // sc is added for rotary perturbance
-                    float samp_x = sc*sin(ang);
-                    float samp_y = sc*cos(ang);
                     // you could test sample coords against an interesting non-circular aperture shape here, if desired.
-                    dofSampleNear(diff, w, sc, vary_fragcoord.xy + (vec2(samp_x,samp_y) / screen_res));
+                    dofSampleNear(diff, w, sc, vary_fragcoord.xy + (sc * ring / screen_res));
+                    ring = vec2(ring.x * rot.y + ring.y * rot.x, ring.y * rot.y - ring.x * rot.x);
                 }
                 sc -= 1.0;
             }
@@ -135,13 +138,16 @@ void main()
             while (sc > 0.5)
             {
                 int its = int(max(1.0,(sc*3.7)));
+                // Walk the ring by rotating a unit vector through a fixed step instead of a sin and
+                // cos per tap; sc is the starting angle for rotary perturbance, as before.
+                vec2 ring = vec2(sin(sc), cos(sc));
+                float stepAng = 2*PI/its;
+                vec2 rot = vec2(sin(stepAng), cos(stepAng));
                 for (int i=0; i<its; ++i)
                 {
-                    float ang = sc+i*2*PI/its; // sc is added for rotary perturbance
-                    float samp_x = sc*sin(ang);
-                    float samp_y = sc*cos(ang);
                     // you could test sample coords against an interesting non-circular aperture shape here, if desired.
-                    dofSample(diff, w, sc, vary_fragcoord.xy + (vec2(samp_x,samp_y) / screen_res));
+                    dofSample(diff, w, sc, vary_fragcoord.xy + (sc * ring / screen_res));
+                    ring = vec2(ring.x * rot.y + ring.y * rot.x, ring.y * rot.y - ring.x * rot.x);
                 }
                 sc -= 1.0;
             }
