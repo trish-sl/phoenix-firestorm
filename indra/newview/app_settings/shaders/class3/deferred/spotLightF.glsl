@@ -29,8 +29,6 @@ out vec4 frag_color;
 
 uniform samplerCube environmentMap;
 uniform sampler2D lightMap;
-uniform sampler2D lightFunc;
-
 uniform mat4 proj_mat; //screen space to light space
 uniform float proj_near; //near clip for projection
 uniform vec3 proj_p; //plane projection is emitting from (in screen space)
@@ -231,7 +229,7 @@ void main()
 
             if (nh > 0.0)
             {
-                float scol = fres*texture(lightFunc, vec2(nh, spec.a)).r*gt/(nh*nl);
+                float scol = fres*blinnPhongLobe(nh, spec.a)*gt/(nh*max(nl, 1e-6));
                 vec3 speccol = dlit*scol*spec.rgb*shadow;
                 speccol = clamp(speccol, vec3(0), vec3(1));
                 final_color += speccol;

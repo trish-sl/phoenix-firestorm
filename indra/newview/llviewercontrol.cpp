@@ -370,16 +370,6 @@ static bool handleEnableHDR(const LLSD& newvalue)
     return handleReleaseGLBufferChanged(newvalue) && handleSetShaderChanged(newvalue);
 }
 
-static bool handleLUTBufferChanged(const LLSD& newvalue)
-{
-    if (gPipeline.isInit())
-    {
-        gPipeline.releaseLUTBuffers();
-        gPipeline.createLUTBuffers();
-    }
-    return true;
-}
-
 static bool handleAnisotropicFilteringChanged(const LLSD& newval)
 {
     F32 val = static_cast<F32>(newval.asReal());
@@ -1312,6 +1302,7 @@ void settings_setup_listeners()
     setting_setup_signal_listener(gSavedSettings, "RenderTerrainPBRScale", handlePBRTerrainScaleChanged);
     setting_setup_signal_listener(gSavedSettings, "RenderTerrainPBRDetail", handleSetShaderChanged);
     setting_setup_signal_listener(gSavedSettings, "RenderTerrainPBRPlanarSampleCount", handleSetShaderChanged);
+    setting_setup_signal_listener(gSavedSettings, "RenderTerrainPBRNormalsEnabled", handleSetShaderChanged);
     setting_setup_signal_listener(gSavedSettings, "RenderTerrainPBRTriplanarBlendFactor", handleSetShaderChanged);
     setting_setup_signal_listener(gSavedSettings, "OctreeStaticObjectSizeFactor", handleRepartition);
     setting_setup_signal_listener(gSavedSettings, "OctreeDistanceFactor", handleRepartition);
@@ -1323,9 +1314,7 @@ void settings_setup_listeners()
     setting_setup_signal_listener(gSavedSettings, "RenderDepthOfField", handleReleaseGLBufferChanged);
     setting_setup_signal_listener(gSavedSettings, "RenderFSAAType", handleReleaseGLBufferChanged);
     setting_setup_signal_listener(gSavedSettings, "RenderHighPrecisionPostProcess", handleReleaseGLBufferChanged);
-    setting_setup_signal_listener(gSavedSettings, "RenderSpecularResX", handleLUTBufferChanged);
-    setting_setup_signal_listener(gSavedSettings, "RenderSpecularResY", handleLUTBufferChanged);
-    setting_setup_signal_listener(gSavedSettings, "RenderSpecularExponent", handleLUTBufferChanged);
+    setting_setup_signal_listener(gSavedSettings, "RenderSpecularExponent", handleSetShaderChanged);
     setting_setup_signal_listener(gSavedSettings, "RenderAnisotropicLevel", handleAnisotropicFilteringChanged);
     gSavedSettings.getControl("RenderAnisotropicLevel")->getValidateSignal()->connect(boost::bind(&validateAnisotropicFiltering, _2));
     setting_setup_signal_listener(gSavedSettings, "RenderShadowResolutionScale", handleShadowsResized);
@@ -1635,4 +1624,3 @@ void test_cached_control()
 //There's no LLSD comparsion for LLCC yet. TEST_LLCC(LLSD, test_llsd);
 }
 #endif // TEST_CACHED_CONTROL
-
