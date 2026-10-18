@@ -113,7 +113,9 @@ void main()
             lightDist = length(lv);
 
             float dist = lightDist / lightSize;
-            if (dist <= 1.0)
+            // A back-facing light gives NdotL = 0 inside pbrPunctual, so its contribution is
+            // exactly zero -- skip the BRDF rather than evaluate it and multiply by nothing.
+            if (dist <= 1.0 && dot(n, lv) > 0.0)
             {
                 lv /= max(lightDist, 1e-8);
 
@@ -157,7 +159,9 @@ void main()
                     if (spec.a > 0.0)
                     {
                         lit        = min(nl * 6.0, 1.0) * dist_atten;
-                        float fres = pow(1 - vh, 5) * 0.4 + 0.5;
+                        float f = 1 - vh;
+                        float f2 = f * f;
+                        float fres = (f2 * f2 * f) * 0.4 + 0.5;
 
                         float gtdenom = 2 * nh;
                         float gt      = max(0, min(gtdenom * nv / vh, gtdenom * nl / vh));
