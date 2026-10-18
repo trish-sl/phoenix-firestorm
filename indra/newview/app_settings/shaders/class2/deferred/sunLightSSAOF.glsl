@@ -31,7 +31,12 @@ out vec4 frag_color;
 // Inputs
 in vec2 vary_fragcoord;
 
-vec4 getPosition(vec2 pos_screen);
+// See sunLightF.glsl: non-zero for a projector slot no shadow-casting spot light occupies.
+uniform ivec2 spot_shadow_inactive;
+
+vec4 getPositionWithDepth(vec2 pos_screen, float depth);
+float getDepth(vec2 pos_screen);
+bool isFarDepth(float d);
 vec4 getNorm(vec2 pos_screen);
 
 float sampleDirectionalShadow(vec3 shadow_pos, vec3 norm, vec2 pos_screen);
@@ -42,7 +47,18 @@ vec3 getGeoNorm(vec2 pos_screen);
 void main()
 {
     vec2 pos_screen = vary_fragcoord.xy;
-    vec4 pos  = getPosition(pos_screen);
+    float depth = getDepth(pos_screen);
+
+    // Sky: the shadow terms are already fully lit beyond the last split, and the lighting pass
+    // never reads the occlusion of a sky fragment -- so the eight SSAO taps are spent on nothing.
+    // The blur rejects sky samples by plane distance, so neighbours do not see the difference.
+    if (isFarDepth(depth))
+    {
+        frag_color = vec4(1.0);
+        return;
+    }
+
+    vec4 pos  = getPositionWithDepth(pos_screen, depth);
     vec4 norm = getNorm(pos_screen);
 
     vec4 col;
@@ -51,8 +67,8 @@ void main()
     // against this plane, and depth knows nothing about normal-mapped detail -- testing against a
     // perturbed normal makes a flat wall occlude itself wherever its map has texture.
     col.g = calcAmbientOcclusion(pos, getGeoNorm(pos_screen), pos_screen);
-    col.b = sampleSpotShadow(pos.xyz, norm.xyz, 0, pos_screen);
-    col.a = sampleSpotShadow(pos.xyz, norm.xyz, 1, pos_screen);
+    col.b = spot_shadow_inactive.x != 0 ? 1.0 : sampleSpotShadow(pos.xyz, norm.xyz, 0, pos_screen);
+    col.a = spot_shadow_inactive.y != 0 ? 1.0 : sampleSpotShadow(pos.xyz, norm.xyz, 1, pos_screen);
 
     frag_color = clamp(col, vec4(0), vec4(1));
 }
