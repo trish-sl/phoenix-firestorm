@@ -987,6 +987,13 @@ void display(bool rebuild, F32 zoom_factor, int subfield, bool for_snapshot)
                 LL_PROFILE_ZONE_NAMED_CATEGORY_DISPLAY("List");
                 F32 max_image_decode_time = 0.050f*gFrameIntervalSeconds.value(); // 50 ms/second decode time
                 max_image_decode_time = llclamp(max_image_decode_time, 0.002f, 0.005f ); // min 2ms/frame, max 5ms/frame)
+                if (gTeleportDisplay && gAgent.getTeleportState() == LLAgent::TELEPORT_ARRIVING)
+                {
+                    // Only the arrival screen is drawn while ARRIVING, which exists to let the
+                    // destination's textures fetch, decode and upload. Frame time is not what
+                    // anyone is looking at, so spend it there.
+                    max_image_decode_time = 0.015f;
+                }
                 gTextureList.updateImages(max_image_decode_time);
             }
 
