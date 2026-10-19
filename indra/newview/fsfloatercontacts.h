@@ -77,6 +77,12 @@ public:
 private:
     using listitem_vec_t = std::vector<LLScrollListItem*>;
 
+    //<FS:Trish>
+    S32 compareFriendItems(S32 col_idx, const LLScrollListItem* a, const LLScrollListItem* b);
+    void onFavoriteContactsChanged();
+    void updatePinnedSeparator();
+    //</FS:Trish>
+
     std::string             getActiveTabName() const;
     LLUUID                  getCurrentItemID() const;
     void                    getCurrentItemIDs(uuid_vec_t& selected_uuids) const;
@@ -199,6 +205,7 @@ private:
     void updateRlvRestrictions(ERlvBehaviour behavior);
     boost::signals2::connection mRlvBehaviorCallbackConnection{};
     boost::signals2::connection mContactSetChangedConnection{};
+    boost::signals2::connection mFavoriteContactsChangedConnection{};
 
     std::string getFullName(const LLAvatarName& av_name) const;
 
