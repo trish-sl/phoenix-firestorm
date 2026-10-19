@@ -396,6 +396,7 @@ public:
 
     // Threads:  Ttf
     /*virtual*/ void finishWork(S32 param, bool completed); // called from finishRequest() (WORK THREAD)
+    /*virtual*/ U32 getRetryDelayMs(); // called from processRequest() (WORK THREAD)
 
     // Threads:  Tmain
     /*virtual*/ bool deleteOK(); // called from update()
