@@ -34,6 +34,8 @@
 
 #include "llworkerthread.h"
 
+#include <atomic> // <FS:Trish/> Reads before writes
+
 class LLImageFormatted;
 class LLTextureCacheWorker;
 class LLImageRaw;
@@ -138,6 +140,11 @@ public:
     LLTextureCacheWorker* getWriter(handle_t handle);
     void lockWorkers() { mWorkersMutex.lock(); }
     void unlockWorkers() { mWorkersMutex.unlock(); }
+
+    // <FS:Trish> Reads before writes
+    S32 getPendingReads() const { return mPendingReads.load(std::memory_order_relaxed); }
+    std::atomic<S32> mPendingReads{ 0 };
+    // </FS:Trish>
 
     // debug
     S32 getNumReads() { return static_cast<S32>(mReaders.size()); }
