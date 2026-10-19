@@ -2298,7 +2298,7 @@ bool LLViewerFetchedTexture::updateFetch()
 
         if (mIsFetching)
         {
-            static const F32 MAX_HOLD_TIME = 5.0f; //seconds to wait before canceling fecthing if decode_priority is 0.f.
+             static const F32 MAX_HOLD_TIME = 1.5f;
             if (decode_priority > 0.0f || mStopFetchingTimer.getElapsedTimeF32() > MAX_HOLD_TIME)
             {
                 mStopFetchingTimer.reset();
