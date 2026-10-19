@@ -1385,6 +1385,17 @@
         <key>Value</key>
             <integer>0</integer>
         </map>
+     <key>FSFavoriteContacts</key>
+        <map>
+        <key>Comment</key>
+            <string>List of pinned friend UUIDs (Contacts floater friends list)</string>
+        <key>Persist</key>
+            <integer>1</integer>
+        <key>Type</key>
+            <string>LLSD</string>
+        <key>Value</key>
+            <array></array>
+        </map>
      <key>FSFavoriteGroups</key>
         <map>
         <key>Comment</key>

@@ -307,6 +307,7 @@
 #include "fscorehttputil.h"
 #include "fsdata.h"
 #include "fsfavoritegroups.h" // <FS:PP> Group favorites / pinning
+#include "fsfavoritecontacts.h" // <FS:Trish/> Friend favorites / pinning
 #include "fsfloatercontacts.h"
 #include "fsfloaterimcontainer.h"
 #include "fsfloaternearbychat.h"
@@ -3476,6 +3477,9 @@ bool idle_startup()
         // <FS:PP> Group favorites / pinning
         FSFavoriteGroups::getInstance()->loadFavorites();
         // </FS:PP>
+        // <FS:Trish> Friend favorites / pinning
+        FSFavoriteContacts::getInstance()->loadFavorites();
+        // </FS:Trish>
 
         LLStartUp::setStartupState( STATE_STARTED );
         do_startup_frame();
