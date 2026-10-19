@@ -483,8 +483,9 @@ void LLQueuedThread::processRequest(LLQueuedThread::QueuedRequest* req)
 
                 llassert(!mDataLock->isSelfLocked());
 
-                using namespace std::chrono_literals;
-                const auto retry_backoff = 16ms;
+                // Per request: a worker that is only waiting (for a slot, a capability, a retry
+                // timer) can ask to be polled less often than one that is mid-pipeline.
+                const auto retry_backoff = std::chrono::milliseconds(req->getRetryDelayMs());
                 auto retry_time = LL::WorkSchedule::TimePoint::clock::now() + retry_backoff;
                 req->defer_until(retry_time);
                 LL_PROFILE_ZONE_NAMED("processRequest - post deferred");
