@@ -46,6 +46,8 @@ private:
     void selectOption(const LLSD& userdata);
     bool checkOption(const LLSD& userdata);
     void copyURLToClipboard();
+    void pinFriends(bool pin);
+    bool isPinVisible(const LLSD& userdata);
 };
 
 extern FSContactsFriendsMenu gFSContactsFriendsMenu;
