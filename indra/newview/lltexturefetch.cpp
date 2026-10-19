@@ -247,6 +247,11 @@ static const S32 HTTP_REQUESTS_RANGE_END_MAX = 20000000;
 // stop after 720 seconds, might be overkill, but cap request can keep going forever.
 static const S32 MAX_CAP_MISSING_RETRIES = 720;
 static const S32 CAP_MISSING_EXPIRATION_DELAY = 1; // seconds
+// Core HTTP has its own retry handling, but a failure can still reach the
+// worker after that budget is exhausted. Do not immediately poison a texture
+// as missing for a transient transport or CDN failure.
+static const U32 MAX_TRANSIENT_HTTP_RETRIES = 3;
+static const F32 TRANSIENT_HTTP_RETRY_DELAY = 1.0f;
 
 //////////////////////////////////////////////////////////////////////////////
 namespace
@@ -572,6 +577,10 @@ private:
     LLTimer mDecodeTimer;
     LLTimer mCacheWriteTimer;
     LLTimer mFetchTimer;
+    LLTimer mHttpRequestTimer;
+    LLTimer mLowInterestTimer;          // since mImagePriority last fell to (near) zero
+    bool mHttpCancelRequested = false;  // a cancel has been issued for the live request
+    LLTimer mHttpRetryTimer;
     LLTimer mStateTimer;
     F32 mCacheReadTime; // time for cache read only
     F32 mDecodeTime;    // time for decode only
@@ -605,6 +614,7 @@ private:
     bool mCanUseCapability;
     LLTimer mRegionRetryTimer;
     S32 mRegionRetryAttempt;
+    U32 mHttpRetryAttempt;
     LLUUID mLastRegionId;
 
 
@@ -964,7 +974,8 @@ LLTextureFetchWorker::LLTextureFetchWorker(LLTextureFetch* fetcher,
       mResourceWaitCount(0U),
       mFetchRetryPolicy(10.f,3600.f,2.f,10),
       mCanUseCapability(true),
-      mRegionRetryAttempt(0)
+      mRegionRetryAttempt(0),
+      mHttpRetryAttempt(0)
 {
     // <FS:Ansariel> OpenSim compatibility
     mCanUseNET = !LLGridManager::instance().isInSecondLife() && mUrl.empty() ;
@@ -1372,6 +1383,11 @@ bool LLTextureFetchWorker::doWork(S32 param)
     if (mState == LOAD_FROM_NETWORK)
     {
         LL_PROFILE_ZONE_NAMED_CATEGORY_TEXTURE("tfwdw - LOAD_FROM_NETWORK"); //<FS:Beq/> fix incorrect category
+        if (mHttpRetryAttempt && !mHttpRetryTimer.hasExpired())
+        {
+            return false;
+        }
+
         // Check for retries to previous server failures.
         F32 wait_seconds;
         if (mFetchRetryPolicy.shouldRetry(wait_seconds))
@@ -2188,6 +2204,52 @@ void LLTextureFetchWorker::onCompleted(LLCore::HttpHandle handle, LLCore::HttpRe
     bool success = true;
     bool partial = false;
     LLCore::HttpStatus status(response->getStatus());
+    // A 403 is recoverable when the capability URL belongs to a region we
+    // have crossed out of.  A 403 from the current region is not made
+    // recoverable here, otherwise a stationary texture can repeatedly create
+    // new requests after each failed worker completes.
+    //
+    // mLastRegionId is only set for URLs from the agent region's capability, so compare with the
+    // main thread's published agent region rather than reading gAgent from this callback while a
+    // teleport may be tearing regions down.
+    const LLUUID current_region_id = mFetcher->getAgentRegionId();
+    const bool forbidden_capability =
+        status == LLCore::HttpStatus(HTTP_FORBIDDEN) &&
+        mLastRegionId.notNull() && current_region_id.notNull() &&
+        mLastRegionId != current_region_id;
+    // LLCore only treats 499-599 and transport errors as retryable. A 429 is the server asking us
+    // to slow down, not refusing the asset; without this it fell through as a hard failure.
+    static const LLCore::HttpStatus http_too_many_requests(429);
+    const bool too_many_requests = status == http_too_many_requests;
+    const bool no_longer_visible = mImagePriority < F_ALMOST_ZERO;
+    if (!status && mFTType != FTT_SERVER_BAKE && mFTType != FTT_MAP_TILE &&
+        (status.isRetryable() || forbidden_capability || too_many_requests) &&
+        !no_longer_visible &&
+        mHttpRetryAttempt < MAX_TRANSIENT_HTTP_RETRIES)
+    {
+        ++mHttpRetryAttempt;
+        const F32 delay = TRANSIENT_HTTP_RETRY_DELAY * static_cast<F32>(1U << (mHttpRetryAttempt - 1));
+        mHttpRetryTimer.setTimerExpirySec(delay);
+        mFetcher->removeFromHTTPQueue(mID, S32Bytes(0));
+        setGetStatus(status, status.toString());
+        resetFormattedData();
+        mLoaded = false;
+        mHttpHandle = LLCORE_HTTP_HANDLE_INVALID;
+        releaseHttpSemaphore();
+        if (mLastRegionId.notNull())
+        {
+            // Capability URLs expire across crossings. Do not discard a caller-supplied URL.
+            mUrl.clear();
+        }
+        setState(LOAD_FROM_NETWORK);
+        LL_INFOS(LOG_TXT) << mID
+                          << (forbidden_capability ? " stale texture capability " : " transient HTTP failure ")
+                          << status.toTerseString()
+                          << "; retry " << mHttpRetryAttempt << "/" << MAX_TRANSIENT_HTTP_RETRIES
+                          << " in " << delay << "s" << LL_ENDL;
+        return;
+    }
+
     if (!status && (mFTType == FTT_SERVER_BAKE))
     {
         LL_INFOS(LOG_TXT) << mID << " state " << e_state_name[mState] << LL_ENDL;
@@ -2211,6 +2273,10 @@ void LLTextureFetchWorker::onCompleted(LLCore::HttpHandle handle, LLCore::HttpRe
     else
     {
         mFetchRetryPolicy.onSuccess();
+        if (status)
+        {
+            mHttpRetryAttempt = 0;
+        }
     }
 
     std::string reason(status.toString());
@@ -2698,6 +2764,23 @@ void LLTextureFetchWorker::recordTextureDone(bool is_http, F64 byte_count)
 //////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////
 // public
+
+// static
+bool LLTextureFetch::isTransientFetchFailure(S32 worker_state, const LLCore::HttpStatus& status)
+{
+    if (!status)
+    {
+        static const LLCore::HttpStatus http_too_many_requests(429);
+        static const LLCore::HttpStatus op_canceled(LLCore::HttpStatus::LLCORE, LLCore::HE_OP_CANCELED);
+        return status.isRetryable() || status == http_too_many_requests || status == op_canceled;
+    }
+
+    // No HTTP failure on record. A worker that never got as far as sending was aborted, not
+    // refused.
+    return worker_state > LLTextureFetchWorker::INVALID &&
+           worker_state < LLTextureFetchWorker::WAIT_HTTP_REQ &&
+           worker_state != LLTextureFetchWorker::LOAD_FROM_SIMULATOR; // UDP failures are reported separately
+}
 
 std::string LLTextureFetch::getStateString(S32 state)
 {

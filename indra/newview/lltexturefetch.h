@@ -60,6 +60,16 @@ class LLTextureFetch : public LLWorkerThread
 public:
     static std::string getStateString(S32 state);
 
+    // True when a fetch that ended without data should simply be asked for again later, rather
+    // than taken as the server's final word: a retryable HTTP failure (5xx, transport error) or
+    // 429, or a worker that was aborted before it ever sent a request (lost interest, region
+    // change, shutdown) -- in which case there is no HTTP verdict at all. 403 is deliberately not
+    // included: the worker already retries a stale-region 403 itself, and a current-region 403
+    // repeated forever is what the caller must not do.
+    //
+    // Threads:  T*
+    static bool isTransientFetchFailure(S32 worker_state, const LLCore::HttpStatus& status);
+
     LLTextureFetch(LLTextureCache* cache, bool threaded, bool qa_mode);
     ~LLTextureFetch();
 
