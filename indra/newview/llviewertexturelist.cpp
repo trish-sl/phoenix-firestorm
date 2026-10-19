@@ -1165,7 +1165,24 @@ F32 LLViewerTextureList::updateImagesCreateTextures(F32 max_time)
         // should
         bool redundant_load = imagep->hasGLTexture() && imagep->getDiscardLevel() <= imagep->getDesiredDiscardLevel();
 
-        if (!redundant_load)
+        // Nothing can see or use this texture any more (typically the departed region's, after a
+        // teleport): its desired level is "not wanted", and it has no faces, volumes, boost,
+        // callbacks or raw-image consumers. Uploading it would spend this frame's creation budget
+        // -- which is first come, first served -- on a texture queued for a downscale straight
+        // after, ahead of the ones the new view is waiting for. Take the same path as a redundant
+        // load: drop the decoded data and clear the pending state. It is fetched again if ever
+        // wanted.
+        const bool unwanted_load = !redundant_load &&
+            imagep->getDesiredDiscardLevel() > MAX_DISCARD_LEVEL &&
+            imagep->getBoostLevel() == LLGLTexture::BOOST_NONE &&
+            imagep->getTotalNumFaces() == 0 &&
+            imagep->getNumVolumes(LLRender::LIGHT_TEX) == 0 &&
+            imagep->getNumVolumes(LLRender::SCULPT_TEX) == 0 &&
+            !imagep->hasCallbacks() &&
+            !imagep->needsToSaveRawImage() &&
+            !imagep->forSculpt();
+
+        if (!redundant_load && !unwanted_load)
         {
            imagep->createTexture();
         }
