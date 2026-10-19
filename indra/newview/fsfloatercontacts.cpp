@@ -31,6 +31,7 @@
 
 #include "fscommon.h"
 #include "fscontactsfriendsmenu.h"
+#include "fsfavoritecontacts.h"
 #include "fsfavoritegroups.h"
 #include "fsfloaterimcontainer.h"
 #include "fsscrolllistctrl.h"
@@ -88,6 +89,11 @@ FSFloaterContacts::~FSFloaterContacts()
         mContactSetChangedConnection.disconnect();
     }
 
+    if (mFavoriteContactsChangedConnection.connected())
+    {
+        mFavoriteContactsChangedConnection.disconnect();
+    }
+
     if (mRlvBehaviorCallbackConnection.connected())
     {
         mRlvBehaviorCallbackConnection.disconnect();
@@ -117,6 +123,8 @@ bool FSFloaterContacts::postBuild()
     mFriendsList->setHandleDaDCallback(boost::bind(&FSFloaterContacts::handleFriendsListDragAndDrop, this, _1, _2, _3, _4, _5, _6, _7, _8));
     mFriendsList->setContextMenu(&gFSContactsFriendsMenu);
     mFriendsList->setFilterColumn(mFriendsList->getColumn("full_name")->mIndex);
+    mFriendsList->setSortCallback(boost::bind(&FSFloaterContacts::compareFriendItems, this, _1, _2, _3));
+    mFavoriteContactsChangedConnection = FSFavoriteContacts::getInstance()->setFavoritesChangedCallback(boost::bind(&FSFloaterContacts::onFavoriteContactsChanged, this));
 
     mFriendsImBtn      = mFriendsTab->getChild<LLButton>("im_btn");
     mFriendsProfileBtn = mFriendsTab->getChild<LLButton>("profile_btn");
@@ -645,6 +653,11 @@ void FSFloaterContacts::changed(U32 changed_mask)
         default:;
     }
 
+    if (changed_mask & (LLFriendObserver::ADD | LLFriendObserver::REMOVE))
+    {
+        updatePinnedSeparator();
+    }
+
     updateFriendCount();
     refreshUI();
 }
@@ -733,6 +746,94 @@ void FSFloaterContacts::addFriend(const LLUUID& agent_id)
     update_gen_column["value"]              = relationInfo->getChangeSerialNum();
 
     updateFriendItemColor(mFriendsList->addElement(element, ADD_BOTTOM), agent_id);
+}
+
+S32 FSFloaterContacts::compareFriendItems(S32 col_idx, const LLScrollListItem* a, const LLScrollListItem* b)
+{
+    const std::string primary_name = mFriendsList->getSortColumnName();
+    const LLScrollListColumn* primary = primary_name.empty() ? nullptr : mFriendsList->getColumn(primary_name);
+    if (primary && col_idx == primary->mIndex)
+    {
+        // pinned friends, then the separator row, then everyone else
+        const FSFavoriteContacts* favorites = FSFavoriteContacts::getInstance();
+        auto rank = [favorites](const LLScrollListItem* item) -> S32
+        {
+            if (item->getUUID().isNull())
+            {
+                return 1;
+            }
+            return favorites->isFavorite(item->getUUID()) ? 0 : 2;
+        };
+        const S32 rank_a = rank(a);
+        const S32 rank_b = rank(b);
+        if (rank_a != rank_b)
+        {
+            const S32 order = (rank_a < rank_b) ? -1 : 1;
+            return mFriendsList->getSortAscending() ? order : -order;
+        }
+    }
+
+    const LLScrollListCell* cell_a = a->getColumn(col_idx);
+    const LLScrollListCell* cell_b = b->getColumn(col_idx);
+    if (!cell_a || !cell_b)
+    {
+        return 0;
+    }
+    return LLStringUtil::compareDict(cell_a->getValue().asString(), cell_b->getValue().asString());
+}
+
+void FSFloaterContacts::onFavoriteContactsChanged()
+{
+    updatePinnedSeparator();
+}
+
+void FSFloaterContacts::updatePinnedSeparator()
+{
+    mFriendsList->deleteItems(LLSD(LLUUID::null));
+
+    // Build a separator similar to the group panel to differentiate pinned/unpinned friends
+    // However, since the friendlist is a single ScrollList, faking a row results in fewer code changes than splitting into two panels.
+    const FSFavoriteContacts* favorites = FSFavoriteContacts::getInstance();
+    const std::vector<LLScrollListItem*> items = mFriendsList->getAllData();
+    auto is_pinned = [favorites](const LLScrollListItem* item) { return favorites->isFavorite(item->getUUID()); };
+    if (!mFriendsList->isFiltered() && std::ranges::any_of(items, is_pinned) && !std::ranges::all_of(items, is_pinned))
+    {
+        // Build a fake separator line
+        S32 first_visible = -1;
+        S32 last_visible = -1;
+        for (S32 i = 0; i < mFriendsList->getNumColumns(); ++i)
+        {
+            if (mFriendsList->getColumn(i)->getWidth() > 0)
+            {
+                first_visible = (first_visible < 0) ? i : first_visible;
+                last_visible = i;
+            }
+        }
+
+        static constexpr S32 SEPARATOR_INSET = 5;
+        const S32 column_padding = mFriendsList->getColumnPadding();
+        const LLFontGL* font = LLFontGL::getFontByName(mFriendListFontName);
+        const S32 line_middle = llmax(1, (font ? font->getLineHeight() : 16) / 2);
+        const LLSD line_color = LLUIColorTable::instance().getColor("DefaultHighlightLight").get().getValue();
+
+        LLSD element;
+        element["id"] = LLUUID::null;
+        element["enabled"] = false;
+        for (S32 i = 0; i < mFriendsList->getNumColumns(); ++i)
+        {
+            LLSD& cell = element["columns"][i];
+            cell["column"] = mFriendsList->getColumn(i)->mName;
+            cell["type"] = "bar";
+            cell["color"] = line_color;
+            cell["value"]["ratio"] = 1.0;
+            cell["value"]["bottom"] = line_middle;
+            cell["value"]["left_pad"] = (i == first_visible) ? SEPARATOR_INSET : 0;
+            cell["value"]["right_pad"] = (i == last_visible) ? SEPARATOR_INSET : -column_padding;
+        }
+        mFriendsList->addElement(element, ADD_BOTTOM);
+    }
+
+    mFriendsList->setNeedsSort(true);
 }
 
 void FSFloaterContacts::onMapButtonClicked()
@@ -1285,6 +1386,8 @@ void FSFloaterContacts::onColumnDisplayModeChanged(const std::string& settings_n
     mFriendsList->dirtyColumns();
     mFriendsList->updateColumns(true); // Force update or icons don't properly hide if permission columns are hidden
 
+    updatePinnedSeparator();
+
     // primary sort = online status, secondary sort = name
     if (gSavedSettings.getS32("FSFriendListSortOrder"))
     {
@@ -1308,6 +1411,10 @@ void FSFloaterContacts::onDisplayNameChanged()
 {
     for (auto item : mFriendsList->getAllData())
     {
+        if (item->getUUID().isNull())
+        {
+            continue; // pinned separator
+        }
         LLAvatarName av_name;
         if (LLAvatarNameCache::get(item->getUUID(), &av_name))
         {
@@ -1414,6 +1521,7 @@ void FSFloaterContacts::onFriendFilterEdit(const std::string& search_string)
 
     // Apply new filter.
     mFriendsList->setFilterString(mFriendFilterSubStringOrig);
+    updatePinnedSeparator();
 }
 
 void FSFloaterContacts::resetFriendFilter()

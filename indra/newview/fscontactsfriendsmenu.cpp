@@ -29,6 +29,7 @@
 
 #include "fscontactsfriendsmenu.h"
 
+#include "fsfavoritecontacts.h"
 #include "fsradar.h"
 #include "llavataractions.h"
 #include "lllogchat.h"
@@ -62,10 +63,13 @@ LLContextMenu* FSContactsFriendsMenu::createMenu()
         registrar.add("Contacts.Friends.CopyUrl",               boost::bind(&FSContactsFriendsMenu::copySLURLToClipboard,       this, id));
         registrar.add("Contacts.Friends.SelectOption",          boost::bind(&FSContactsFriendsMenu::selectOption,               this, _2));
         registrar.add("Mention.CopyURI",                        boost::bind(&FSContactsFriendsMenu::copyURLToClipboard,         this));
+        registrar.add("Contacts.Friends.Pin",                   boost::bind(&FSContactsFriendsMenu::pinFriends,                 this, true));
+        registrar.add("Contacts.Friends.Unpin",                 boost::bind(&FSContactsFriendsMenu::pinFriends,                 this, false));
 
         enable_registrar.add("Contacts.Friends.EnableItem",     boost::bind(&FSContactsFriendsMenu::enableContextMenuItem,      this, _2));
         enable_registrar.add("Contacts.Friends.EnableZoomIn",   boost::bind(&LLAvatarActions::canZoomIn,                        id));
         enable_registrar.add("Contacts.Friends.CheckOption",    boost::bind(&FSContactsFriendsMenu::checkOption,                this, _2));
+        enable_registrar.add("Contacts.Friends.PinVisible",     boost::bind(&FSContactsFriendsMenu::isPinVisible,               this, _2));
 
         return createFromFile("menu_fs_contacts_friends.xml");
     }
@@ -76,9 +80,12 @@ LLContextMenu* FSContactsFriendsMenu::createMenu()
         registrar.add("Contacts.Friends.RemoveFriend",          boost::bind(&LLAvatarActions::removeFriendsDialog,              mUUIDs));
         registrar.add("Contacts.Friends.AddToContactSet",       boost::bind(&FSContactsFriendsMenu::addToContactSet,            this));
         registrar.add("Contacts.Friends.SelectOption",          boost::bind(&FSContactsFriendsMenu::selectOption,               this, _2));
+        registrar.add("Contacts.Friends.Pin",                   boost::bind(&FSContactsFriendsMenu::pinFriends,                 this, true));
+        registrar.add("Contacts.Friends.Unpin",                 boost::bind(&FSContactsFriendsMenu::pinFriends,                 this, false));
 
         enable_registrar.add("Contacts.Friends.EnableItem",     boost::bind(&FSContactsFriendsMenu::enableContextMenuItem,      this, _2));
         enable_registrar.add("Contacts.Friends.CheckOption",    boost::bind(&FSContactsFriendsMenu::checkOption,                this, _2));
+        enable_registrar.add("Contacts.Friends.PinVisible",     boost::bind(&FSContactsFriendsMenu::isPinVisible,               this, _2));
 
         return createFromFile("menu_fs_contacts_friends_multiselect.xml");
     }
@@ -157,6 +164,36 @@ bool FSContactsFriendsMenu::enableContextMenuItem(const LLSD& userdata)
     else if (item == "FSFriendListFullNameFormat")
     {
         return gSavedSettings.getBOOL("FSFriendListColumnShowFullName");
+    }
+    return false;
+}
+
+void FSContactsFriendsMenu::pinFriends(bool pin)
+{
+    FSFavoriteContacts* favorites = FSFavoriteContacts::getInstance();
+    for (const LLUUID& id : mUUIDs)
+    {
+        if (pin)
+        {
+            favorites->addFavorite(id);
+        }
+        else
+        {
+            favorites->removeFavorite(id);
+        }
+    }
+}
+
+bool FSContactsFriendsMenu::isPinVisible(const LLSD& userdata)
+{
+    const bool want_pinned = (userdata.asString() == "unpin");
+    const FSFavoriteContacts* favorites = FSFavoriteContacts::getInstance();
+    for (const LLUUID& id : mUUIDs)
+    {
+        if (favorites->isFavorite(id) == want_pinned)
+        {
+            return true;
+        }
     }
     return false;
 }
