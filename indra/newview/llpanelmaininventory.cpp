@@ -863,7 +863,20 @@ void LLPanelMainInventory::setSortBy(const LLSD& userdata)
     //{
     //    gSavedSettings.setU32("InventorySortOrder", sort_order_mask);
     //}
-    gSavedSettings.setU32(getActivePanel()->mSortOrderSetting, sort_order_mask);
+    const std::string& sort_setting = getActivePanel()->mSortOrderSetting;
+    if (sort_setting != LLInventoryPanel::INHERIT_SORT_ORDER)
+    {
+        gSavedSettings.setU32(sort_setting, sort_order_mask);
+    }
+    else
+    {
+        // Panels without a setting of their own should also be sorted
+        gSavedSettings.setU32(LLInventoryPanel::DEFAULT_SORT_ORDER, sort_order_mask);
+        if (mAllItemsPanel && mAllItemsPanel != getActivePanel())
+        {
+            mAllItemsPanel->setSortOrder(sort_order_mask);
+        }
+    }
     // </FS:Zi>
 }
 
