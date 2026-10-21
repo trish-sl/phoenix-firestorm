@@ -46,42 +46,19 @@ uniform bool transparent_surface;
 
 uniform int classic_mode;
 
-#define MAX_REFMAP_COUNT 256  // must match LL_MAX_REFLECTION_PROBE_COUNT
+#define MAX_REFMAP_COUNT 256
 
 layout (std140) uniform ReflectionProbes
 {
-    // list of OBBs for user override probes
-    // box is a set of 3 planes outward facing planes and the depth of the box along that plane
-    // for each box refBox[i]...
-    /// box[0..2] - plane 0 .. 2 in [A,B,C,D] notation
-    //  box[3][0..2] - plane thickness
     mat4 refBox[MAX_REFMAP_COUNT];
     mat4 heroBox;
-    // list of bounding spheres for reflection probes sorted by distance to camera (closest first)
     vec4 refSphere[MAX_REFMAP_COUNT];
-    // extra parameters
-    //  x - irradiance scale
-    //  y - radiance scale
-    //  z - fade in
-    //  w - znear
     vec4 refParams[MAX_REFMAP_COUNT];
     vec4 heroSphere;
-    // index  of cube map in reflectionProbes for a corresponding reflection probe
-    // e.g. cube map channel of refSphere[2] is stored in refIndex[2]
-    // refIndex.x - cubemap channel in reflectionProbes
-    // refIndex.y - index in refNeighbor of neighbor list (index is ivec4 index, not int index)
-    // refIndex.z - number of neighbors
-    // refIndex.w - priority, if negative, this probe has a box influence
     ivec4 refIndex[MAX_REFMAP_COUNT];
-
-    // neighbor list data (refSphere indices, not cubemap array layer)
     ivec4 refNeighbor[1024];
-
     ivec4 refBucket[256];
-
-    // number of reflection probes present in refSphere
     int refmapCount;
-
     int heroShape;
     int heroMipCount;
     int heroProbeCount;
@@ -96,6 +73,9 @@ int probeIndex[REF_SAMPLE_COUNT];
 
 // number of probes stored in probeIndex
 int probeInfluences = 0;
+
+vec3 getSpecularDominantDir(vec3 n, vec3 r, float perceptualRoughness);
+float horizonOcclusion(vec3 r, vec3 geometricNormal);
 
 bool isAbove(vec3 pos, vec4 plane)
 {
@@ -838,12 +818,17 @@ void doProbeSample(inout vec3 ambenv, inout vec3 glossenv,
     // TODO - don't hard code lods
     float reflection_lods = max_probe_lod;
 
-    vec3 refnormpersp = reflect(pos.xyz, norm.xyz);
+    vec3 refnormpersp = normalize(reflect(pos.xyz, norm.xyz));
+
+    // A GGX lobe is not centred on the mirror direction -- it leans toward the normal as the
+    // surface roughens. Sampling a prefiltered probe along the mirror direction therefore reads
+    // from the wrong place on exactly the surfaces whose lobe is widest.
+    float perceptualRoughness = 1.0 - glossiness;
+    refnormpersp = getSpecularDominantDir(norm.xyz, refnormpersp, perceptualRoughness);
 
     ambenv = amblit;
 
-    if (classic_mode == 0)
-        ambenv = sampleProbeAmbient(pos, norm, amblit);
+    float lod = perceptualRoughness*reflection_lods;
 
     float lod = (1.0-glossiness)*reflection_lods;
     glossenv = sampleProbes(pos, normalize(refnormpersp), lod);
@@ -961,9 +946,27 @@ void sampleReflectionProbesLegacy(inout vec3 ambenv, inout vec3 glossenv, inout 
 
     if (glossiness > 0.0)
     {
-        float lod = (1.0-glossiness)*reflection_lods;
-        glossenv = sampleProbes(pos, normalize(refnormpersp), lod);
+        // (1.0 - glossiness) is this path's perceptual roughness -- it is already what selects
+        // the prefiltered mip, so the lobe correction reads it the same way.
+        float perceptualRoughness = 1.0 - glossiness;
 
+        // Bend toward the normal with roughness, as doProbeSample does for PBR. A prefiltered
+        // probe sampled along the mirror direction fetches from slightly the wrong place on
+        // exactly the surfaces whose lobe is widest, which reads as reflections sliding across
+        // curvature. The two lookups below keep the mirror direction on purpose: legacyenv is
+        // the roughness-zero case, where the bend is the identity anyway, and the screen-space
+        // march wants the true reflection ray.
+        vec3 dominantDir = getSpecularDominantDir(norm.xyz, normalize(refnormpersp), perceptualRoughness);
+
+        float lod = perceptualRoughness*reflection_lods;
+        if (fused)
+        {
+            sampleProbesAmbientAndGloss(pos, norm, dominantDir, lod, amblit, ambenv, glossenv);
+        }
+        else
+        {
+            glossenv = sampleProbes(pos, dominantDir, lod);
+        }
     }
 
     if (envIntensity > 0.0)
@@ -1000,8 +1003,6 @@ void sampleReflectionProbesLegacy(inout vec3 ambenv, inout vec3 glossenv, inout 
 
     tapHeroProbe(glossenv, pos, norm, glossiness);
     tapHeroProbe(legacyenv, pos, norm, 1.0);
-
-    glossenv = clamp(glossenv, vec3(0), vec3(10));
 }
 
 void applyGlossEnv(inout vec3 color, vec3 glossenv, vec4 spec, vec3 pos, vec3 norm)
