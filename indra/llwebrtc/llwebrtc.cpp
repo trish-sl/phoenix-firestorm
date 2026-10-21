@@ -307,6 +307,7 @@ LLWebRTCImpl::LLWebRTCImpl(LLWebRTCLogCallback* logCallback) :
     mVoiceEnabled(false),
     mTuningMode(false),
     mDevicesDeploying(0),
+    mTerminating(false),
     mGain(0.0f),
     mBuiltinNS(false),
     mBuiltinAGC(false),
@@ -423,6 +424,10 @@ bool LLWebRTCImpl::terminate()
     auto done_promise = std::make_shared<std::promise<void> >();
     std::future<void> done_future = done_promise->get_future();
 
+    // Prevents device-deploy code from queuing more work on mWorkerThread/mDeviceModule,
+    // avoiding races when those members are moved to the shutdown thread below. See #6452.
+    mTerminating = true;
+
     // Hand ownership of the connections to the shutdown thread.  Nothing on
     // this thread may touch them afterwards -- in the timeout case below the
     // shutdown thread is detached and may still be working through them.
@@ -438,6 +443,9 @@ bool LLWebRTCImpl::terminate()
             mDeviceModule->SetObserver(nullptr);
         }
     });
+
+    // Signaling thread may still run workerDeployDevices() that reposts to mWorkerThread, so drain it.
+    mSignalingThread->BlockingCall([]() {});
     mVoiceDevicesObserverList.clear();
 
     // shutdown_thread can be detached, then LLWebRTCImpl will be nulled out.
@@ -917,7 +925,7 @@ void LLWebRTCImpl::workerDeployDevices(bool reset_module)
                 }
                 connection->enableReceiverTracks(!mTuningMode);
             }
-            if (1 < mDevicesDeploying.fetch_sub(1, std::memory_order_relaxed))
+            if (1 < mDevicesDeploying.fetch_sub(1, std::memory_order_relaxed) && !mTerminating)
             {
                 mWorkerThread->PostTask([this]
                 {
@@ -1238,6 +1246,11 @@ void LLWebRTCImpl::OnDevicesUpdated()
 {
     // OnDevicesUpdated() is called on macOS CoreAudio's device-change callback
     // thread.  Calling updateDevices() on that thread causes a deadlock.
+    // It can also fire at any time, including during shutdown.
+    if (mTerminating)
+    {
+        return;
+    }
     // <FS:TJ> Try and help crash on Mac with device changes
     // Batch device change events and delay the update to avoid racing stream restarts
 #if WEBRTC_MAC
@@ -1303,6 +1316,11 @@ void LLWebRTCImpl::setTuningMode(bool enable)
 
 void LLWebRTCImpl::deployDevices(bool reset_module)
 {
+    // Don't queue new work once shutdown has started
+    if (mTerminating)
+    {
+        return;
+    }
     if (0 < mDevicesDeploying.fetch_add(1, std::memory_order_relaxed))
     {
         if (reset_module)
@@ -1478,21 +1496,25 @@ void LLWebRTCImpl::freePeerConnection(LLWebRTCPeerConnectionInterface* peer_conn
             // to, but the engine's send stream was still active then (and the
             // engine's own StopRecording is intentionally a no-op), so the stop
             // only sticks once the connection -- and its stream -- is gone.
-            mWorkerThread->PostTask(
-                [this]()
-                {
-                    if (mDeviceModule)
+            // Don't post once shutdown has started.
+            if (!mTerminating)
+            {
+                mWorkerThread->PostTask(
+                    [this]()
                     {
-                        if (mDeviceModule->Playing())
+                        if (mDeviceModule)
                         {
-                            mDeviceModule->StopPlayout();
+                            if (mDeviceModule->Playing())
+                            {
+                                mDeviceModule->StopPlayout();
+                            }
+                            if (!mVoiceEnabled)
+                            {
+                                mDeviceModule->ForceStopRecording();
+                            }
                         }
-                        if (!mVoiceEnabled)
-                        {
-                            mDeviceModule->ForceStopRecording();
-                        }
-                    }
-                });
+                    });
+            }
         }
     }
 }
@@ -1507,6 +1529,10 @@ void LLWebRTCImpl::startPlayout()
     // muted", where it's held off until unmuted and audio is established.
     // workerStartRecording() is gated on mVoiceEnabled, so this can't re-open
     // the mic during voice-disable teardown.
+    if (mTerminating)
+    {
+        return;
+    }
     mWorkerThread->PostTask(
         [this]()
         {
