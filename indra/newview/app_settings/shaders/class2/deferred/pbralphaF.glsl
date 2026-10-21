@@ -23,6 +23,10 @@
  * $/LicenseInfo$
  */
 
+// NOTE: base colour and emissive textures are sRGB-encoded and bound without hardware sRGB
+// decode, so they are converted to linear here, as pbropaqueF does. Skipping the conversion
+// treats the encoded values as linear and washes the colour out towards grey.
+
 /*[EXTRA_CODE_HERE]*/
 
 #ifndef IS_HUD
@@ -43,6 +47,10 @@ uniform sampler2D lightMap;
 uniform int sun_up_factor;
 uniform vec3 sun_dir;
 uniform vec3 moon_dir;
+// Classic (legacy pre-PBR) sky lighting is a per-program compile-time variant, not a runtime
+// uniform: the two paths differ by whole blocks of maths and a probe sample, and only one of
+// them is ever live for a given sky. A macro rather than a const global -- these sources are
+// separately compiled units linked into one program, and several of them declare this.
 uniform int classic_mode;
 
 out vec4 frag_color;
@@ -74,10 +82,10 @@ uniform float minimum_alpha; // PBR alphaMode: MASK, See: mAlphaCutoff, setAlpha
 // Lights
 // See: LLRender::syncLightState()
 uniform vec4 light_position[8];
-uniform vec3 light_direction[8]; // spot direction
-uniform vec4 light_attenuation[8]; // linear, quadratic, is omni, unused, See: LLPipeline::setupHWLights() and syncLightState()
+uniform vec3 light_direction[8];
+uniform vec4 light_attenuation[8];
 uniform vec3 light_diffuse[8];
-uniform vec2 light_deferred_attenuation[8]; // light size and falloff
+uniform vec2 light_deferred_attenuation[8];
 
 vec3 srgb_to_linear(vec3 c);
 vec3 linear_to_srgb(vec3 c);
@@ -95,6 +103,11 @@ void mirrorClip(vec3 pos);
 void waterClip(vec3 pos);
 
 void calcDiffuseSpecular(vec3 baseColor, float metallic, inout vec3 diffuseColor, inout vec3 specularColor);
+float filterSpecularRoughness(float perceptualRoughness, vec3 n);
+vec3 pbrEnergyCompensation(vec3 specularColor, float perceptualRoughness, float nv);
+vec3 clampRadiance(vec3 c);
+vec3 clampHDRRange(vec3 color);
+float horizonOcclusion(vec3 r, vec3 geometricNormal);
 
 vec3 pbrBaseLight(vec3 diffuseColor,
                   vec3 specularColor,
@@ -134,14 +147,33 @@ void main()
 
     vec4 basecolor = texture(diffuseMap, base_color_texcoord.xy).rgba;
     basecolor.rgb = srgb_to_linear(basecolor.rgb);
+
+    vec3 col = vertex_color.rgb * basecolor.rgb;
+
+#ifdef FOR_IMPOSTOR
+    // Flat, unlit base colour -- the impostor bake wants ALBEDO, not a shaded result.
+    //
+    // An impostor is a G-buffer capture that gets replayed into the scene G-buffer and lit
+    // once at composite time. Shading here and then handing that result over as albedo lights
+    // it twice: sun, shadow, probe irradiance and fog all applied at bake, then applied again
+    // to the billboard. deferred/alphaF has had a FOR_IMPOSTOR branch for exactly this
+    // reason; the PBR and legacy-material alpha paths never got one, so they were the two
+    // still double-lighting. Matches that branch: base colour times vertex colour, nothing
+    // else, with coverage in alpha for the bake's premultiplied compositing.
+    //
+    // The material response is genuinely lost for blended surfaces in an impostor. It cannot
+    // be kept: a G-buffer has one normal and one ORM per texel and blended layers have no
+    // single value for either, which is why the flat path is the convention here.
+    mirrorClip(vary_position);
+    waterClip(pos);
 #ifdef HAS_ALPHA_MASK
     if (basecolor.a < minimum_alpha)
     {
         discard;
     }
 #endif
-
-    vec3 col = vertex_color.rgb * basecolor.rgb;
+    frag_color = max(vec4(col, basecolor.a * vertex_color.a), vec4(0));
+#else
 
     vec3 vNt = texture(bumpMap, normal_texcoord.xy).xyz*2.0-1.0;
     float sign = vary_sign;
@@ -151,7 +183,41 @@ void main()
     vec3 vB = sign * cross(vN, vT);
     vec3 norm = normalize( vNt.x * vT + vNt.y * vB + vNt.z * vN );
 
-    norm *= gl_FrontFacing ? 1.0 : -1.0;
+    // Held in a variable because the geometric normal below has to turn with it. Flipping only
+    // the shading normal leaves the two pointing into opposite hemispheres on a back face, and
+    // the horizon test reads that as a reflection fully underground.
+    //
+    // The tangent basis above is built from the raw vary_normal on purpose: mikktspace flips the
+    // result, not the inputs.
+    float facing = gl_FrontFacing ? 1.0 : -1.0;
+    norm *= facing;
+
+    vec3 orm = texture(specularMap, metallic_roughness_texcoord.xy).rgb; //orm is packed into "emissiveRect" to keep the data in linear color space
+
+    float perceptualRoughness = orm.g * roughnessFactor;
+    float metallic = orm.b * metallicFactor;
+    float ao = orm.r;
+
+    // The deferred path filters roughness once into the GBuffer; this one shades in place, so
+    // it does the same correction against its own normal here.
+    perceptualRoughness = filterSpecularRoughness(perceptualRoughness, norm);
+
+    // emissiveColor is the emissive color factor from GLTF and is already in linear space
+    vec3 colorEmissive = emissiveColor;
+    // emissiveMap here is a vanilla RGB texture encoded as sRGB, manually convert to linear
+    colorEmissive *= srgb_to_linear(texture(emissiveMap, emissive_texcoord.xy).rgb);
+
+    // Clip and alpha-test once every mipmapped fetch is done (as pbropaqueF does) but before
+    // the atmospherics and the shadow PCF, so rejected fragments -- masked foliage, the far
+    // side of a mirror or the water plane -- stop paying for lighting they never output.
+    mirrorClip(vary_position);
+    waterClip(pos);
+#ifdef HAS_ALPHA_MASK
+    if (basecolor.a < minimum_alpha)
+    {
+        discard;
+    }
+#endif
 
     float scol = 1.0;
     vec3 sunlit;
@@ -169,22 +235,21 @@ void main()
     scol = sampleDirectionalShadow(pos.xyz, norm.xyz, frag);
 #endif
 
-    vec3 orm = texture(specularMap, metallic_roughness_texcoord.xy).rgb; //orm is packed into "emissiveRect" to keep the data in linear color space
-
-    float perceptualRoughness = orm.g * roughnessFactor;
-    float metallic = orm.b * metallicFactor;
-    float ao = orm.r;
-
-    // emissiveColor is the emissive color factor from GLTF and is already in linear space
-    vec3 colorEmissive = emissiveColor;
-    // emissiveMap here is a vanilla RGB texture encoded as sRGB, manually convert to linear
-    colorEmissive *= srgb_to_linear(texture(emissiveMap, emissive_texcoord.xy).rgb);
-
     // PBR IBL
     float gloss      = 1.0 - perceptualRoughness;
     vec3  irradiance = amblit;
     vec3  radiance  = vec3(0);
-    sampleReflectionProbes(irradiance, radiance, vary_position.xy*0.5+0.5, pos.xyz, norm.xyz, gloss, true, amblit);
+    // frag, not a rescaled vary_position: the tc argument is a screen UV. It reaches
+    // tapScreenSpaceReflection, where it drives the screen-edge vignette and the per-pixel
+    // ray jitter, and vary_position is an eye-space metre offset -- outside [0,1] for all but
+    // a sliver of the frame, so the vignette never fades and the jitter stops decorrelating.
+    sampleReflectionProbes(irradiance, radiance, frag, pos.xyz, norm.xyz, gloss, true, amblit);
+
+    // A normal map can aim the reflection below the surface it sits on, where the probe happily
+    // returns radiance arriving through the geometry. vary_normal is the untouched interpolated
+    // vertex normal, so it is the geometric horizon to test against -- the deferred path has no
+    // equivalent, because the GBuffer only ever stored the perturbed normal.
+    radiance *= horizonOcclusion(reflect(normalize(pos.xyz), norm.xyz), vary_normal * facing);
 
     vec3 diffuseColor = vec3(0.0);
     vec3 specularColor = vec3(0.0);
@@ -192,6 +257,8 @@ void main()
 
     vec3 v = -normalize(pos.xyz);
 
+    // The material's occlusion alone: the SSAO buffer is built from the opaque depth pass, so it
+    // describes the surface behind this one, not this one.
     color = pbrBaseLight(diffuseColor, specularColor, metallic, v, norm.xyz, perceptualRoughness, light_dir, sunlit_linear, scol, radiance, irradiance, colorEmissive, ao, additive, atten);
 
     vec3 light = vec3(0);
@@ -215,7 +282,12 @@ void main()
     float final_scale = 1;
     if (classic_mode > 0)
         final_scale = 1.1;
-    frag_color = max(vec4(color.rgb * final_scale,a), vec4(0));
+    // Scrubbed the same way softenLightF scrubs the opaque result. max() alone does not do it:
+    // it passes an infinity through unchanged, and its answer for a NaN is undefined. This path
+    // runs the same unbounded punctual lobe the opaque one does, so it can produce the same
+    // values -- and whatever it writes goes on to the bloom pyramid.
+    frag_color = max(vec4(clampHDRRange(color.rgb * final_scale), a), vec4(0));
+#endif // FOR_IMPOSTOR
 }
 
 #else

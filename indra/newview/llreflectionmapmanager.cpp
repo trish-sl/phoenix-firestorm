@@ -6,6 +6,9 @@
  * Second Life Viewer Source Code
  * Copyright (C) 2022, Linden Research, Inc.
  *
+ * Alchemy Viewer Source Code
+ * Copyright © 2026, Rye <rye@alchemyviewer.org>
+ *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation;
@@ -80,7 +83,6 @@ void load_exr(const std::string& filename)
         gGL.getTexUnit(0)->bind(gEXRImage);
 
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, width, height, 0, GL_RGBA, GL_FLOAT, out);
-
         LLImageGLMemory::alloc_tex_image(width, height, GL_RGB16F, 1);
 
         free(out); // release memory of image data
@@ -126,6 +128,27 @@ extern bool gCubeSnapshot;
 extern bool gTeleportDisplay;
 
 static U32 sUpdateCount = 0;
+
+#if !LL_RELEASE_FOR_DOWNLOAD
+namespace
+{
+    // Validate the scalar tail against the shader uniform block layout.
+    const bool s_probe_layout_registered = []
+    {
+#define LL_PROBE_LAYOUT(m) \
+        { -1, #m, (U32)offsetof(LLReflectionMapManager::ReflectionProbeData, m), false }
+        LLGLSLShader::registerEngineBlockLayout("ReflectionProbes",
+        {
+            LL_PROBE_LAYOUT(refmapCount),
+            LL_PROBE_LAYOUT(heroShape),
+            LL_PROBE_LAYOUT(heroMipCount),
+            LL_PROBE_LAYOUT(heroProbeCount),
+        });
+#undef LL_PROBE_LAYOUT
+        return true;
+    }();
+}
+#endif // !LL_RELEASE_FOR_DOWNLOAD
 
 // get the next highest power of two of v (or v if v is already a power of two)
 //defined in llvertexbuffer.cpp
@@ -1018,21 +1041,18 @@ void LLReflectionMapManager::updateProbeFace(LLReflectionMap* probe, U32 face)
         gGL.flush();
         U32 res = mProbeResolution * 2;
 
-        static LLStaticHashedString resScale("resScale");
-        static LLStaticHashedString direction("direction");
-        static LLStaticHashedString znear("znear");
-        static LLStaticHashedString zfar("zfar");
-
         LLRenderTarget* screen_rt = &gPipeline.mAuxillaryRT.screen;
+        static LLStaticHashedString sResScale("resScale");
+        static LLStaticHashedString sDirection("direction");
 
         // perform a gaussian blur on the super sampled render before downsampling
         {
             gGaussianProgram.bind();
-            gGaussianProgram.uniform1f(resScale, 1.f / (mProbeResolution * 2));
-            S32 diffuseChannel = gGaussianProgram.enableTexture(LLShaderMgr::DEFERRED_DIFFUSE, LLTexUnit::TT_TEXTURE);
+            gGaussianProgram.uniform1f(sResScale, 1.f / (mProbeResolution * 2));
+            S32 diffuseChannel = gGaussianProgram.enableTexture(LLShaderMgr::DEFERRED_DIFFUSE);
 
             // horizontal
-            gGaussianProgram.uniform2f(direction, 1.f, 0.f);
+            gGaussianProgram.uniform2f(sDirection, 1.f, 0.f);
             gGL.getTexUnit(diffuseChannel)->bind(screen_rt);
             mRenderTarget.bindTarget();
             gPipeline.mScreenTriangleVB->setBuffer();
@@ -1040,7 +1060,7 @@ void LLReflectionMapManager::updateProbeFace(LLReflectionMap* probe, U32 face)
             mRenderTarget.flush();
 
             // vertical
-            gGaussianProgram.uniform2f(direction, 0.f, 1.f);
+            gGaussianProgram.uniform2f(sDirection, 0.f, 1.f);
             gGL.getTexUnit(diffuseChannel)->bind(&mRenderTarget);
             screen_rt->bindTarget();
             gPipeline.mScreenTriangleVB->setBuffer();
@@ -1052,7 +1072,7 @@ void LLReflectionMapManager::updateProbeFace(LLReflectionMap* probe, U32 face)
         S32 mips = (S32)(log2((F32)mProbeResolution) + 0.5f);
 
         gReflectionMipProgram.bind();
-        S32 diffuseChannel = gReflectionMipProgram.enableTexture(LLShaderMgr::DEFERRED_DIFFUSE, LLTexUnit::TT_TEXTURE);
+        S32 diffuseChannel = gReflectionMipProgram.enableTexture(LLShaderMgr::DEFERRED_DIFFUSE);
 
         for (int i = 0; i < mMipChain.size(); ++i)
         {
@@ -1068,7 +1088,7 @@ void LLReflectionMapManager::updateProbeFace(LLReflectionMap* probe, U32 face)
             }
 
 
-            gReflectionMipProgram.uniform1f(resScale, 1.f/(mProbeResolution*2));
+            gReflectionMipProgram.uniform1f(sResScale, 1.f/(mProbeResolution*2));
 
             gPipeline.mScreenTriangleVB->setBuffer();
             gPipeline.mScreenTriangleVB->drawArrays(LLRender::TRIANGLES, 0, 3);
@@ -1489,18 +1509,14 @@ void LLReflectionMapManager::updateUniforms()
     mProbeData.heroMipCount   = gPipeline.mHeroProbeManager.mHeroData.heroMipCount;
     mProbeData.heroProbeCount = gPipeline.mHeroProbeManager.mHeroData.heroProbeCount;
 
-    //copy mProbeData into uniform buffer object
+    // Copy mProbeData into the uniform buffer object.
     if (mUBO == 0)
     {
         glGenBuffers(1, &mUBO);
     }
-
-    {
-        LL_PROFILE_ZONE_NAMED_CATEGORY_DISPLAY("rmmsu - update buffer");
-        glBindBuffer(GL_UNIFORM_BUFFER, mUBO);
-        glBufferData(GL_UNIFORM_BUFFER, sizeof(ReflectionProbeData), &mProbeData, GL_STREAM_DRAW);
-        glBindBuffer(GL_UNIFORM_BUFFER, 0);
-    }
+    glBindBuffer(GL_UNIFORM_BUFFER, mUBO);
+    glBufferData(GL_UNIFORM_BUFFER, sizeof(ReflectionProbeData), &mProbeData, GL_STREAM_DRAW);
+    glBindBuffer(GL_UNIFORM_BUFFER, 0);
 
 #if 0
     if (!gCubeSnapshot)
@@ -1762,6 +1778,11 @@ void LLReflectionMapManager::initReflectionMaps()
 
         buff->getVertexStrider(v);
 
+        // NOTE: z=-1 is load-bearing. radianceGenV/irradianceGenV use this position for BOTH
+        // the clip-space gl_Position AND (rotated by modelview) the cubemap SAMPLE DIRECTION,
+        // so z is the forward axis of the convolution -- do NOT flatten it. The clip-volume
+        // conflict under reverse-Z (z=-1 is outside ZERO_TO_ONE) is resolved in the shaders,
+        // which remap only the output clip z while keeping the direction from this raw z=-1.
         v[0] = LLVector3(-1, -1, -1);
         v[1] = LLVector3(1, -1, -1);
         v[2] = LLVector3(-1, 1, -1);
@@ -1793,8 +1814,11 @@ void LLReflectionMapManager::cleanup()
     mDefaultProbe = nullptr;
     mUpdatingProbe = nullptr;
 
-    glDeleteBuffers(1, &mUBO);
-    mUBO = 0;
+    if (mUBO != 0)
+    {
+        glDeleteBuffers(1, &mUBO);
+        mUBO = 0;
+    }
 
     cleanupQueryPool();
 
