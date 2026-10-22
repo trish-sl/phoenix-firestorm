@@ -348,6 +348,18 @@ void LLLandmarkActions::getSLURLfromPosGlobalAndLocal(const LLVector3d& global_p
     tmp_global_pos.mdV[VY] -= region_pos.mV[VY];
     tmp_global_pos.mdV[VZ] -= region_pos.mV[VZ];
 
+    // [FIRE-36983] Places "Copy SLurl" named the south-west neighbour.
+    // The corner above is global-local, and LLLandmark::getGlobalPos() adds
+    // those in float32. The reconstructed corner can sit a fraction of a
+    // metre outside the region. to_region_handle() floors to a 256m tile, so
+    // that shortfall resolves to the region west and/or south of the landmark
+    // while the SLURL coordinates (taken from region_pos) stay correct.
+    // Step one metre inside before the name lookup. One metre is far larger
+    // than float32 error on the Second Life grid and still lies on this
+    // region's own 256m tile, which is what varregion handle matching needs.
+    tmp_global_pos.mdV[VX] += 1.0;
+    tmp_global_pos.mdV[VY] += 1.0;
+
     bool gotSimName = LLWorldMap::getInstance()->simNameFromPosGlobal(tmp_global_pos, sim_name);
     if (gotSimName)
     {
