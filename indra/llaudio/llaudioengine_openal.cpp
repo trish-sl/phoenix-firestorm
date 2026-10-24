@@ -60,6 +60,16 @@ namespace
         }
         return result;
     }
+
+    // <FS:Trish> 
+    std::string getOpenALDefaultDevice(ALCdevice* device)
+    {
+        const ALCenum which = (device && alcIsExtensionPresent(device, "ALC_ENUMERATE_ALL_EXT") == ALC_TRUE)
+            ? ALC_DEFAULT_ALL_DEVICES_SPECIFIER
+            : ALC_DEFAULT_DEVICE_SPECIFIER;
+        return ll_safe_string(alcGetString(nullptr, which));
+    }
+    // </FS:Trish>
 }
 
 LLAudioEngine_OpenAL::LLAudioEngine_OpenAL()
@@ -123,6 +133,15 @@ bool LLAudioEngine_OpenAL::init(void* userdata, const std::string &app_title)
         << ll_safe_string(alcGetString(device,
                            ALC_DEFAULT_DEVICE_SPECIFIER))
         << LL_ENDL;
+
+    // <FS:Trish> 
+    mDeviceReopenSupported = device && alcIsExtensionPresent(device, "ALC_SOFT_reopen_device") == ALC_TRUE;
+    mDefaultDeviceSpecifier = getOpenALDefaultDevice(device);
+    mDeviceList = getOpenALDeviceList(device);
+    LL_INFOS("OpenAL") << "Output endpoint: " << mDefaultDeviceSpecifier
+        << (mDeviceReopenSupported ? "" : " (ALC_SOFT_reopen_device unavailable: output device changes cannot be followed)")
+        << LL_ENDL;
+    // </FS:Trish>
 
     return true;
 }
@@ -235,7 +254,8 @@ bool LLAudioEngine_OpenAL::reopenDevice()
         return false;
     }
 
-    mDefaultDeviceSpecifier = ll_safe_string(alcGetString(nullptr, ALC_DEFAULT_DEVICE_SPECIFIER));
+    //mDefaultDeviceSpecifier = ll_safe_string(alcGetString(nullptr, ALC_DEFAULT_DEVICE_SPECIFIER));
+    mDefaultDeviceSpecifier = getOpenALDefaultDevice(device); // <FS:Trish/>
     mDeviceList = getOpenALDeviceList(device);
 
     for (LLAudioChannel* channel : mChannels)
@@ -252,7 +272,11 @@ bool LLAudioEngine_OpenAL::reopenDevice()
 
 void LLAudioEngine_OpenAL::idle()
 {
-    if (mDeviceCheckTimer.checkExpirationAndReset(1.0f))
+    // <FS:Trish> 
+    //if (mDeviceCheckTimer.checkExpirationAndReset(1.0f))
+    if (mDeviceReopenSupported && mDeviceCheckTimer.checkExpirationAndReset(1.0f) &&
+        LLFrameTimer::getTotalSeconds() >= mNextRecoveryTime)
+    // </FS:Trish>
     {
         // OpenAL Soft marks the device disconnected when its endpoint is
         // removed and does not reconnect it automatically.  Reopen the
@@ -271,30 +295,64 @@ void LLAudioEngine_OpenAL::idle()
                 device_lost = connected == ALC_FALSE;
             }
 
-            const char *default_device = device
-                ? alcGetString(nullptr, ALC_DEFAULT_DEVICE_SPECIFIER)
-                : nullptr;
-            const std::string current_default = ll_safe_string(default_device);
+            // <FS:Trish>
+            //const char *default_device = device
+            //    ? alcGetString(nullptr, ALC_DEFAULT_DEVICE_SPECIFIER)
+            //    : nullptr;
+            //const std::string current_default = ll_safe_string(default_device);
+            const std::string current_default = device ? getOpenALDefaultDevice(device) : std::string();
+            // </FS:Trish>
             const bool default_device_changed = !current_default.empty() &&
                 current_default != mDefaultDeviceSpecifier;
             const std::string current_device_list = getOpenALDeviceList(device);
             const bool device_list_changed = current_device_list != mDeviceList;
 
-            if (device_lost || default_device_changed || device_list_changed)
+            // <FS:Trish> 
+            //if (device_lost || default_device_changed || device_list_changed)
+            if (device_lost || default_device_changed)
+            // </FS:Trish>
             {
-                LL_INFOS("OpenAL") << (device_lost
-                    ? "Output device disconnected"
-                    : (default_device_changed
-                        ? "Windows default output device changed"
-                        : "OpenAL device list changed"))
-                    << "; attempting recovery" << LL_ENDL;
+                // <FS:Trish> 
+                if (mRecoveryFailures == 0)
+                {
+                    LL_INFOS("OpenAL") << (device_lost
+                        ? "Output device disconnected"
+                        : "Windows default output device changed")
+                        << " (" << mDefaultDeviceSpecifier << " -> " << current_default << ")"
+                        << "; attempting recovery" << LL_ENDL;
+                }
                 // Leave the old snapshot in place when recovery fails so the
                 // next poll retries even if the device list has stopped
                 // changing while Windows is still bringing the endpoint back.
-                reopenDevice();
+                //reopenDevice();
+                if (reopenDevice())
+                {
+                    mRecoveryFailures = 0;
+                    mNextRecoveryTime = 0.0;
+                }
+                else
+                {
+                    // Back off while the endpoint is still coming back: 1, 2, 4 ... 30 seconds
+                    ++mRecoveryFailures;
+                    const F64 delay = llmin(F64(1U << llmin(mRecoveryFailures - 1, 5U)), 30.0);
+                    mNextRecoveryTime = LLFrameTimer::getTotalSeconds() + delay;
+                    if (mRecoveryFailures == 1 || (mRecoveryFailures % 10) == 0)
+                    {
+                        LL_WARNS("OpenAL") << "Output device recovery failed " << mRecoveryFailures
+                            << " time(s); retrying in " << delay << "s" << LL_ENDL;
+                    }
+                }
+                // </FS:Trish>
             }
             else
             {
+                // <FS:Trish>
+                if (device_list_changed)
+                {
+                    LL_INFOS("OpenAL") << "OpenAL device list changed; current output endpoint unaffected" << LL_ENDL;
+                }
+                mRecoveryFailures = 0;
+                // </FS:Trish>
                 mDeviceList = current_device_list;
             }
         }

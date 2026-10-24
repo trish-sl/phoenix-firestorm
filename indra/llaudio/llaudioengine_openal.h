@@ -74,6 +74,10 @@ class LLAudioEngine_OpenAL : public LLAudioEngine
         std::string mDeviceList;
         bool mDeviceReopenSupported;
         LLFrameTimer mDeviceCheckTimer;
+        // <FS:Trish> C
+        U32 mRecoveryFailures{ 0 };
+        F64 mNextRecoveryTime{ 0.0 };
+        // </FS:Trish>
 
         static const int MAX_NUM_WIND_BUFFERS = 80;
         static const float WIND_BUFFER_SIZE_SEC; // 1/20th sec
