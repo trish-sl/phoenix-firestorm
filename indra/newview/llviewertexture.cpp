@@ -3323,6 +3323,23 @@ void LLViewerLODTexture::processTextureStats()
         // If the image has not been significantly visible in a while, we don't want it
         mDesiredDiscardLevel = llmin(mMinDesiredDiscardLevel, (S8)(MAX_DISCARD_LEVEL + 1));
         mDesiredDiscardLevel = llmin(mDesiredDiscardLevel, (S32)mLoadedCallbackDesiredDiscardLevel);
+
+        // <FS:Trish> Free faceless textures under memory pressure -- disabled. In a busy scene the
+        // bias sits above 1 for as long as you stay there, so this destroyed textures on every
+        // pass, and the ones coming back into view (PBR materials before their faces register,
+        // anything just off screen) paid a full refetch, decode and upload each time: grey
+        // flashes, and hitching while moving.
+        // if (LLViewerTexture::sDesiredDiscardBias > 1.f &&
+        //    mBoostLevel == LLGLTexture::BOOST_NONE &&
+        //    !mForceToSaveRawImage &&
+        //    getTotalNumFaces() == 0 &&
+        //    getNumVolumes(LLRender::LIGHT_TEX) == 0 &&
+        //    getNumVolumes(LLRender::SCULPT_TEX) == 0 &&
+        //    hasGLTexture())
+        //{
+        //    destroyTexture();
+        //}
+        // </FS:Trish>
     }
     else if (!mFullWidth  || !mFullHeight)
     {
@@ -3377,7 +3394,14 @@ void LLViewerLODTexture::processTextureStats()
         S32 current_discard = getDiscardLevel();
         if (mBoostLevel < LLGLTexture::BOOST_AVATAR_BAKED)
         {
-            if (current_discard < mDesiredDiscardLevel && !mForceToSaveRawImage)
+            // <FS:Trish> Downscale only under memory pressure
+            // A downscale is a GPU pass plus a mipmap rebuild on the main thread, and travelling
+            // fast queues thousands of them for textures that are receding -- most of which are
+            // deleted shortly after anyway. With VRAM under target (bias 1) they buy nothing; the
+            // bias rises as soon as memory is actually needed, and downscaling resumes then.
+            //if (current_discard < mDesiredDiscardLevel && !mForceToSaveRawImage)
+            if (current_discard < mDesiredDiscardLevel && !mForceToSaveRawImage && sDesiredDiscardBias > 1.f)
+            // </FS:Trish>
             { // should scale down
                 scaleDown();
             }
