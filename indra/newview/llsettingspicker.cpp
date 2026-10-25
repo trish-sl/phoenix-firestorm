@@ -200,6 +200,22 @@ void LLFloaterSettingsPicker::setTrackMode(ETrackMode mode)
 
 void LLFloaterSettingsPicker::draw()
 {
+    if (mCheckFocusLost)
+    {
+        mCheckFocusLost = false;
+
+        LLFloater* focused_floater = nullptr;
+        if (LLView* focus = dynamic_cast<LLView*>(gFocusMgr.getKeyboardFocus()))
+        {
+            focused_floater = gFloaterView->getParentFloater(focus);
+        }
+        if (focused_floater != this && (!focused_floater || focused_floater->getDependee() != this))
+        {
+            closeFloater();
+            return;
+        }
+    }
+
     LLView *owner = mOwnerHandle.get();
     static LLCachedControl<F32> max_opacity(gSavedSettings, "PickerContextOpacity", 0.4f);
     drawConeToOwner(mContextConeOpacity, max_opacity, owner);
@@ -422,7 +438,9 @@ void LLFloaterSettingsPicker::onFocusLost()
 {
     if (isInVisibleChain())
     {
-        closeFloater();
+        // Decide in draw(), floaters opened from here (Share opens the avatar
+        // picker) only become dependents after taking focus
+        mCheckFocusLost = true;
     }
 }
 
