@@ -72,9 +72,11 @@ namespace
 // will be processed by strtok_r calls which will modify the buffer.
 //
 // @return      -1 if invalid and response should be dropped, 0 if valid an
-//              correct, 1 if couldn't be parsed.  If 0, the first, last,
-//              and length arguments are also written.  'length' may be
-//              0 if the length wasn't available to the server.
+//              correct, 1 if couldn't be parsed, 2 if it is the
+//              unsatisfied-range form ("*/<length>").  If 0, the first,
+//              last, and length arguments are also written.  'length' may be
+//              0 if the length wasn't available to the server.  If 2, only
+//              'length' is written.
 //
 int parse_content_range_header(char * buffer,
                                unsigned int * first,
@@ -1008,6 +1010,10 @@ size_t HttpOpRequest::headerCallback(void * data, size_t size, size_t nmemb, voi
             // Response is badly formed and shouldn't be accepted
             op->mStatus = HttpStatus(HttpStatus::LLCORE, HE_INV_CONTENT_RANGE_HDR);
         }
+        else if (2 == status)
+        {
+            // Unsatisfied-range form that comes with a 416
+        }
         else
         {
             // Ignore the unparsable.
@@ -1242,6 +1248,16 @@ int parse_content_range_header(char * buffer,
             *last = lcl_last;
             *length = 0;
             return 0;
+        }
+#if LL_WINDOWS
+        if (1 == sscanf_s(tok, "*/%u", &lcl_len))
+#else
+        if (1 == sscanf(tok, "*/%u", &lcl_len))
+#endif  // LL_WINDOWS
+        {
+            // RFC 7233 unsatisfied-range form, sent with 416 responses
+            *length = lcl_len;
+            return 2;
         }
     }
 
