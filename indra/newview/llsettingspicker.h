@@ -127,6 +127,7 @@ private:
 
     bool                    mActive;
     bool                    mNoCopySettingsSelected;
+    bool                    mCheckFocusLost { false };
 
     LLSaveFolderState       mSavedFolderState;
 
