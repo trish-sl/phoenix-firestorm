@@ -365,7 +365,11 @@ void LLPacketRing::dumpPacketRingStats()
                           << "Dropped packets current: " << mNumDroppedPackets << std::endl
                           << "Dropped packets total: " << mNumDroppedPacketsTotal << std::endl
                           << "Dropped packets percentage: " << mDropPercentage << "%" << std::endl
-                          << "Actual in bytes: " << mActualBytesIn << std::endl
-                          << "Actual out bytes: " << mActualBytesOut << LL_ENDL;
+                          << "Actual in bytes: " << (mActualBytesIn - mDumpBytesIn) << std::endl
+                          << "Actual out bytes: " << (mActualBytesOut - mDumpBytesOut) << std::endl
+                          << "Total in bytes: " << mActualBytesIn << std::endl
+                          << "Total out bytes: " << mActualBytesOut << LL_ENDL;
     mNumDroppedPackets = 0;
+    mDumpBytesIn = mActualBytesIn;
+    mDumpBytesOut = mActualBytesOut;
 }

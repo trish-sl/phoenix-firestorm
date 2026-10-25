@@ -55,10 +55,10 @@ public:
     inline LLHost getLastSender() const;
     inline LLHost getLastReceivingInterface() const;
 
-    S32 getActualInBytes() const { return mActualBytesIn; }
-    S32 getActualOutBytes() const { return mActualBytesOut; }
-    S32 getAndResetActualInBits()   { S32 bits = mActualBytesIn * 8; mActualBytesIn = 0; return bits;}
-    S32 getAndResetActualOutBits()  { S32 bits = mActualBytesOut * 8; mActualBytesOut = 0; return bits;}
+    S64 getActualInBytes() const { return mActualBytesIn; }
+    S64 getActualOutBytes() const { return mActualBytesOut; }
+    S32 getAndResetActualInBits()   { S32 bits = (S32)(mActualBytesIn - mStatsBytesIn) * 8; mStatsBytesIn = mActualBytesIn; return bits;}
+    S32 getAndResetActualOutBits()  { S32 bits = (S32)(mActualBytesOut - mStatsBytesOut) * 8; mStatsBytesOut = mActualBytesOut; return bits;}
 
     S32 getNumBufferedPackets() const { return (S32)(mNumBufferedPackets); }
     S32 getNumBufferedBytes() const { return mNumBufferedBytes; }
@@ -88,8 +88,12 @@ protected:
     S32 mNumDroppedPacketsTotal { 0 };
     S32 mNumBufferedBytes { 0 };
 
-    S32 mActualBytesIn { 0 };
-    S32 mActualBytesOut { 0 };
+    S64 mActualBytesIn { 0 };
+    S64 mActualBytesOut { 0 };
+    S64 mStatsBytesIn { 0 };        // totals at last getAndResetActual*Bits()
+    S64 mStatsBytesOut { 0 };
+    S64 mDumpBytesIn { 0 };         // totals at last dumpPacketRingStats()
+    S64 mDumpBytesOut { 0 };
     F32 mDropPercentage { 0.0f };   // % of inbound packets to drop
     U32 mPacketsToDrop { 0 };       // drop next inbound n packets
 
