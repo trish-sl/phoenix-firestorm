@@ -134,6 +134,9 @@ public:
     virtual bool isCutToClipboard();
     virtual bool isClipboardPasteable() const;
     virtual bool isClipboardPasteableAsLink() const;
+    // <FS:Trish>
+    bool canPasteAsLink() const;
+    // </FS:Trish>
     virtual void pasteFromClipboard() {}
     virtual void pasteLinkFromClipboard() {}
     void getClipboardEntries(bool show_asset_id, menuentry_vec_t &items,
@@ -351,6 +354,12 @@ public:
 // [/SL:KB]
     virtual bool isClipboardPasteable() const;
     virtual bool isClipboardPasteableAsLink() const;
+    // <FS:Trish> For FSPasteNoCopyAsLink
+    virtual bool isClipboardPasteableMixed() const;
+    virtual void pasteMixedFromClipboard();
+    void doPasteMixedFromClipboard();
+    void splitClipboardForMixedPaste(const std::vector<LLUUID>& objects, std::vector<LLUUID>& copy_ids, std::vector<LLUUID>& link_ids) const;
+    // </FS:Trish>
 
     EInventorySortGroup getSortGroup()  const;
     virtual void update();
