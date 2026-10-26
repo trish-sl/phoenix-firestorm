@@ -10720,6 +10720,13 @@ void setDoubleClickAction(const std::string& control)
     }
 
     conflictHandler.saveToSettings();
+
+    // <FS:Trish> Notify comboboxes in move&view about the change
+    if (LLFloaterPreference* instance = LLFloaterReg::findTypedInstance<LLFloaterPreference>("preferences"))
+    {
+        instance->updateClickActionViews();
+    }
+    // </FS:Trish>
 }
 
 bool isDoubleClickActionEnabled(const std::string& control)
