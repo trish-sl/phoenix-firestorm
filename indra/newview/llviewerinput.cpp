@@ -952,6 +952,13 @@ bool walk_to(EKeystate s)
 bool teleport_to(EKeystate s)
 {
     if (KEYSTATE_DOWN != s) return false;
+    // <FS:Trish> FIRE-36739: The double click teleport toggle only changes third person bindings
+    static LLCachedControl<bool> double_click_teleport(gSavedSettings, "DoubleClickTeleport");
+    if (gAgent.isSitting() && !double_click_teleport)
+    {
+        return false;
+    }
+    // </FS:Trish>
     return LLToolPie::getInstance()->teleportToClickedLocation();
 }
 
