@@ -4656,7 +4656,10 @@ void LLPanelPreferenceControls::onRestoreDefaultsResponse(const LLSD& notificati
 bool LLPanelPreferenceControls::canKeyBindHandle(const std::string &control, EMouseClickType click, KEY key, MASK mask)
 {
     S32 mode = LLKeyConflictHandler::MODE_THIRD_PERSON;
-    if (mConflictHandler[mode].empty())
+    // <FS:Trish> Bindings can change outside of preferences (DoubleClick Teleport toggle), reload unless there are pending edits
+    //if (mConflictHandler[mode].empty())
+    if (mConflictHandler[mode].empty() || !mConflictHandler[mode].hasUnsavedChanges())
+    // </FS:Trish>
     {
         // opening for first time
         mConflictHandler[mode].loadFromSettings(LLKeyConflictHandler::MODE_THIRD_PERSON);
@@ -4677,7 +4680,10 @@ void LLPanelPreferenceControls::setKeyBind(const std::string &control, EMouseCli
         mConflictHandler[mode].loadFromSettings(LLKeyConflictHandler::MODE_THIRD_PERSON);
     }
 
-    if (!mConflictHandler[mode].canAssignControl(mEditingControl))
+    // <FS:Trish> Check the control being set, not whatever was last edited in the bindings table
+    //if (!mConflictHandler[mode].canAssignControl(mEditingControl))
+    if (!mConflictHandler[mode].canAssignControl(control))
+    // </FS:Trish>
     {
         return;
     }
