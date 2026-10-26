@@ -4655,7 +4655,10 @@ void LLPanelPreferenceControls::setKeyBind(const std::string &control, EMouseCli
         mConflictHandler[mode].loadFromSettings(LLKeyConflictHandler::MODE_THIRD_PERSON);
     }
 
-    if (!mConflictHandler[mode].canAssignControl(mEditingControl))
+    // <FS:Trish> Check the control being set, not whatever was last edited in the bindings table
+    //if (!mConflictHandler[mode].canAssignControl(mEditingControl))
+    if (!mConflictHandler[mode].canAssignControl(control))
+    // </FS:Trish>
     {
         return;
     }
