@@ -623,13 +623,13 @@
      reference="BrickBrown" />
     <color
      name="MenuBarBgColor"
-     reference="DkGray_86" />
+     reference="DkGray" />
     <color
      name="MenuBarGodBgColor"
      reference="FrogGreen" />
     <color
      name="MenuDefaultBgColor"
-     reference="DkGray_86" />
+     reference="DkGray" />
     <color
      name="MenuItemDisabledColor"
 	 reference="LtGray_50" />
@@ -647,7 +647,7 @@
      reference="Black" />
     <color
      name="MenuPopupBgColor"
-	  reference="DkGray_86" />
+	  reference="DkGray" />
     <color
      name="MultiSliderDisabledThumbColor"
      reference="Unused?" />
