@@ -188,6 +188,10 @@ public:
     virtual bool isClipboardPasteable() const = 0;
     virtual void pasteFromClipboard() = 0;
     virtual void pasteLinkFromClipboard() = 0;
+    // <FS:Trish> Paste fallback for no-copy items
+    virtual bool isClipboardPasteableMixed() const { return false; }
+    virtual void pasteMixedFromClipboard() {}
+    // </FS:Trish>
 
     virtual bool isAgentInventory() const = 0;
     virtual bool isAgentInventoryRoot() const = 0;

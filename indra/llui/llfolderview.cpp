@@ -1055,15 +1055,30 @@ bool LLFolderView::canPaste() const
                 stListeners.insert( typeid( *listener ) .name() );
             //
 
-            if(!listener || !listener->isClipboardPasteable())
+            // <FS:Trish> Allow mixed copy/link paste
+            //if(!listener || !listener->isClipboardPasteable())
+            //{
+            //    const LLFolderViewFolder* folderp = item->getParentFolder();
+            //    listener = folderp->getViewModelItem();
+            //    if (!listener || !listener->isClipboardPasteable())
+            //    {
+            //        return false;
+            //    }
+            //}
+            auto can_paste = [](const LLFolderViewModelItem* vmi)
+            {
+                return vmi && (vmi->isClipboardPasteable() || vmi->isClipboardPasteableMixed());
+            };
+            if (!can_paste(listener))
             {
                 const LLFolderViewFolder* folderp = item->getParentFolder();
                 listener = folderp->getViewModelItem();
-                if (!listener || !listener->isClipboardPasteable())
+                if (!can_paste(listener))
                 {
                     return false;
                 }
             }
+            // </FS:Trish>
         }
         return true;
     }
@@ -1098,6 +1113,12 @@ void LLFolderView::paste()
             {
                 listener->pasteFromClipboard();
             }
+            // <FS:Trish> Best-effort copy-paste by linking what can't be copied (see FSPasteNoCopyAsLink)
+            else if (listener && listener->isClipboardPasteableMixed())
+            {
+                listener->pasteMixedFromClipboard();
+            }
+            // </FS:Trish>
         }
     }
     mSearchString.clear();
