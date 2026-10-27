@@ -3607,9 +3607,17 @@ void LLLiveLSLEditor::processScriptRunningReply(LLMessageSystem* msg, void**)
     floater_key["itemid"] = item_id;
     if (LLLiveLSLEditor* instance = LLFloaterReg::findTypedInstance<LLLiveLSLEditor>("preview_scriptedit", floater_key))
     {
+        // <FS:Trish> The object contents panel also asks for the running state (stopped script
+        // display), so replies arrive while the script is being edited. Only take the compile
+        // target and language from the reply the editor asked for, or while nothing is unsaved.
+        const bool apply_script_state = !instance->mHaveRunningInfo || !instance->mScriptEd->hasChanged();
+        // </FS:Trish>
         instance->mHaveRunningInfo = true;
 
         instance->mRunningCheckbox->set(running);
+
+        if (apply_script_state) // <FS:Trish/>
+        {
 
         bool mono = false, luau = false, luau_language = false;
         msg->getBOOLFast(_PREHASH_Script, _PREHASH_Mono, mono);
@@ -3651,7 +3659,14 @@ void LLLiveLSLEditor::processScriptRunningReply(LLMessageSystem* msg, void**)
             lsl_luau_item->setEnabled(lua_scripts_enabled);
         }
 
-        instance->mScriptEd->mCompileTarget->setEnabled(instance->getIsModifiable() && have_script_upload_cap(object_id));
+        // <FS:Trish> don't re-enable it for scripts we may not view (loadAsset disabled it)
+        //instance->mScriptEd->mCompileTarget->setEnabled(instance->getIsModifiable() && have_script_upload_cap(object_id));
+        // loadAsset() only asks for the running state for scripts we may view, and that reply
+        // usually arrives before the script text, so don't wait for the text here
+        instance->mScriptEd->mCompileTarget->setEnabled(instance->getIsModifiable() && instance->mAskedForRunningInfo
+            && have_script_upload_cap(object_id));
+        }
+        // </FS:Trish>
     }
 
     LLPanelObjectInventory::handleScriptRunningReply(object_id, item_id, running);

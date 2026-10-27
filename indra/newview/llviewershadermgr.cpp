@@ -556,7 +556,7 @@ static bool hashShaderSources(HBXXH128& hash, const std::string& root, const std
         }
         else if (entry.size() >= 5 && entry.compare(entry.size() - 5, 5, ".glsl") == 0)
         {
-            LLFILE* file = LLFile::fopen(path, "rb");
+            LLFILE* file = LLFile::fopen(path, LLFILE_MODE("rb"));
             if (!file)
             {
                 return false;
