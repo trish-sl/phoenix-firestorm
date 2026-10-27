@@ -57,6 +57,7 @@
 #include "llattachmentsmgr.h"
 // [/SL:KB]
 #include "llcompilequeue.h"
+#include "fsregionluascripts.h"
 #include "llconsole.h"
 #include "lldebugview.h"
 #include "lldiskcache.h"
@@ -13436,6 +13437,9 @@ void initialize_menus()
 
     //Develop (clear cache immediately)
     commit.add("Develop.ClearCache", boost::bind(&handle_cache_clear_immediately) );
+    view_listener_t::addMenu(new LLDevelopEnableCameraAtAvatar(), "Develop.EnableCameraAtAvatar");
+    commit.add("Develop.RegionLuaScripts",
+        boost::bind(&FSRegionLuaScripts::handleMenuAction, &FSRegionLuaScripts::instance(), _2));
 
     // Develop (Fonts debugging)
     commit.add("Develop.Fonts.Dump", boost::bind(&LLFontGL::dumpFonts));
