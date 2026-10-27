@@ -33,6 +33,37 @@
 #include "llfloaterscriptrecover.h"
 
 #include "llviewerassetupload.h"
+#include "llpreviewscript.h" // <FS:Trish/> is_lua_script()
+
+// <FS:Trish> Compile target saved with the backup
+static bool region_has_lua_scripts()
+{
+    LLViewerRegion* region = gAgent.getRegion();
+    if (!region || !region->simulatorFeaturesReceived())
+    {
+        return false;
+    }
+    LLSD simulator_features;
+    region->getSimulatorFeatures(simulator_features);
+    return simulator_features["LuaScriptsEnabled"].asBoolean();
+}
+
+static std::string recovery_compile_target(const std::string& backup_file)
+{
+    std::string target = LLFile::getContents(script_backup_target_file(backup_file));
+    LLStringUtil::trim(target);
+
+    if (target != "lsl2" && target != "mono" && target != "lsl-luau" && target != "luau")
+    {
+        target = is_lua_script(LLFile::getContents(backup_file)) ? "luau" : "mono";
+    }
+    else if (target == "lsl-luau" && !region_has_lua_scripts())
+    {
+        target = "mono";
+    }
+    return target;
+}
+// </FS:Trish>
 
 const std::string NEW_LSL_NAME = "New Script";
 
@@ -93,7 +124,10 @@ void LLFloaterScriptRecover::onBtnCancel()
     std::vector<LLScrollListItem*> items = pListCtrl->getAllData();
     for (std::vector<LLScrollListItem*>::const_iterator itItem = items.begin(); itItem != items.end(); ++itItem)
     {
-        LLFile::remove((*itItem)->getValue().asString());
+        // <FS:Trish> the row value is a map, asString() gave an empty path so nothing was deleted
+        //LLFile::remove((*itItem)->getValue().asString());
+        remove_script_backup((*itItem)->getValue()["path"].asString());
+        // </FS:Trish>
     }
 
     closeFloater();
@@ -115,7 +149,7 @@ void LLFloaterScriptRecover::onBtnRecover()
         if (pCheckColumn->getCheckBox()->getValue().asBoolean())
             sdFiles.append(sdFile);
         else
-            LLFile::remove(sdFile["path"]);
+            remove_script_backup(sdFile["path"].asString()); // <FS:Trish/> also the compile target file
     }
 
     if (!sdFiles.emptyArray())
@@ -241,9 +275,14 @@ bool LLScriptRecoverQueue::recoverNext()
     //           script with the default name for new scripts
     std::string strScriptName = fixNewScriptDefaultName(itFile->second["name"].asString());
 
+    // <FS:Trish> Recover with the compile target saved with the backup
+    const std::string compile_target = recovery_compile_target(itFile->first);
+    m_FileQueue[itFile->first]["target"] = compile_target;
+    const U8 subtype = (compile_target == "luau") ? (U8)SST_LUA : (U8)NO_INV_SUBTYPE;
     create_inventory_item(gAgent.getID(), gAgent.getSessionID(), idFNF, LLTransactionID::tnull,
                           strScriptName, strItemDescr, LLAssetType::AT_LSL_TEXT, LLInventoryType::IT_LSL,
-                          NO_INV_SUBTYPE, PERM_MOVE | PERM_TRANSFER, new LLCreateRecoverScriptCallback(this));
+                          subtype, PERM_MOVE | PERM_TRANSFER, new LLCreateRecoverScriptCallback(this));
+    // </FS:Trish>
     return true;
 }
 
@@ -301,7 +340,19 @@ void LLScriptRecoverQueue::onCreateScript(const LLUUID& idItem)
         }
 
         LLBufferedAssetUploadInfo::taskUploadFinish_f proc = boost::bind(&LLScriptRecoverQueue::onSavedScript, this, _1, _2, _3, _4);
-        LLResourceUploadInfo::ptr_t uploadInfo(new LLScriptAssetUpload(idItem, "mono", buffer, proc, nullptr)); /// TODO LUA-SCRIPT: See if we can make this stuff work for LUA scripts too...
+        // <FS:Trish> Use the target saved with the backup
+        //LLResourceUploadInfo::ptr_t uploadInfo(new LLScriptAssetUpload(idItem, "mono", buffer, proc, nullptr)); /// TODO LUA-SCRIPT: See if we can make this stuff work for LUA scripts too...
+        std::string compile_target;
+        if (!strFilePath.empty())
+        {
+            compile_target = m_FileQueue[strFilePath]["target"].asString();
+        }
+        if (compile_target.empty())
+        {
+            compile_target = (pItem->getInventorySubType() == SST_LUA) ? "luau" : "mono";
+        }
+        LLResourceUploadInfo::ptr_t uploadInfo(new LLScriptAssetUpload(idItem, compile_target, buffer, proc, nullptr));
+        // </FS:Trish>
         LLViewerAssetUpload::EnqueueInventoryUpload(strCapsUrl, uploadInfo);
     }
     else
@@ -342,7 +393,7 @@ void LLScriptRecoverQueue::onSavedScript(LLUUID itemId, LLUUID newAssetId, LLUUI
                 gInventory.notifyObservers();
             }
 
-            LLFile::remove(itFile->first);
+            remove_script_backup(itFile->first); // <FS:Trish/> also the compile target file
             m_FileQueue.erase(itFile);
         }
     }

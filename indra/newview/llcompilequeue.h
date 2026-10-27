@@ -46,6 +46,7 @@ struct LLScriptQueueData
     LLPointer<LLInventoryItem> mItem;
     LLUUID mExperienceId;
     std::string mExperiencename;
+    std::string mCompileTarget; // <FS:Trish/> compile target decided by processScript() (auto-luau -> lsl-luau)
 
     LLScriptQueueData(const LLUUID& q_id, const LLUUID& task_id, const LLUUID& experience_id, LLInventoryItem* item) :
         mQueueID(q_id),
