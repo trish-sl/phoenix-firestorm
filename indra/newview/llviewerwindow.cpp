@@ -195,6 +195,7 @@
 #include "llspatialpartition.h"
 #include "llviewerjoystick.h"
 #include "llviewermenufile.h" // LLFilePickerReplyThread
+#include "llcallbacklist.h" // <FS:Trish/> Drag and drop files to upload
 #include "llviewernetwork.h"
 #include "llpostprocess.h"
 // <FS:Ansariel> [FS communication UI]
@@ -1469,6 +1470,23 @@ LLWindowCallbacks::DragNDropResult LLViewerWindow::handleDragNDrop( LLWindow *wi
 
     return result;
 }
+
+// <FS:Trish> Drag and drop files to upload
+LLWindowCallbacks::DragNDropResult LLViewerWindow::handleDropFiles(LLWindow *window, LLCoordGL pos, MASK mask, LLWindowCallbacks::DragNDropAction action, const std::vector<std::string>& files)
+{
+    if (LLStartUp::getStartupState() < STATE_STARTED || !can_upload_dropped_files(files))
+    {
+        return LLWindowCallbacks::DND_NONE;
+    }
+
+    if (LLWindowCallbacks::DNDA_DROPPED == action)
+    {
+        // Let the OS finish the drop first, reading the files can take a while
+        doOnIdleOneTime([files]() { upload_dropped_files(files); });
+    }
+    return LLWindowCallbacks::DND_COPY;
+}
+// </FS:Trish>
 
 bool LLViewerWindow::handleMiddleMouseUp(LLWindow *window,  LLCoordGL pos, MASK mask)
 {

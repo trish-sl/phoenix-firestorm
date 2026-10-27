@@ -124,6 +124,7 @@ public:
     F32 getSystemUISize() override;
 
     LLWindowCallbacks::DragNDropResult completeDragNDropRequest( const LLCoordGL gl_coord, const MASK mask, LLWindowCallbacks::DragNDropAction action, const std::string url );
+    LLWindowCallbacks::DragNDropResult completeDropFilesRequest( const LLCoordGL gl_coord, const MASK mask, LLWindowCallbacks::DragNDropAction action, const std::vector<std::string>& files ); // <FS:Trish/> Drag and drop files to upload
 
     static std::vector<std::string> getDisplaysResolutionList();
     static std::vector<std::string> getDynamicFallbackFontList();

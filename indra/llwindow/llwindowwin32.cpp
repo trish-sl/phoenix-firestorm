@@ -4698,6 +4698,14 @@ LLWindowCallbacks::DragNDropResult LLWindowWin32::completeDragNDropRequest( cons
     return mCallbacks->handleDragNDrop( this, gl_coord, mask, action, url );
 }
 
+// <FS:Trish> Drag and drop files to upload
+LLWindowCallbacks::DragNDropResult LLWindowWin32::completeDropFilesRequest( const LLCoordGL gl_coord, const MASK mask, LLWindowCallbacks::DragNDropAction action, const std::vector<std::string>& files )
+{
+    ASSERT_MAIN_THREAD();
+    return mCallbacks->handleDropFiles( this, gl_coord, mask, action, files );
+}
+// </FS:Trish>
+
 // Handle WM_IME_REQUEST message.
 // If it handled the message, returns true.  Otherwise, false.
 // When it handled the message, the value to be returned from

@@ -87,6 +87,7 @@ public:
         DND_LINK        // Drop accepted would result in a "link" operation
     };
     virtual DragNDropResult handleDragNDrop(LLWindow *window, LLCoordGL pos, MASK mask, DragNDropAction action, std::string data);
+    virtual DragNDropResult handleDropFiles(LLWindow *window, LLCoordGL pos, MASK mask, DragNDropAction action, const std::vector<std::string>& files); // <FS:Trish/> Drag and drop files to upload
 
     virtual void handlePingWatchdog(LLWindow *window, const char * msg);
     virtual void handlePauseWatchdog(LLWindow *window);
