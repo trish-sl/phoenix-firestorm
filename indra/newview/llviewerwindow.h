@@ -219,6 +219,7 @@ public:
     /*virtual*/ bool handleOtherMouseUp(LLWindow *window, LLCoordGL pos, MASK mask, S32 button);
     bool handleOtherMouse(LLWindow *window, LLCoordGL pos, MASK mask, S32 button, bool down);
     /*virtual*/ LLWindowCallbacks::DragNDropResult handleDragNDrop(LLWindow *window, LLCoordGL pos, MASK mask, LLWindowCallbacks::DragNDropAction action, std::string data);
+    /*virtual*/ LLWindowCallbacks::DragNDropResult handleDropFiles(LLWindow *window, LLCoordGL pos, MASK mask, LLWindowCallbacks::DragNDropAction action, const std::vector<std::string>& files); // <FS:Trish/> Drag and drop files to upload
                 void handleMouseMove(LLWindow *window,  LLCoordGL pos, MASK mask);
                 void handleMouseDragged(LLWindow *window,  LLCoordGL pos, MASK mask);
     /*virtual*/ void handleMouseLeave(LLWindow *window);

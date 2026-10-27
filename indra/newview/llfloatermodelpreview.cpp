@@ -433,6 +433,19 @@ void LLFloaterModelPreview::showModelPreview(const LLUUID& dest_folder)
     }
 }
 
+// <FS:Trish> Drag and drop files to upload: same as loadHighLodModel() without the file picker
+void LLFloaterModelPreview::showModelPreview(const std::string& filename, const LLUUID& dest_folder)
+{
+    LLFloaterModelPreview* fmp = (LLFloaterModelPreview*)LLFloaterReg::getInstance("upload_model");
+    if (fmp && !fmp->isModelLoading())
+    {
+        fmp->setUploadDestination(dest_folder);
+        fmp->mModelPreview->mLookUpLodFiles = true;
+        fmp->loadModel(LLModel::LOD_HIGH, filename);
+    }
+}
+// </FS:Trish>
+
 void LLFloaterModelPreview::onUploadOptionChecked(LLUICtrl* ctrl)
 {
     if (mModelPreview)
