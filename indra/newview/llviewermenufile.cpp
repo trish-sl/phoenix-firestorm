@@ -935,6 +935,77 @@ void upload_bulk(const std::vector<std::string>& filenames, LLFilePicker::ELoadF
     upload_bulk(filtered_filenames, allow_2k, dest);
 }
 
+// <FS:Trish> Drag and drop files to upload
+static bool has_extension(const std::string& filename, const std::string& extensions)
+{
+    return (" " + extensions + " ").find(" " + gDirUtilp->getExtension(filename) + " ") != std::string::npos;
+}
+
+static bool is_droppable_upload(const std::string& filename)
+{
+    return has_extension(filename, "tga bmp jpg jpeg png wav bvh anim gltf glb dae");
+}
+
+bool can_upload_dropped_files(const std::vector<std::string>& filenames)
+{
+    return std::any_of(filenames.begin(), filenames.end(), is_droppable_upload);
+}
+
+void upload_dropped_files(const std::vector<std::string>& filenames)
+{
+    std::vector<std::string> uploads;
+    std::copy_if(filenames.begin(), filenames.end(), std::back_inserter(uploads), is_droppable_upload);
+    if (uploads.empty())
+    {
+        return;
+    }
+
+    if (gAgentCamera.cameraMouselook())
+    {
+        gAgentCamera.changeCameraToDefault();
+    }
+
+    // Several files go through bulk upload, it shows the total cost and skips what it can't upload
+    if (uploads.size() > 1)
+    {
+        upload_bulk(uploads, true, LLUUID::null);
+        return;
+    }
+
+    // A single file opens the same upload floater as the File menu
+    const std::string& filename = uploads[0];
+    if (has_extension(filename, "tga bmp jpg jpeg png"))
+    {
+        upload_single_file(uploads, LLFilePicker::FFLOAD_IMAGE, LLUUID::null);
+    }
+    else if (has_extension(filename, "wav"))
+    {
+        upload_single_file(uploads, LLFilePicker::FFLOAD_WAV, LLUUID::null);
+    }
+    else if (has_extension(filename, "bvh anim"))
+    {
+        upload_single_file(uploads, LLFilePicker::FFLOAD_ANIM, LLUUID::null);
+    }
+    else if (has_extension(filename, "gltf glb"))
+    {
+        LLMaterialEditor::loadMaterialFromFile(filename);
+    }
+    else if (has_extension(filename, "dae"))
+    {
+        if (!LLConvexDecomposition::isFunctional())
+        {
+            if (gGLManager.mIsApple)
+            {
+                LLNotificationsUtil::add("ModelUploaderMissingPhysicsApple");
+                return;
+            }
+            LLNotificationsUtil::add("ModelUploaderMissingPhysics");
+        }
+        LLFloaterModelPreview::showModelPreview(filename);
+    }
+}
+// </FS:Trish>
+
 class LLFileUploadImage : public view_listener_t
 {
     bool handleEvent(const LLSD& userdata)
