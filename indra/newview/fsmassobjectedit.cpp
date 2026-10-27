@@ -126,7 +126,7 @@ namespace
     {
     public:
         ExistingScriptAssetUpload(const LLUUID& task_id, const LLUUID& item_id,
-            const LLUUID& asset_id, TargetType_t target, taskUploadFinish_f finish,
+            const LLUUID& asset_id, const std::string& target, taskUploadFinish_f finish,
             uploadFailed_f failed) :
             LLScriptAssetUpload(task_id, item_id, target, false, LLUUID::null,
                 std::string(), finish, failed)
@@ -181,7 +181,7 @@ namespace
     }
 
     bool compileScript(LLViewerObject* object, LLViewerInventoryItem* item,
-        LLScriptAssetUpload::TargetType_t target, LLEventPump& pump, LLSD& result)
+        const std::string& target, LLEventPump& pump, LLSD& result)
     {
         if (!object || !object->getRegion() || !item || item->getAssetUUID().isNull())
         {
@@ -2014,7 +2014,7 @@ void FSMassObjectEdit::operationCoro(Operation operation, uuid_vec_t targets,
 
             if (item_to_add->getType() == LLAssetType::AT_LSL_TEXT)
             {
-                target->saveScript(item_to_add, false, true);
+                target->saveScript(item_to_add, false, true, LLUUID::null);
             }
             else
             {
@@ -2042,11 +2042,11 @@ void FSMassObjectEdit::operationCoro(Operation operation, uuid_vec_t targets,
             {
                 LLSD compile_result;
                 bool compiled = fetchScriptAsset(target, added, pump) &&
-                    compileScript(target, added, LLScriptAssetUpload::LSL_LUAU,
+                    compileScript(target, added, "lsl-luau",
                         pump, compile_result);
                 if (!compiled)
                 {
-                    compiled = compileScript(target, added, LLScriptAssetUpload::LUAU,
+                    compiled = compileScript(target, added, "luau",
                         pump, compile_result);
                 }
                 if (!compiled)
