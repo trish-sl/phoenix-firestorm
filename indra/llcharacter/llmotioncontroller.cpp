@@ -430,7 +430,11 @@ bool LLMotionController::startMotion(const LLUUID &id, F32 start_offset)
         return false;
     }
     //if the motion is already active and allows deprecation, then let it keep playing
-    else if (motion->canDeprecate() && isMotionActive(motion))
+    // <FS:Trish> A motion that is easing out and wasn't deprecated above (paused or LOD faded avatar)
+    // isn't playing anymore, reactivate it instead of letting it finish stopping
+    //else if (motion->canDeprecate() && isMotionActive(motion))
+    else if (motion->canDeprecate() && isMotionActive(motion) && !motion->isStopped())
+    // </FS:Trish>
     {
         return true;
     }
