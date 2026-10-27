@@ -201,6 +201,13 @@ LLWindowCallbacks::DragNDropResult LLWindowCallbacks::handleDragNDrop(LLWindow *
     return LLWindowCallbacks::DND_NONE;
 }
 
+// <FS:Trish> Drag and drop files to upload
+LLWindowCallbacks::DragNDropResult LLWindowCallbacks::handleDropFiles(LLWindow *window, LLCoordGL pos, MASK mask, DragNDropAction action, const std::vector<std::string>& files)
+{
+    return LLWindowCallbacks::DND_NONE;
+}
+// </FS:Trish>
+
 bool LLWindowCallbacks::handleTimerEvent(LLWindow *window)
 {
     return false;
