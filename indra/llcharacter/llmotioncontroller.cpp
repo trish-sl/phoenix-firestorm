@@ -377,6 +377,7 @@ LLMotion* LLMotionController::createMotion( const LLUUID &id )
         case LLMotion::STATUS_FAILURE:
             LL_INFOS() << "Motion " << id << " init failed." << LL_ENDL;
             sRegistry.markBad(id);
+            mFailedMotions.insert(id); // <FS:Trish/> FSExperimentalRepairAnimations
             delete motion;
             return NULL;
         case LLMotion::STATUS_HOLD:
@@ -385,6 +386,7 @@ LLMotion* LLMotionController::createMotion( const LLUUID &id )
         case LLMotion::STATUS_SUCCESS:
             // add motion to our list
             mLoadedMotions.insert(motion);
+            mFailedMotions.erase(id); // <FS:Trish/> FSExperimentalRepairAnimations
             break;
         default:
             LL_ERRS() << "Invalid initialization status" << LL_ENDL;
@@ -789,6 +791,7 @@ void LLMotionController::updateLoadingMotions()
             mLoadingMotions.erase(curiter);
             // add motion to our loaded motion list
             mLoadedMotions.insert(motionp);
+            mFailedMotions.erase(motionp->getID()); // <FS:Trish/> FSExperimentalRepairAnimations
             // this motion should be playing
             if (!motionp->isStopped())
             {
@@ -799,6 +802,7 @@ void LLMotionController::updateLoadingMotions()
         {
             LL_INFOS() << "Motion " << motionp->getID() << " init failed." << LL_ENDL;
             sRegistry.markBad(motionp->getID());
+            mFailedMotions.insert(motionp->getID()); // <FS:Trish/> FSExperimentalRepairAnimations
             mLoadingMotions.erase(curiter);
             motion_set_t::iterator found_it = mDeprecatedMotions.find(motionp);
             if (found_it != mDeprecatedMotions.end())
