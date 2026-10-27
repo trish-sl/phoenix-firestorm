@@ -223,6 +223,7 @@ protected:
     motion_list_t       mActiveMotions;
     motion_set_t        mDeprecatedMotions;
     std::set<LLUUID>    mFailedMotions; // <FS:Trish/> FSExperimentalRepairAnimations
+    U32                 mStartSequence = 0; // <FS:Trish/> last LLMotion::mStartSequence handed out
 
     LLFrameTimer        mTimer;
     F32                 mPrevTimerElapsed;
