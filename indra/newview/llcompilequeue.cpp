@@ -438,9 +438,15 @@ void LLFloaterCompileQueue::handleScriptRetrieval(const LLUUID& assetId,
         delete ((HandleScriptUserData *)userData)->getData();
     }
     // <FS:KC> [LSL PreProc]
-    else if (gSavedSettings.getBOOL("_NACL_LSLPreprocessor"))
+    // <FS:Trish> processScript() only passes preprocessor data for scripts that should be
+    // preprocessed (not Lua, not the Region Lua Scripts tool); checking the setting here
+    // dereferenced null for those
+    //else if (gSavedSettings.getBOOL("_NACL_LSLPreprocessor"))
+    //{
+    //    LLScriptQueueData* data = ((HandleScriptUserData *)userData)->getData();
+    else if (LLScriptQueueData* data = ((HandleScriptUserData *)userData)->getData())
     {
-        LLScriptQueueData* data = ((HandleScriptUserData *)userData)->getData();
+    // </FS:Trish>
         LLFloaterCompileQueue* queue = LLFloaterReg::findTypedInstance<LLFloaterCompileQueue>("compile_queue", data->mQueueID);
 
         if (queue && queue->mLSLProc)
@@ -454,8 +460,15 @@ void LLFloaterCompileQueue::handleScriptRetrieval(const LLUUID& assetId,
 
             queue->addProcessingMessage("CompileQueuePreprocessing", LLSD().with("SCRIPT", data->mItem->getName()));
             queue->mLSLProc->preprocess_script(assetId, data, type, LLStringExplicit(&script_data[0]));
+            result["preproc"] = true;
         }
-        result["preproc"] = true;
+        // <FS:Trish> No preprocessor after all: compile it the plain way instead of silently skipping it
+        else
+        {
+            delete data;
+        }
+        // </FS:Trish>
+        //result["preproc"] = true;
     }
     // </FS:KC> LSL Preprocessor
 
@@ -725,7 +738,9 @@ bool LLFloaterCompileQueue::processScript(LLHandle<LLFloaterCompileQueue> hfloat
             return true;
         }
 
-        if (attempt + 1 < compile_attempts)
+        // A timed out attempt's reply can still arrive later on the same pump, so only
+        // retry after an actual compile failure
+        if (attempt + 1 < compile_attempts && !result.has("timeout"))
         {
             floater->addStringMessage(std::string("LSL-Luau compilation failed for \"") +
                 inventory->getName() + "\"; retrying as Lua...");

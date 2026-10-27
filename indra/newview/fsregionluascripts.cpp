@@ -865,7 +865,7 @@ void FSRegionLuaScripts::substitutionCoro()
                 original_removed = true;
             }
 
-            object->saveScript(replacement, false, true);
+            object->saveScript(replacement, false, true, LLUUID::null);
             LLInventoryObject::object_list_t staged_inventory;
             LLPointer<LLViewerInventoryItem> staged_item;
             for (S32 attempt = 0; attempt < 10 && !staged_item; ++attempt)
