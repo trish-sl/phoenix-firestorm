@@ -543,7 +543,31 @@ bool LLFloaterCompileQueue::processScript(LLHandle<LLFloaterCompileQueue> hfloat
                 "Skipping: " + item->getName() + " (no registered VM)");
             return true;
         }
+        // <FS:Trish> An LSL script running on the Luau VM reports "luau"
+        if (compile_target == "luau" && item->getInventorySubType() != SST_LUA)
+        {
+            compile_target = "lsl-luau";
+        }
+        // </FS:Trish>
     }
+
+    // <FS:Trish> Check the language before fetching anything
+    const bool script_is_lua = item->getInventorySubType() == SST_LUA;
+    const bool target_is_lua = compile_target == "luau";
+    const bool incompatible_language = target_is_lua != script_is_lua;
+
+    if (incompatible_language)
+    {
+        LLStringUtil::format_map_t args;
+        args["[SCRIPT_NAME]"] = inventory->getName();
+        args["[TARGET]"] = compile_target;
+        std::string buffer = floater->getString("SkippingIncompatibleScript", args);
+        floater->addStringMessage(buffer);
+        LL_INFOS("SCRIPTQ") << "Skipping incompatible script: " << inventory->getName()
+            << " (target " << compile_target << ")" << LL_ENDL;
+        return true;
+    }
+    // </FS:Trish>
 
     if (!item->getPermissions().allowModifyBy(gAgent.getID(), gAgent.getGroupID()) ||
         !item->getPermissions().allowCopyBy(gAgent.getID(), gAgent.getGroupID()))
@@ -616,13 +640,14 @@ bool LLFloaterCompileQueue::processScript(LLHandle<LLFloaterCompileQueue> hfloat
         // <FS:Ansariel> [LSL PreProc]
         //HandleScriptUserData    userData(pump.getName());
         HandleScriptUserData userData;
-        // <FS:Trish> Region Lua Scripts tool: the fallback needs the plain source path
+        // <FS:Trish> The LSL preprocessor is for LSL only 
         //if (gSavedSettings.getBOOL("_NACL_LSLPreprocessor"))
-        if (gSavedSettings.getBOOL("_NACL_LSLPreprocessor") && !floater->mLuaFallback)
+        if (!script_is_lua && !floater->mLuaFallback && floater->mLSLProc && gSavedSettings.getBOOL("_NACL_LSLPreprocessor"))
         // </FS:Trish>
         {
             // Need to dump some stuff into an LLScriptQueueData struct for the LSL PreProc.
             LLScriptQueueData* datap = new LLScriptQueueData(hfloater.get()->getKey().asUUID(), object->getID(), experienceId, item);
+            datap->mCompileTarget = compile_target; // <FS:Trish/>
             userData = HandleScriptUserData(pump.getName(), datap);
         }
         else
@@ -680,24 +705,6 @@ bool LLFloaterCompileQueue::processScript(LLHandle<LLFloaterCompileQueue> hfloat
     // </FS:Ansariel>
 
     LLUUID assetId = result["asset_id"];
-
-    const bool script_is_lua = item->getInventorySubType() == SST_LUA;
-    const bool target_is_lua = compile_target == "luau";
-    const bool incompatible_language = target_is_lua != script_is_lua;
-
-    // Lua and LSL use different source languages, so do not send an incompatible
-    // script to the compiler. The inventory subtype identifies the source language.
-    if (incompatible_language)
-    {
-        LLStringUtil::format_map_t args;
-        args["[SCRIPT_NAME]"] = inventory->getName();
-        args["[TARGET]"] = compile_target;
-        std::string buffer = floater->getString("SkippingIncompatibleScript", args);
-        floater->addStringMessage(buffer);
-        LL_INFOS("SCRIPTQ") << "Skipping incompatible script: " << inventory->getName()
-            << " (target " << compile_target << ")" << LL_ENDL;
-        return true;
-    }
 
     std::string url = object->getRegion()->getCapability("UpdateScriptTask");
 
@@ -1259,7 +1266,10 @@ void LLFloaterCompileQueue::scriptPreprocComplete(LLScriptQueueData* data, LLAss
                 LLResourceUploadInfo::ptr_t uploadInfo(new LLScriptAssetUploadWithId(
                     data->mTaskId,
                     data->mItem->getUUID(),
-                    queue->mCompileTarget,
+                    // <FS:Trish> the target processScript() resolved, not the raw queue setting
+                    //queue->mCompileTarget,
+                    data->mCompileTarget.empty() ? queue->mCompileTarget : data->mCompileTarget,
+                    // </FS:Trish>
                     is_running,
                     scriptName,
                     data->mQueueID,

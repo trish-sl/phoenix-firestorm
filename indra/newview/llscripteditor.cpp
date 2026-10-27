@@ -389,6 +389,11 @@ void LLScriptEditor::loadKeywords(const std::string& filename,
                                 const LLColor3& color)
 {
     LL_PROFILE_ZONE_SCOPED;
+    // <FS:Trish> 
+    ensureSyntaxWorker();
+    mSyntaxWorker->waitForIdle(true);
+    resetPendingSyntaxApply();
+    // </FS:Trish>
     if (mKeywordsLSL.loadFromLegacyFile(filename))
     {
         auto count = llmin(funcs.size(), tooltips.size());
@@ -397,16 +402,18 @@ void LLScriptEditor::loadKeywords(const std::string& filename,
             std::string name = utf8str_trim(funcs[i]);
             mKeywordsLSL.addToken(LLKeywordToken::TT_WORD, name, LLUIColor(color), tooltips[i] );
         }
-        segment_vec_t segment_list;
-        LLStyleConstSP style = new LLStyle(LLStyle::Params().font(getFont()).color(mDefaultColor.get()));
-        mKeywordsLSL.findSegments(&segment_list, getWText(), *this, style);
-
-        mSegments.clear();
-        segment_set_t::iterator insert_it = mSegments.begin();
-        for (segment_vec_t::iterator list_it = segment_list.begin(); list_it != segment_list.end(); ++list_it)
-        {
-            insert_it = mSegments.insert(insert_it, *list_it);
-        }
+        // <FS:Trish> rebuilt by loadKeywords()
+        //segment_vec_t segment_list;
+        //LLStyleConstSP style = new LLStyle(LLStyle::Params().font(getFont()).color(mDefaultColor.get()));
+        //mKeywordsLSL.findSegments(&segment_list, getWText(), *this, style);
+        //
+        //mSegments.clear();
+        //segment_set_t::iterator insert_it = mSegments.begin();
+        //for (segment_vec_t::iterator list_it = segment_list.begin(); list_it != segment_list.end(); ++list_it)
+        //{
+        //    insert_it = mSegments.insert(insert_it, *list_it);
+        //}
+        // </FS:Trish>
     }
 }
 // </FS:Ansariel>
