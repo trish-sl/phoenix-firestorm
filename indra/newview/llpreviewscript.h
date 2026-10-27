@@ -65,6 +65,11 @@ class FSLSLPreProcViewer;
 
 bool is_lua_script(const std::string& code);
 
+// <FS:Trish> Script backups keep the compile target in a file next to them (to recover to the correct VM)
+std::string script_backup_target_file(const std::string& backup_file);
+void remove_script_backup(const std::string& backup_file);
+// </FS:Trish>
+
 class LLLiveLSLFile : public LLLiveFile
 {
 public:
