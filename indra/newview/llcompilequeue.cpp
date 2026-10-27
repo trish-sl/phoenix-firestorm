@@ -118,7 +118,8 @@ namespace
             mPumpname(pumpname),
             mData(data)
         { }
-        HandleScriptUserData()
+        HandleScriptUserData() :
+            mData(nullptr) // <FS:Trish/> was left uninitialized
         { }
         // </FS:Ansariel>
 
@@ -143,10 +144,17 @@ namespace
 class LLQueuedScriptAssetUpload : public LLScriptAssetUpload
 {
 public:
+    // <FS:Trish> Region Lua Scripts tool: report upload failures to the waiting queue
+    //LLQueuedScriptAssetUpload(LLUUID taskId, LLUUID itemId, LLUUID assetId, std::string compileTarget,
+    //        bool isRunning, std::string scriptName, LLUUID queueId, LLUUID exerienceId, taskUploadFinish_f finish) :
+    //    LLScriptAssetUpload(taskId, itemId, compileTarget, isRunning,
+    //        exerienceId, std::string(), finish, nullptr),
     LLQueuedScriptAssetUpload(LLUUID taskId, LLUUID itemId, LLUUID assetId, std::string compileTarget,
-            bool isRunning, std::string scriptName, LLUUID queueId, LLUUID exerienceId, taskUploadFinish_f finish) :
+            bool isRunning, std::string scriptName, LLUUID queueId, LLUUID exerienceId, taskUploadFinish_f finish,
+            uploadFailed_f failed = nullptr) :
         LLScriptAssetUpload(taskId, itemId, compileTarget, isRunning,
-            exerienceId, std::string(), finish, nullptr),
+            exerienceId, std::string(), finish, failed),
+    // </FS:Trish>
         mScriptName(scriptName),
         mQueueId(queueId)
     {
@@ -251,6 +259,12 @@ void LLFloaterScriptQueue::addObject(const LLUUID& id, std::string name, std::st
 
 bool LLFloaterScriptQueue::start()
 {
+    // <FS:Trish> Region Lua Scripts tool asks for confirmation itself
+    if (!mConfirmScriptModify)
+    {
+        return startQueueConfirmed();
+    }
+    // </FS:Trish>
     LLNotificationsUtil::add("ConfirmScriptModify", LLSD(), LLSD(), boost::bind(&LLFloaterScriptQueue::onScriptModifyConfirmation, this, _1, _2));
     return true;
     /*
@@ -274,6 +288,14 @@ bool LLFloaterScriptQueue::onScriptModifyConfirmation(const LLSD& notification, 
     {
         return true;
     }
+
+    return startQueueConfirmed(); // <FS:Trish/> Region Lua Scripts tool
+}
+
+// <FS:Trish> Region Lua Scripts tool
+bool LLFloaterScriptQueue::startQueueConfirmed()
+{
+// </FS:Trish>
     std::string buffer;
 
     LLStringUtil::format_map_t args;
@@ -366,6 +388,22 @@ void LLFloaterCompileQueue::handleHTTPResponse(std::string pumpName, const LLSD 
     LLEventPumps::instance().post(pumpName, expresult);
 }
 
+// <FS:Trish> Region Lua Scripts tool
+// Upload failures normally only show a notification. The queue is waiting on its
+// event pump, so wake it up with a failed result instead of waiting for the timeout.
+bool LLFloaterCompileQueue::handleHTTPFailureResponse(std::string pumpName, LLSD response, std::string reason)
+{
+    response["compiled"] = false;
+    if (!response.has("errors") || !response["errors"].isArray())
+    {
+        response["errors"] = LLSD::emptyArray();
+    }
+    response["errors"].append(reason);
+    LLEventPumps::instance().post(pumpName, response);
+    return true;
+}
+// </FS:Trish>
+
 // *TODO: handleSCriptRetrieval is passed into the cache via a legacy C function pointer
 // future project would be to convert these to C++ callables (std::function<>) so that
 // we can use bind and remove the userData parameter.
@@ -400,9 +438,15 @@ void LLFloaterCompileQueue::handleScriptRetrieval(const LLUUID& assetId,
         delete ((HandleScriptUserData *)userData)->getData();
     }
     // <FS:KC> [LSL PreProc]
-    else if (gSavedSettings.getBOOL("_NACL_LSLPreprocessor"))
+    // <FS:Trish> processScript() only passes preprocessor data for scripts that should be
+    // preprocessed (not Lua, not the Region Lua Scripts tool); checking the setting here
+    // dereferenced null for those
+    //else if (gSavedSettings.getBOOL("_NACL_LSLPreprocessor"))
+    //{
+    //    LLScriptQueueData* data = ((HandleScriptUserData *)userData)->getData();
+    else if (LLScriptQueueData* data = ((HandleScriptUserData *)userData)->getData())
     {
-        LLScriptQueueData* data = ((HandleScriptUserData *)userData)->getData();
+    // </FS:Trish>
         LLFloaterCompileQueue* queue = LLFloaterReg::findTypedInstance<LLFloaterCompileQueue>("compile_queue", data->mQueueID);
 
         if (queue && queue->mLSLProc)
@@ -416,8 +460,15 @@ void LLFloaterCompileQueue::handleScriptRetrieval(const LLUUID& assetId,
 
             queue->addProcessingMessage("CompileQueuePreprocessing", LLSD().with("SCRIPT", data->mItem->getName()));
             queue->mLSLProc->preprocess_script(assetId, data, type, LLStringExplicit(&script_data[0]));
+            result["preproc"] = true;
         }
-        result["preproc"] = true;
+        // <FS:Trish> No preprocessor after all: compile it the plain way instead of silently skipping it
+        else
+        {
+            delete data;
+        }
+        // </FS:Trish>
+        //result["preproc"] = true;
     }
     // </FS:KC> LSL Preprocessor
 
@@ -492,7 +543,31 @@ bool LLFloaterCompileQueue::processScript(LLHandle<LLFloaterCompileQueue> hfloat
                 "Skipping: " + item->getName() + " (no registered VM)");
             return true;
         }
+        // <FS:Trish> An LSL script running on the Luau VM reports "luau"
+        if (compile_target == "luau" && item->getInventorySubType() != SST_LUA)
+        {
+            compile_target = "lsl-luau";
+        }
+        // </FS:Trish>
     }
+
+    // <FS:Trish> Check the language before fetching anything
+    const bool script_is_lua = item->getInventorySubType() == SST_LUA;
+    const bool target_is_lua = compile_target == "luau";
+    const bool incompatible_language = target_is_lua != script_is_lua;
+
+    if (incompatible_language)
+    {
+        LLStringUtil::format_map_t args;
+        args["[SCRIPT_NAME]"] = inventory->getName();
+        args["[TARGET]"] = compile_target;
+        std::string buffer = floater->getString("SkippingIncompatibleScript", args);
+        floater->addStringMessage(buffer);
+        LL_INFOS("SCRIPTQ") << "Skipping incompatible script: " << inventory->getName()
+            << " (target " << compile_target << ")" << LL_ENDL;
+        return true;
+    }
+    // </FS:Trish>
 
     if (!item->getPermissions().allowModifyBy(gAgent.getID(), gAgent.getGroupID()) ||
         !item->getPermissions().allowCopyBy(gAgent.getID(), gAgent.getGroupID()))
@@ -565,10 +640,14 @@ bool LLFloaterCompileQueue::processScript(LLHandle<LLFloaterCompileQueue> hfloat
         // <FS:Ansariel> [LSL PreProc]
         //HandleScriptUserData    userData(pump.getName());
         HandleScriptUserData userData;
-        if (gSavedSettings.getBOOL("_NACL_LSLPreprocessor"))
+        // <FS:Trish> The LSL preprocessor is for LSL only 
+        //if (gSavedSettings.getBOOL("_NACL_LSLPreprocessor"))
+        if (!script_is_lua && !floater->mLuaFallback && floater->mLSLProc && gSavedSettings.getBOOL("_NACL_LSLPreprocessor"))
+        // </FS:Trish>
         {
             // Need to dump some stuff into an LLScriptQueueData struct for the LSL PreProc.
             LLScriptQueueData* datap = new LLScriptQueueData(hfloater.get()->getKey().asUUID(), object->getID(), experienceId, item);
+            datap->mCompileTarget = compile_target; // <FS:Trish/>
             userData = HandleScriptUserData(pump.getName(), datap);
         }
         else
@@ -627,24 +706,6 @@ bool LLFloaterCompileQueue::processScript(LLHandle<LLFloaterCompileQueue> hfloat
 
     LLUUID assetId = result["asset_id"];
 
-    const bool script_is_lua = item->getInventorySubType() == SST_LUA;
-    const bool target_is_lua = compile_target == "luau";
-    const bool incompatible_language = target_is_lua != script_is_lua;
-
-    // Lua and LSL use different source languages, so do not send an incompatible
-    // script to the compiler. The inventory subtype identifies the source language.
-    if (incompatible_language)
-    {
-        LLStringUtil::format_map_t args;
-        args["[SCRIPT_NAME]"] = inventory->getName();
-        args["[TARGET]"] = compile_target;
-        std::string buffer = floater->getString("SkippingIncompatibleScript", args);
-        floater->addStringMessage(buffer);
-        LL_INFOS("SCRIPTQ") << "Skipping incompatible script: " << inventory->getName()
-            << " (target " << compile_target << ")" << LL_ENDL;
-        return true;
-    }
-
     std::string url = object->getRegion()->getCapability("UpdateScriptTask");
 
     // <FS:Trish> Region Lua Scripts tool: optionally retry a failed lsl-luau compile as luau,
@@ -662,9 +723,10 @@ bool LLFloaterCompileQueue::processScript(LLHandle<LLFloaterCompileQueue> hfloat
             attempt_target,
             true,
             inventory->getName(),
-            LLUUID(),
+            floater->getKey().asUUID(),
             experienceId,
-            boost::bind(&LLFloaterCompileQueue::handleHTTPResponse, pump.getName(), _4));
+            boost::bind(&LLFloaterCompileQueue::handleHTTPResponse, pump.getName(), _4),
+            boost::bind(&LLFloaterCompileQueue::handleHTTPFailureResponse, pump.getName(), _3, _4));
 
         LLViewerAssetUpload::EnqueueInventoryUpload(url, uploadInfo);
 
@@ -1204,7 +1266,10 @@ void LLFloaterCompileQueue::scriptPreprocComplete(LLScriptQueueData* data, LLAss
                 LLResourceUploadInfo::ptr_t uploadInfo(new LLScriptAssetUploadWithId(
                     data->mTaskId,
                     data->mItem->getUUID(),
-                    queue->mCompileTarget,
+                    // <FS:Trish> the target processScript() resolved, not the raw queue setting
+                    //queue->mCompileTarget,
+                    data->mCompileTarget.empty() ? queue->mCompileTarget : data->mCompileTarget,
+                    // </FS:Trish>
                     is_running,
                     scriptName,
                     data->mQueueID,
