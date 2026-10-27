@@ -75,6 +75,7 @@ public:
     void initModelPreview();
     void setUploadDestination(const LLUUID& dest_folder) { mDestinationFolderId = dest_folder; }
     static void showModelPreview(const LLUUID& dest_folder = LLUUID::null);
+    static void showModelPreview(const std::string& filename, const LLUUID& dest_folder = LLUUID::null); // <FS:Trish/> Drag and drop files to upload
 
     bool handleMouseDown(S32 x, S32 y, MASK mask);
     bool handleMouseUp(S32 x, S32 y, MASK mask);
