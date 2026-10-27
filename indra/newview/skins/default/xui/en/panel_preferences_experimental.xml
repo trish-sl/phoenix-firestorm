@@ -20,7 +20,7 @@
      width="538">
         <panel
          follows="left|top"
-         height="996"
+         height="1052"
          layout="topleft"
          left="0"
          name="experimental_settings"
@@ -114,7 +114,7 @@
              layout="topleft"
              left="30"
              name="release_non_adjacent_regions"
-             tool_tip="EXPERIMENTAL. Releases a neighbor region once it has been non-adjacent for 20 seconds, by closing that region's connection only. Requires 'Only connect to adjacent regions'. Logged under FSRegionRelease. Resets to off on every launch."
+             tool_tip="EXPERIMENTAL. Releases a neighbor region once it has been non-adjacent for 5 seconds, by closing that region's connection only. Requires 'Only connect to adjacent regions'. Logged under FSRegionRelease."
              top="199"
              width="460" />
             <check_box
@@ -523,6 +523,29 @@
              name="mass_object_edit_workers"
              top="962"
              width="100" />
+
+            <text
+             follows="left|top"
+             font="SansSerifBold"
+             height="18"
+             layout="topleft"
+             left="15"
+             name="avatar_animation_heading"
+             top="996"
+             width="475">
+                Avatar animation
+            </text>
+            <check_box
+             control_name="FSExperimentalRepairAnimations"
+             follows="left|top"
+             height="20"
+             label="Repair other avatars' stuck animations (experimental)"
+             layout="topleft"
+             left="15"
+             name="repair_animations"
+             tool_tip="EXPERIMENTAL. Every 2 seconds, restarts animations other avatars should be playing but are not, because they failed to load or a looping animation got stuck stopped. Only that avatar's broken animations are restarted, up to 3 times each. Logged under FSAnimRepair."
+             top="1019"
+             width="475" />
         </panel>
     </scroll_container>
 </panel>

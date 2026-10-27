@@ -169,6 +169,10 @@ public:
     bool isMotionLoading( LLMotion *motion );
     LLMotion *findMotion( const LLUUID& id ) const;
 
+    // <FS:Trish> FSExperimentalRepairAnimations
+    bool hasMotionFailed( const LLUUID& id ) const { return mFailedMotions.count(id) > 0; }
+    // </FS:Trish>
+
     void dumpMotions();
 
     const LLFrameTimer& getFrameTimer() { return mTimer; }
@@ -218,6 +222,7 @@ protected:
     motion_set_t        mLoadedMotions;
     motion_list_t       mActiveMotions;
     motion_set_t        mDeprecatedMotions;
+    std::set<LLUUID>    mFailedMotions; // <FS:Trish/> FSExperimentalRepairAnimations
 
     LLFrameTimer        mTimer;
     F32                 mPrevTimerElapsed;
