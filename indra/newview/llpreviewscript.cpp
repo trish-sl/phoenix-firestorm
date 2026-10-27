@@ -2216,7 +2216,7 @@ LLScriptEdContainer::~LLScriptEdContainer()
     // [SL:KB] - Patch: Build-ScriptRecover | Checked: 2011-11-23 (Catznip-3.2.0) | Added: Catznip-3.2.0
     // Clean up the backup file (unless we've gotten disconnected)
     if (!mBackupFilename.empty() && gAgent.getRegion())
-        LLFile::remove(mBackupFilename);
+        remove_script_backup(mBackupFilename); // <FS:Trish/> also the compile target file
     delete mBackupTimer;
     // [/SL:KB]
 }
@@ -2232,6 +2232,7 @@ void LLScriptEdContainer::refreshFromItem()
         if (strFilename != mBackupFilename)
         {
             LLFile::rename(mBackupFilename, strFilename);
+            LLFile::rename(script_backup_target_file(mBackupFilename), script_backup_target_file(strFilename)); // <FS:Trish/>
             mBackupFilename = strFilename;
         }
     }
@@ -2245,10 +2246,32 @@ bool LLScriptEdContainer::onBackupTimer()
             mBackupFilename = getBackupFileName();
         mScriptEd->writeToFile(mBackupFilename, true);
 
+        // <FS:Trish> Remember the compile target for recovery
+        const std::string compile_target = mScriptEd->mCompileTarget ? mScriptEd->mCompileTarget->getValue().asString() : std::string();
+        if (!compile_target.empty())
+        {
+            llofstream target_file(script_backup_target_file(mBackupFilename).c_str(), std::ios::out | std::ios::trunc);
+            target_file << compile_target;
+        }
+        // </FS:Trish>
+
         LL_INFOS() << "Backing up script to " << mBackupFilename << LL_ENDL;
     }
     return false;
 }
+
+// <FS:Trish> Script backups keep the compile target next to them
+std::string script_backup_target_file(const std::string& backup_file)
+{
+    return backup_file + ".target";
+}
+
+void remove_script_backup(const std::string& backup_file)
+{
+    LLFile::remove(backup_file);
+    LLFile::remove(script_backup_target_file(backup_file), ENOENT);
+}
+// </FS:Trish>
 
 std::string LLScriptEdContainer::getBackupFileName() const
 {
@@ -2560,7 +2583,7 @@ void LLPreviewLSL::callbackLSLCompileSucceeded()
     // Script was successfully saved so delete our backup copy if we have one and the editor is still pristine
     if ( (!mBackupFilename.empty()) && (!mScriptEd->hasChanged()) )
     {
-        LLFile::remove(mBackupFilename);
+        remove_script_backup(mBackupFilename); // <FS:Trish/> also the compile target file
         mBackupFilename.clear();
     }
 // [/SL:KB]
@@ -2607,7 +2630,7 @@ void LLPreviewLSL::callbackLSLCompileFailed(const LLSD& compile_errors)
     // Script was successfully saved so delete our backup copy if we have one and the editor is still pristine
     if ( (!mBackupFilename.empty()) && (!mScriptEd->hasChanged()) )
     {
-        LLFile::remove(mBackupFilename);
+        remove_script_backup(mBackupFilename); // <FS:Trish/> also the compile target file
         mBackupFilename.clear();
     }
 // [/SL:KB]
@@ -2796,10 +2819,16 @@ void LLPreviewLSL::saveIfNeeded(bool sync /*= true*/)
 
     // NaCL - LSL Preprocessor
     mScriptEd->enableSave(false); // Clear the enable save flag (FIRE-10173)
-    bool domono = gSavedSettings.getBOOL("FSSaveInventoryScriptsAsMono");
+    // <FS:Trish> The compile target combo decides now
+    //bool domono = gSavedSettings.getBOOL("FSSaveInventoryScriptsAsMono");
+    const std::string combo_target = mScriptEd->mCompileTarget->getValue().asString();
+    bool domono = (combo_target == "mono" || combo_target == "lsl2") ? (combo_target == "mono")
+                                                                    : gSavedSettings.getBOOL("FSSaveInventoryScriptsAsMono");
     if (gSavedSettings.getBOOL("_NACL_LSLPreprocessor") && !mScriptEd->mEditor->getIsLuauLanguage())
     {
-        bool mono_directive = FSLSLPreprocessor::mono_directive(mScriptEd->getScriptText(), domono);
+        //bool mono_directive = FSLSLPreprocessor::mono_directive(mScriptEd->getScriptText(), domono);
+        bool mono_directive = FSLSLPreprocessor::mono_directive(mScriptEd->mEditor->getText(), domono);
+        // </FS:Trish>
 
         if (mono_directive != domono)
         {
@@ -3045,7 +3074,7 @@ void LLLiveLSLEditor::callbackLSLCompileSucceeded(const LLUUID& task_id,
     // Script was successfully saved so delete our backup copy if we have one and the editor is still pristine
     if ( (!mBackupFilename.empty()) && (!mScriptEd->hasChanged()) )
     {
-        LLFile::remove(mBackupFilename);
+        remove_script_backup(mBackupFilename); // <FS:Trish/> also the compile target file
         mBackupFilename.clear();
     }
 // [/SL:KB]
@@ -3095,7 +3124,7 @@ void LLLiveLSLEditor::callbackLSLCompileFailed(const LLSD& compile_errors)
     // Script was successfully saved so delete our backup copy if we have one and the editor is still pristine
     if ( (!mBackupFilename.empty()) && (!mScriptEd->hasChanged()) )
     {
-        LLFile::remove(mBackupFilename);
+        remove_script_backup(mBackupFilename); // <FS:Trish/> also the compile target file
         mBackupFilename.clear();
     }
 // [/SL:KB]
