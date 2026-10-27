@@ -1142,6 +1142,12 @@ private:
     LLTimer         mAnimTimer;
     F32             mTimeLast;
 
+    // <FS:Trish> FSExperimentalRepairAnimations
+    void            repairAnimations();
+    LLFrameTimer    mAnimRepairTimer;
+    std::map<LLUUID, U32> mAnimRepairAttempts;
+    // </FS:Trish>
+
     //--------------------------------------------------------------------
     // Animation state data
     //--------------------------------------------------------------------

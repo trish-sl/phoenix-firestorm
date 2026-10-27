@@ -3160,6 +3160,8 @@ void LLVOAvatar::idleUpdate(LLAgent &agent, const F64 &time)
     // record time and refresh "tooSlow" status
     updateTooSlow();
 
+    repairAnimations(); // <FS:Trish/> FSExperimentalRepairAnimations
+
     static LLCachedControl<bool> disable_all_render_types(gSavedSettings, "DisableAllRenderTypes");
     if (!(gPipeline.hasRenderType(mIsControlAvatar ? LLPipeline::RENDER_TYPE_CONTROL_AV : LLPipeline::RENDER_TYPE_AVATAR))
         && !disable_all_render_types && !isSelf())
@@ -6970,6 +6972,74 @@ const LLUUID& LLVOAvatar::getStepSound() const
     return sStepSounds[mStepMaterial];
 }
 
+// <FS:Trish> FSExperimentalRepairAnimations
+void LLVOAvatar::repairAnimations()
+{
+    constexpr F32 REPAIR_CHECK_PERIOD = 2.f;
+    constexpr U32 MAX_REPAIR_ATTEMPTS = 5;
+
+    static LLCachedControl<bool> repair_animations(gSavedSettings, "FSExperimentalRepairAnimations", false);
+    if (!repair_animations || isSelf() || isControlAvatar() || isUIAvatar()
+        || mAnimRepairTimer.getElapsedTimeF32() < REPAIR_CHECK_PERIOD)
+    {
+        return;
+    }
+    mAnimRepairTimer.reset();
+
+    LLMotionController& controller = getMotionController();
+    if (controller.isPaused())
+    {
+        return;
+    }
+
+    std::map<LLUUID, U32> attempts;
+    for (const auto& [anim_id, sequence] : mPlayingAnimations)
+    {
+        U32 count = 0;
+        if (auto found = mAnimRepairAttempts.find(anim_id); found != mAnimRepairAttempts.end())
+        {
+            count = found->second;
+        }
+
+        LLMotion* motionp = findMotion(anim_id);
+        bool broken = false;
+        if (!motionp)
+        {
+            // Nothing retries a failed load until the sim's animation list changes
+            broken = controller.hasMotionFailed(anim_id);
+        }
+        else if (controller.isMotionLoading(motionp))
+        {
+            // Keep the count until it is done loading
+        }
+        else if (controller.isMotionActive(motionp) && !motionp->isStopped())
+        {
+            count = 0;
+        }
+        else
+        {
+            // Finished non-looping animations stay listed until the sim stops them, leave those alone
+            LLKeyframeMotion* keyframep = dynamic_cast<LLKeyframeMotion*>(motionp);
+            broken = keyframep && keyframep->getLoop();
+        }
+
+        if (broken && count < MAX_REPAIR_ATTEMPTS)
+        {
+            LL_INFOS("FSAnimRepair") << "Restarting " << (motionp ? "stopped" : "failed") << " animation " << anim_id
+                                     << " on avatar " << getID() << ", attempt " << (count + 1) << LL_ENDL;
+            stopMotion(anim_id, true);
+            startMotion(anim_id);
+            ++count;
+        }
+
+        if (count > 0)
+        {
+            attempts[anim_id] = count;
+        }
+    }
+    mAnimRepairAttempts.swap(attempts);
+}
+// </FS:Trish>
 
 //-----------------------------------------------------------------------------
 // processAnimationStateChanges()
