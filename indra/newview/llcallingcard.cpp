@@ -38,6 +38,10 @@
 
 #include "llagent.h"
 #include "llavatarnamecache.h"
+// <FS:Trish> presence re-verification
+#include "llavatarpropertiesprocessor.h"
+#include "llcallbacklist.h"
+// </FS:Trish>
 #include "llinventoryobserver.h"
 #include "llinventorymodel.h"
 #include "llnotifications.h"
@@ -88,6 +92,12 @@ const F32 COARSE_FREQUENCY = 2.2f;
 const F32 FIND_FREQUENCY = 29.7f;   // This results in a database query, so cut these back
 const F32 OFFLINE_SECONDS = FIND_FREQUENCY + 8.0f;
 
+// <FS:Trish> Presence re-check 
+const F64 ONLINE_AFTER_OFFLINE_GUARD_SECONDS = 10.0;
+const F32 PRESENCE_RECHECK_REQUEST_DELAY = 20.0f;
+const F32 PRESENCE_RECHECK_REPLY_TIMEOUT = 20.0f;
+// </FS:Trish>
+
 // static
 LLAvatarTracker LLAvatarTracker::sInstance;
 
@@ -95,6 +105,99 @@ static void on_avatar_name_cache_notify(const LLUUID& agent_id,
                                         const LLAvatarName& av_name,
                                         bool online,
                                         LLSD payload);
+
+// <FS:Trish> presence re-verification.
+class LLBuddyPresenceRecheck final : public LLAvatarPropertiesObserver
+{
+public:
+    static LLBuddyPresenceRecheck& instance()
+    {
+        static LLBuddyPresenceRecheck sMgr;
+        return sMgr;
+    }
+
+    void schedule(const LLUUID& id)
+    {
+        if (id.isNull() || mPending.count(id))
+        {
+            return;
+        }
+        mPending.insert(id);
+        LLAvatarPropertiesProcessor::instance().addObserver(id, this);
+
+        doAfterInterval([id]()
+            {
+                if (LLBuddyPresenceRecheck::instance().mPending.count(id))
+                {
+                    LLAvatarPropertiesProcessor::instance().sendAvatarPropertiesRequest(id);
+                }
+            }, PRESENCE_RECHECK_REQUEST_DELAY);
+
+        doAfterInterval([id]()
+            {
+                // Give up if the profile service never answered
+                LLBuddyPresenceRecheck::instance().finish(id);
+            }, PRESENCE_RECHECK_REQUEST_DELAY + PRESENCE_RECHECK_REPLY_TIMEOUT);
+    }
+
+    void processProperties(void* data, EAvatarProcessorType type) override
+    {
+        U32 flags = 0;
+        LLUUID id;
+        if (type == APT_PROPERTIES && data)
+        {
+            const LLAvatarData* d = static_cast<const LLAvatarData*>(data);
+            id = d->avatar_id;
+            flags = d->flags;
+        }
+        else if (type == APT_PROPERTIES_LEGACY && data)
+        {
+            const LLAvatarLegacyData* d = static_cast<const LLAvatarLegacyData*>(data);
+            id = d->avatar_id;
+            flags = d->flags;
+        }
+        else
+        {
+            return; // not a reply we can read presence from
+        }
+
+        if (mPending.find(id) == mPending.end())
+        {
+            return; // a reply for someone we are not re-checking
+        }
+
+        // FIRE-32184: the profile service can answer "unknown" rather than a
+        // boolean. In that case keep the authoritative offline status we have.
+        if (flags & AVATAR_ONLINE_UNDEFINED)
+        {
+            LL_INFOS("AvatarTracker") << "Presence re-check for " << id
+                << ": profile status undefined, keeping current." << LL_ENDL;
+            finish(id);
+            return;
+        }
+
+        bool online = (flags & AVATAR_ONLINE) != 0;
+        LL_INFOS("AvatarTracker") << "Presence re-check for " << id << ": profile reports "
+            << (online ? "ONLINE" : "OFFLINE") << LL_ENDL;
+        LLAvatarTracker::instance().setBuddyOnline(id, online);
+        LLAvatarTracker::instance().notifyObservers();
+        finish(id);
+    }
+
+private:
+    LLBuddyPresenceRecheck() = default;
+
+    void finish(const LLUUID& id)
+    {
+        if (mPending.erase(id))
+        {
+            LLAvatarPropertiesProcessor::instance().removeObserver(id, this);
+        }
+    }
+
+    std::set<LLUUID> mPending;
+};
+// </FS:Trish>
 
 ///----------------------------------------------------------------------------
 /// Class LLAvatarTracker
@@ -321,6 +424,7 @@ void LLAvatarTracker::terminateBuddy(const LLUUID& id)
     LLRelationship* buddy = get_ptr_in_map(mBuddyInfo, id);
     if(!buddy) return;
     mBuddyInfo.erase(id);
+    mRecentOfflineTime.erase(id); // <FS:Trish> drop any presence-guard marker
     LLMessageSystem* msg = gMessageSystem;
     msg->newMessage("TerminateFriendship");
     msg->nextBlock("AgentData");
@@ -805,6 +909,32 @@ void LLAvatarTracker::processNotify(LLMessageSystem* msg, bool online)
             msg->getUUIDFast(_PREHASH_AgentBlock, _PREHASH_AgentID, agent_id, i);
             payload["FROM_ID"] = agent_id;
             info = getBuddyInfo(agent_id);
+
+            // <FS:Trish> Presence guard
+            if (online)
+            {
+                presence_time_map_t::iterator off_it = mRecentOfflineTime.find(agent_id);
+                if (off_it != mRecentOfflineTime.end())
+                {
+                    F64 since_offline = LLTimer::getTotalSeconds() - off_it->second;
+                    if (since_offline >= 0.0 && since_offline < ONLINE_AFTER_OFFLINE_GUARD_SECONDS)
+                    {
+                        LL_INFOS("AvatarTracker") << "Deferring online notification for " << agent_id
+                            << " received " << since_offline
+                            << "s after offline; re-checking presence (stale echo?)." << LL_ENDL;
+                        LLBuddyPresenceRecheck::instance().schedule(agent_id);
+                        continue;
+                    }
+                    mRecentOfflineTime.erase(off_it);
+                }
+            }
+            else
+            {
+                // A logout is authoritative
+                mRecentOfflineTime[agent_id] = LLTimer::getTotalSeconds();
+            }
+            // </FS:Trish>
+
             if(info)
             {
                 setBuddyOnline(agent_id,online);
@@ -952,6 +1082,7 @@ void LLAvatarTracker::processTerminateFriendship(LLMessageSystem* msg, void**)
         LLRelationship* buddy = get_ptr_in_map(at.mBuddyInfo, id);
         if(!buddy) return;
         at.mBuddyInfo.erase(id);
+        at.mRecentOfflineTime.erase(id); // <FS:Trish> drop any presence-guard marker
         at.addChangedMask(LLFriendObserver::REMOVE, id);
         delete buddy;
         at.notifyObservers();
