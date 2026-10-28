@@ -45,6 +45,7 @@
 #include <WERAPI.H>     // for WerAddExcludedApplication()
 #include <process.h>    // _spawnl()
 #include <tchar.h>      // For TCHAR support
+#include <locale.h>
 
 #include "llviewercontrol.h"
 #include "lldxhardware.h"
