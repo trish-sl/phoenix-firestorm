@@ -2096,6 +2096,15 @@ bool LLAppViewer::cleanup()
     // to ensure shutdown order
     LLMortician::setZealous(true);
 
+    
+    // <FS:Trish> Media on the GL worker thread read from shared memory,
+    // Give them a chance to finish cleanly before unmapping to prevent driver crashes.
+    LLImageGLThread::sEnabledMedia = false;
+    LLImageGLThread::sEnabledTextures = false;
+    LLImageGLThread::deleteSingleton();
+    gMainloopWork.runPending();
+    // </FS:Trish>
+
     // Give any remaining SLPlugin instances a chance to exit cleanly.
     LLPluginProcessParent::shutdown();
 

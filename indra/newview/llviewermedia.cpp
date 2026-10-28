@@ -2986,6 +2986,15 @@ void LLViewerMediaImpl::update()
         return;
     }
 
+    // <FS:Trish> Pending texture updates in worker threads read from the plugin's shared memory.
+    // Do not process plugin messages while texture updates are pending, otherwise there is a risk of
+    // unmapping data the driver needs.
+    if (mTextureUpdatePending)
+    {
+        return;
+    }
+    // </FS:Trish>
+
     // Make sure a navigate doesn't happen during the idle -- it can cause mMediaSource to get destroyed, which can cause a crash.
     setNavigateSuspended(true);
 
@@ -3034,6 +3043,9 @@ void LLViewerMediaImpl::update()
             mTextureUpdatePending = true;
             ref();  // protect texture from deletion while active on bg queue
             media_tex->ref();
+            // <FS:Trish> data holds a pointer to the plugin's shared memory, keep it alive.
+            std::shared_ptr<LLPluginClassMedia> media_source = mMediaSource;
+            // </FS:Trish>
             main_queue->postTo(
                 mTexUpdateQueue, // Worker thread queue
                 [=, this]() // work done on update worker thread
@@ -3043,7 +3055,10 @@ void LLViewerMediaImpl::update()
 #endif
                     doMediaTexUpdate(media_tex, data, data_width, data_height, x_pos, y_pos, width, height, true);
                 },
-                [=, this]() // callback to main thread
+                // <FS:Trish> keep the media source alive until the update is done
+                //[=, this]() // callback to main thread
+                [=, this, media_source = std::move(media_source)]() // callback to main thread
+                // </FS:Trish>
                 {
 #if LL_IMAGEGL_THREAD_CHECK
                     media_tex->getGLTexture()->mActiveThread = LLThread::currentID();
