@@ -203,6 +203,12 @@ protected:
     buddy_map_t mBuddyInfo;
     buddy_status_queue_t mBuddyStatusQueue;
 
+    // <FS:Trish> Online-status presence guard against simulator race condition
+    // https://feedback.secondlife.com/server-bugs/p/incorrect-online-status-received-by-simulator-when-sending-an-im-while-a-user-is
+    typedef std::map<LLUUID, F64> presence_time_map_t;
+    presence_time_map_t mRecentOfflineTime;
+    // </FS:Trish>
+
     typedef std::set<LLUUID> changed_buddy_t;
     changed_buddy_t mChangedBuddyIDs;
 
