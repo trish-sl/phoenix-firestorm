@@ -49,6 +49,14 @@ macro (use_prebuilt_binary _binary)
             if(DEBUG_PREBUILT)
                 message(STATUS "autobuild install ${_binary}: attempt ${_attempt}/${_max_retries}")
             endif(DEBUG_PREBUILT)
+            # <FS:Trish> webrtc ships with read-only files. 
+            # autobuild can't delete them on Windows (WinError 5) when it tries to replace the files.
+            # so clear the read-only a flag first
+            if(CMAKE_HOST_WIN32 AND EXISTS "${AUTOBUILD_INSTALL_DIR}/include/${_binary}")
+                file(TO_NATIVE_PATH "${AUTOBUILD_INSTALL_DIR}/include/${_binary}" _readonly_dir)
+                execute_process(COMMAND attrib -R "${_readonly_dir}\\*" /S /D OUTPUT_QUIET ERROR_QUIET)
+            endif()
+            # </FS:Trish>
             execute_process(COMMAND "${AUTOBUILD_EXECUTABLE}"
                     install
                     --skip-source-environment
