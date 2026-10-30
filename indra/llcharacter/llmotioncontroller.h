@@ -180,6 +180,10 @@ public:
     static F32  getCurrentTimeFactor()              { return sCurrentTimeFactor;    };
     static void setCurrentTimeFactor(F32 factor)    { sCurrentTimeFactor = factor;  };
 
+    // <FS:Trish> FSExperimentalSyncAnimationClock
+    static bool sSyncAnimationClock;
+    // </FS:Trish>
+
 protected:
     // internal operations act on motion instances directly
     // as there can be duplicate motions per id during blending overlap
