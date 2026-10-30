@@ -20,7 +20,7 @@
      width="538">
         <panel
          follows="left|top"
-         height="1052"
+         height="1074"
          layout="topleft"
          left="0"
          name="experimental_settings"
@@ -545,6 +545,17 @@
              name="repair_animations"
              tool_tip="EXPERIMENTAL. Every 2 seconds, restarts animations other avatars should be playing but are not, because they failed to load or a looping animation got stuck stopped. Only that avatar's broken animations are restarted, up to 3 times each. Logged under FSAnimRepair."
              top="1019"
+             width="475" />
+            <check_box
+             control_name="FSExperimentalSyncAnimationClock"
+             follows="left|top"
+             height="20"
+             label="Keep animations in sync after late loading"
+             layout="topleft"
+             left="15"
+             name="sync_animation_clock"
+             tool_tip="EXPERIMENTAL."
+             top_pad="2"
              width="475" />
         </panel>
     </scroll_container>
