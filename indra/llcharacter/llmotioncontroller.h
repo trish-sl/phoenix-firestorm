@@ -180,6 +180,10 @@ public:
     static F32  getCurrentTimeFactor()              { return sCurrentTimeFactor;    };
     static void setCurrentTimeFactor(F32 factor)    { sCurrentTimeFactor = factor;  };
 
+    // <FS:Trish> FSExperimentalSyncAnimationClock
+    static bool sSyncAnimationClock;
+    // </FS:Trish>
+
 protected:
     // internal operations act on motion instances directly
     // as there can be duplicate motions per id during blending overlap
@@ -224,6 +228,7 @@ protected:
     motion_set_t        mDeprecatedMotions;
     std::set<LLUUID>    mFailedMotions; // <FS:Trish/> FSExperimentalRepairAnimations
     U32                 mStartSequence = 0; // <FS:Trish/> last LLMotion::mStartSequence handed out
+    F32                 mPausedTime = 0.f; // <FS:Trish/> FSExperimentalSyncAnimationClock
 
     LLFrameTimer        mTimer;
     F32                 mPrevTimerElapsed;
