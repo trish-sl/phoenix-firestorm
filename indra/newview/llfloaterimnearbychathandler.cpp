@@ -52,6 +52,7 @@
 #include "rlvcommon.h"
 // [/RLVa:KB]
 
+#include "fscommon.h" // <FS:Trish/> FIRE-32443
 #include "fsconsoleutils.h"
 #include "fsfloaternearbychat.h"
 #include "llviewernetwork.h"
@@ -829,7 +830,10 @@ void LLFloaterIMNearbyChatHandler::processChat(const LLChat& chat_msg,
             {
                 toast_msg += tmp_chat.mFromName;
             }
-            toast_msg += tmp_chat.mText.substr(3);
+            // <FS:Trish> FIRE-32443: The space after /me separates it from the name, drop it for unnamed objects
+            //toast_msg += tmp_chat.mText.substr(3);
+            toast_msg += FSCommon::irc_me_text(tmp_chat.mText, !tmp_chat.mFromName.empty());
+            // </FS:Trish>
         }
         else
         {

@@ -342,7 +342,7 @@ void GrowlManager::onInstantMessage(const LLSD& im)
         std::string message = im["message"].asString();
         if (FSCommon::is_irc_me_prefix(message))
         {
-            message = message.substr(3);
+            message = FSCommon::irc_me_text(message, false); // FIRE-32443, the sender is the notification title
         }
         LLAvatarNameCache::get(from_id, boost::bind(&GrowlManager::onAvatarNameCache, _2, message, GROWL_IM_MESSAGE_TYPE));
     }
@@ -392,7 +392,7 @@ void GrowlManager::onNearbyChatMessage(const LLSD& chat)
         std::string message = chat["message"].asString();
         if (FSCommon::is_irc_me_prefix(message))
         {
-            message = message.substr(3);
+            message = FSCommon::irc_me_text(message, false); // FIRE-32443, the sender is the notification title
         }
 
         if ((EChatSourceType)chat["source"].asInteger() == CHAT_SOURCE_AGENT)
