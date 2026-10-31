@@ -122,6 +122,16 @@ bool FSCommon::is_irc_me_prefix(std::string_view text)
     return (prefix == "/me " || prefix == "/me'");
 }
 
+std::string FSCommon::irc_me_text(std::string_view text, bool follows_name)
+{
+    std::string message(text.substr(llmin(text.size(), (size_t)3)));
+    if (!follows_name)
+    {
+        LLStringUtil::trimHead(message);
+    }
+    return message;
+}
+
 std::string FSCommon::unescape_name(std::string_view name)
 {
     // bugfix for SL-46920: preventing filenames that break stuff.
