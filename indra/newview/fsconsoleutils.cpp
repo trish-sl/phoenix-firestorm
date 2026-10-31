@@ -89,7 +89,7 @@ bool FSConsoleUtils::ProcessChatMessage(const LLChat& chat_msg, const LLSD &args
             delimiter = LLStringUtil::null;
         }
 
-        std::string message = irc_me ? chat_msg.mText.substr(3) : chat_msg.mText;
+        std::string message = irc_me ? FSCommon::irc_me_text(chat_msg.mText, !sender_name.empty()) : chat_msg.mText; // FIRE-32443
         console_chat = sender_name + delimiter + message;
         F32 alpha = 1.f;
         LLUIColor chatcolor;
@@ -150,7 +150,7 @@ void FSConsoleUtils::onProcessChatAvatarNameLookup(const LLUUID& agent_id, const
         delimiter = LLStringUtil::null;
     }
 
-    std::string message = irc_me ? chat_msg.mText.substr(3) : chat_msg.mText;
+    std::string message = irc_me ? FSCommon::irc_me_text(chat_msg.mText, true) : chat_msg.mText; // FIRE-32443, avatars always have a name
 
     // Get the display name of the sender if required
     if (!chat_msg.mRlvNamesFiltered)

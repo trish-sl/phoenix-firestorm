@@ -150,7 +150,7 @@ void FSKeywords::notify(const LLChat& chat)
             std::string msg = chat.mFromName;
             if (FSCommon::is_irc_me_prefix(chat.mText))
             {
-                msg = msg + chat.mText.substr(3);
+                msg = msg + FSCommon::irc_me_text(chat.mText, !chat.mFromName.empty()); // FIRE-32443
             }
             else
             {
