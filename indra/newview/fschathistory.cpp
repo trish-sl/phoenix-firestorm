@@ -1951,7 +1951,9 @@ void FSChatHistory::appendMessage(const LLChat& chat, const LLSD &args, const LL
     // usual messages showing
     else if (!teleport_separator)
     {
-        std::string message = irc_me ? chat.mText.substr(3) : chat.mText;
+        // FIRE-32443: Avatar names are links, only unnamed objects have no name before the text
+        const bool follows_name = chat.mSourceType != CHAT_SOURCE_OBJECT || !chat.mFromName.empty();
+        std::string message = irc_me ? FSCommon::irc_me_text(chat.mText, follows_name) : chat.mText;
 
         //MESSAGE TEXT PROCESSING
         //*HACK getting rid of redundant sender names in system notifications sent using sender name (see EXT-5010)
