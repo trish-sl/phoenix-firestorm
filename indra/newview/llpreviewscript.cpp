@@ -171,6 +171,18 @@ static bool have_lua_enabled(const LLUUID& object_id)
     return false;
 }
 
+// <FS:Trish> The Lua targets are disabled outside of Lua regions and a disabled entry can't be selected,
+// which leaves the combo showing a stale label with an empty value, so LSL falls back to Mono
+static void set_compile_target(LLComboBox* combo, const std::string& target)
+{
+    combo->setValue(target);
+    if (target == "lsl-luau" && combo->getValue().asString() != target)
+    {
+        combo->setValue("mono");
+    }
+}
+// </FS:Trish>
+
 // TEMPORARY: Quick check to see if the code is Lua
 // since we don't have another way to determine the language yet
 bool is_lua_script(const std::string& code)
@@ -2957,7 +2969,10 @@ void LLPreviewLSL::onLoadComplete(const LLUUID& asset_uuid, LLAssetType::EType t
             preview->mScriptEd->setAssetID(asset_uuid);
             preview->mAssetStatus = PREVIEW_ASSET_LOADED;
 
-            preview->mScriptEd->mCompileTarget->setValue(compile_target);
+            // <FS:Trish>
+            //preview->mScriptEd->mCompileTarget->setValue(compile_target);
+            set_compile_target(preview->mScriptEd->mCompileTarget, compile_target);
+            // </FS:Trish>
             preview->mScriptEd->mEditor->setLuauLanguage(is_lua);
             preview->mScriptEd->processKeywords(is_lua);
             preview->mScriptEd->updateTabs(is_lua);      // <FS:Zi> Disable LSL preprocessor when compile target is luau
@@ -3332,7 +3347,10 @@ void LLLiveLSLEditor::loadScriptText(const LLUUID &uuid, LLAssetType::EType type
             is_lua = is_lua_script(std::string(&buffer[0], file_length));
         compile_target = is_lua ? "luau" : "mono";
     }
-    mScriptEd->mCompileTarget->setValue(compile_target);
+    // <FS:Trish>
+    //mScriptEd->mCompileTarget->setValue(compile_target);
+    set_compile_target(mScriptEd->mCompileTarget, compile_target);
+    // </FS:Trish>
     mScriptEd->mEditor->setLuauLanguage(is_lua);
     mScriptEd->processKeywords(is_lua);
     mScriptEd->updateTabs(is_lua);      // <FS:Zi> Disable LSL preprocessor when compile target is luau
@@ -3693,7 +3711,9 @@ void LLLiveLSLEditor::processScriptRunningReply(LLMessageSystem* msg, void**)
             compile_target = "lsl2";
         }
 
-        instance->mScriptEd->mCompileTarget->setValue(compile_target);
+        // <FS:Trish> Set after the available targets are updated below
+        //instance->mScriptEd->mCompileTarget->setValue(compile_target);
+        // </FS:Trish>
         instance->mScriptEd->processKeywords(luau && luau_language); // Use Luau syntax highlighting for Luau scripts
         instance->mScriptEd->updateTabs(luau && luau_language);      // <FS:Zi> Disable LSL preprocessor when compile target is luau
 
@@ -3706,6 +3726,7 @@ void LLLiveLSLEditor::processScriptRunningReply(LLMessageSystem* msg, void**)
         {
             lsl_luau_item->setEnabled(lua_scripts_enabled);
         }
+        set_compile_target(instance->mScriptEd->mCompileTarget, compile_target); // <FS:Trish/>
 
         // <FS:Trish> don't re-enable it for scripts we may not view (loadAsset disabled it)
         //instance->mScriptEd->mCompileTarget->setEnabled(instance->getIsModifiable() && have_script_upload_cap(object_id));
