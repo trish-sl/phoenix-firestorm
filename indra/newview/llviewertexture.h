@@ -204,6 +204,12 @@ protected:
     S32 mTextureListType; // along with mID identifies where to search for this texture in TextureList
 
     mutable F32 mMaxVirtualSize = 0.f;  // The largest virtual size of the image, in pixels - how much data to we need?
+    // Explicit demand (UI, projectors, etc.) is separate from measured faces.
+    mutable F32 mAdditionalVirtualSize = 0.f;
+    mutable F32 mAdditionalStatsTime = 0.f;
+    F32 mSceneVirtualSize = 0.f;
+    F32 mSceneStatsTime = 0.f;
+    bool mHadSceneFaces = false;
     mutable S32  mMaxVirtualSizeResetCounter;
     mutable S32  mMaxVirtualSizeResetInterval;
     LLFrameTimer mLastReferencedTimer;
@@ -240,6 +246,11 @@ public:
 
     // estimated free memory for textures, by bias calculation
     static F32 sFreeVRAMMegabytes;
+    // <FS:Trish> The other inputs of that calculation, kept for the pipeline diagnostics log
+    static F32 sVRAMUsedMegabytes;
+    static F32 sVRAMTargetMegabytes;
+    static bool sSystemMemoryLow;
+    // </FS:Trish>
 
     enum EDebugTexels
     {
@@ -337,6 +348,7 @@ public:
     void destroyTexture() ;
 
     virtual void processTextureStats() ;
+    void updateSceneTextureStats(F32 virtual_size);
 
     bool needsAux() const { return mNeedsAux; }
 
@@ -462,6 +474,7 @@ protected:
 
     S32 mLastWorkerDiscardLevel;
     S32 mRequestedDiscardLevel;
+    S32 mLastRequestedDesiredDiscard = -1;
     F32 mRequestedDownloadPriority;
     S32 mFetchState;
     S32 mLastFetchState = -1; // DEBUG

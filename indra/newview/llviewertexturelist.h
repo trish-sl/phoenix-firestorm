@@ -217,6 +217,8 @@ public:
     typedef std::unordered_set<LLPointer<LLViewerFetchedTexture> > image_list_t;
     typedef std::queue<LLPointer<LLViewerFetchedTexture> > image_queue_t;
 
+    size_t getMainThreadBacklog() const { return mCreateTextureList.size() + mReadyRequestBacklog.size(); }
+
     // images that have been loaded but are waiting to be uploaded to GL
     image_queue_t mCreateTextureList;
 
@@ -239,6 +241,12 @@ private:
     typedef std::map< LLTextureKey, LLPointer<LLViewerFetchedTexture> > uuid_map_t;
     uuid_map_t mUUIDMap;
     LLTextureKey mLastUpdateKey;
+    LLTextureKey mLastUrgentUpdateKey;
+    LLTextureKey mLastFetchRefreshKey; // <FS:Trish/> round-robin position of the fetch priority refresh
+    // Ready requests left over from the last frame: carried for time, or seen before the fetcher
+    // had published the result (the notification can land just ahead of it).
+    std::vector<LLUUID> mReadyRequestBacklog;
+    std::vector<LLUUID> mReadyRequestRecheck;
 
     image_list_t mImageList;
 

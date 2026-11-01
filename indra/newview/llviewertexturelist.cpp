@@ -62,6 +62,8 @@
 #include "llviewerdisplay.h"
 #include "llviewerwindow.h"
 #include "llprogressview.h"
+#include "llviewertextureanim.h" // <FS:Trish/> animated texture resolution
+#include "llvovolume.h" // <FS:Trish/> animated texture resolution
 
 ////////////////////////////////////////////////////////////////////////////
 
@@ -902,6 +904,25 @@ void LLViewerTextureList::updateImages(F32 max_time)
     }
 
     updateImagesUpdateStats();
+
+    static LLCachedControl<bool> diagnostics_enabled(gSavedSettings, "TextureFetchPipelineDiagnostics", false);
+    static LLFrameTimer diagnostics_timer;
+    if (diagnostics_enabled && diagnostics_timer.getElapsedTimeF32() >= 5.f)
+    {
+        diagnostics_timer.reset();
+        LL_INFOS("Texture") << "Texture list: textures=" << mUUIDMap.size()
+                            << " create_queue=" << mCreateTextureList.size()
+                            << " downscale_queue=" << mDownScaleQueue.size()
+                            << " ready_backlog=" << mReadyRequestBacklog.size()
+                            << " budget_ms=" << max_time * 1000.f
+                            << " discard_bias=" << LLViewerTexture::sDesiredDiscardBias
+                            // <FS:Trish> What the bias is reacting to
+                            << " vram_used_mb=" << LLViewerTexture::sVRAMUsedMegabytes
+                            << " vram_target_mb=" << LLViewerTexture::sVRAMTargetMegabytes
+                            << " sys_mem_low=" << LLViewerTexture::sSystemMemoryLow
+                            // </FS:Trish>
+                            << LL_ENDL;
+    }
 }
 
 void LLViewerTextureList::clearFetchingRequests()
@@ -989,6 +1010,17 @@ void LLViewerTextureList::updateImageDecodePriority(LLViewerFetchedTexture* imag
                     LLViewerObject* objp = face->getViewerObject();
                     const LLTextureEntry* te = (te_offset < 0 || te_offset >= objp->getNumTEs()) ? nullptr : objp->getTE(te_offset);
                     F32 min_scale = te ? llmin(fabsf(te->getScaleS()), fabsf(te->getScaleT())) : 1.f;
+                    // <FS:Trish> texture animation screw up their own resolution
+                    if (te && objp->getPCode() == LL_PCODE_VOLUME)
+                    {
+                        const LLViewerTextureAnim* anim = static_cast<LLVOVolume*>(objp)->mTextureAnimp;
+                        if (anim && (anim->mMode & LLTextureAnim::ON) && !(anim->mMode & (LLTextureAnim::ROTATE | LLTextureAnim::SCALE))
+                            && anim->mSizeX && anim->mSizeY && (anim->mFace < 0 || anim->mFace == te_offset))
+                        {
+                            min_scale = llmin(1.f / anim->mSizeX, 1.f / anim->mSizeY);
+                        }
+                    }
+                    // </FS:Trish>
                     min_scale = llclamp(min_scale * min_scale, texture_scale_min(), texture_scale_max());
                     vsize /= min_scale;
 
@@ -1039,10 +1071,11 @@ void LLViewerTextureList::updateImageDecodePriority(LLViewerFetchedTexture* imag
                 (!on_screen && LLViewerTexture::sDesiredDiscardBias > BIAS_TRS_ON_SCREEN))
             {
                 imagep->mMaxVirtualSize = 0.f;
+                imagep->mSceneVirtualSize = 0.f;
             }
         }
 
-        imagep->addTextureStats(max_vsize);
+        imagep->updateSceneTextureStats(max_vsize);
     }
 
 #if 0
@@ -1143,7 +1176,24 @@ F32 LLViewerTextureList::updateImagesCreateTextures(F32 max_time)
         // should
         bool redundant_load = imagep->hasGLTexture() && imagep->getDiscardLevel() <= imagep->getDesiredDiscardLevel();
 
-        if (!redundant_load)
+        // Nothing can see or use this texture any more (typically the departed region's, after a
+        // teleport): its desired level is "not wanted", and it has no faces, volumes, boost,
+        // callbacks or raw-image consumers. Uploading it would spend this frame's creation budget
+        // -- which is first come, first served -- on a texture queued for a downscale straight
+        // after, ahead of the ones the new view is waiting for. Take the same path as a redundant
+        // load: drop the decoded data and clear the pending state. It is fetched again if ever
+        // wanted.
+        const bool unwanted_load = !redundant_load &&
+            imagep->getDesiredDiscardLevel() > MAX_DISCARD_LEVEL &&
+            imagep->getBoostLevel() == LLGLTexture::BOOST_NONE &&
+            imagep->getTotalNumFaces() == 0 &&
+            imagep->getNumVolumes(LLRender::LIGHT_TEX) == 0 &&
+            imagep->getNumVolumes(LLRender::SCULPT_TEX) == 0 &&
+            !imagep->hasCallbacks() &&
+            !imagep->needsToSaveRawImage() &&
+            !imagep->forSculpt();
+
+        if (!redundant_load && !unwanted_load)
         {
            imagep->createTexture();
         }
@@ -1151,8 +1201,12 @@ F32 LLViewerTextureList::updateImagesCreateTextures(F32 max_time)
         imagep->postCreateTexture();
         imagep->mCreatePending = false;
 
+        // <FS:Trish> Downscale only under memory pressure (see LLViewerLODTexture::processTextureStats)
+        //if (imagep->hasGLTexture() && imagep->getDiscardLevel() < imagep->getDesiredDiscardLevel() &&
+        //   (imagep->getDesiredDiscardLevel() <= MAX_DISCARD_LEVEL))
         if (imagep->hasGLTexture() && imagep->getDiscardLevel() < imagep->getDesiredDiscardLevel() &&
-           (imagep->getDesiredDiscardLevel() <= MAX_DISCARD_LEVEL))
+           (imagep->getDesiredDiscardLevel() <= MAX_DISCARD_LEVEL) && LLViewerTexture::sDesiredDiscardBias > 1.f)
+        // </FS:Trish>
         {
             // NOTE: this may happen if the desired discard reduces while a decode is in progress and does not
             // necessarily indicate a problem, but if log occurrences excede that of dsiplay_stats: FPS,
@@ -1166,6 +1220,20 @@ F32 LLViewerTextureList::updateImagesCreateTextures(F32 max_time)
             break;
         }
     }
+
+    // <FS:Trish> Downscale only under memory pressure
+    // Entries queued while memory was tight can outlive the pressure. Once VRAM is back under
+    // target, release them without the GPU work -- this queue used to keep forcing at least five
+    // downscales a frame, past the time budget, for thousands of textures that no longer needed it.
+    if (!mDownScaleQueue.empty() && LLViewerTexture::sDesiredDiscardBias <= 1.f)
+    {
+        while (!mDownScaleQueue.empty())
+        {
+            mDownScaleQueue.front()->mDownScalePending = false;
+            mDownScaleQueue.pop();
+        }
+    }
+    // </FS:Trish>
 
     if (!mDownScaleQueue.empty() && gPipeline.mDownResMap.isComplete())
     {
@@ -1276,6 +1344,158 @@ F32 LLViewerTextureList::updateImagesFetchTextures(F32 max_time)
 {
     LL_PROFILE_ZONE_SCOPED_CATEGORY_TEXTURE;
 
+    LLTimer timer;
+
+    // Collect results the fetcher has finished, every frame, instead of when the sweep below
+    // happens to reach each texture. updateFetch() alone is cheap -- it is the decode-priority
+    // pass (a pixel area per face) that makes the sweep slow -- and priorities do not need
+    // recomputing just to pick up data. Bounded by its own slice of the budget; leftovers carry
+    // over to the next frame rather than being dropped.
+    {
+        LL_PROFILE_ZONE_NAMED_CATEGORY_TEXTURE("vtluift - ready requests");
+        std::vector<LLUUID> ready;
+        LLAppViewer::getTextureFetch()->takeReadyRequests(ready);
+        std::vector<LLUUID> recheck;
+        recheck.swap(mReadyRequestRecheck);
+        if (!mReadyRequestBacklog.empty())
+        {
+            ready.insert(ready.begin(), mReadyRequestBacklog.begin(), mReadyRequestBacklog.end());
+            mReadyRequestBacklog.clear();
+        }
+
+        auto service = [this](const LLUUID& id, bool first_look) -> void
+        {
+            for (S32 type = TEX_LIST_STANDARD; type <= TEX_LIST_SCALE; ++type)
+            {
+                LLPointer<LLViewerFetchedTexture> imagep = findImage(id, (ETexListType)type);
+                if (imagep.notNull() && imagep->isFetching() && imagep->isInImageList())
+                {
+                    imagep->updateFetch();
+                    if (first_look && imagep->isFetching())
+                    {
+                        // Look once more next frame in case the result was not published yet.
+                        mReadyRequestRecheck.push_back(id);
+                    }
+                }
+            }
+        };
+
+        const F32 ready_budget = max_time * 0.25f;
+        size_t i = 0;
+        for (; i < recheck.size() && timer.getElapsedTimeF32() < ready_budget; ++i)
+        {
+            service(recheck[i], false);
+        }
+        for (size_t j = 0; j < ready.size(); ++j)
+        {
+            if (timer.getElapsedTimeF32() >= ready_budget)
+            {
+                mReadyRequestBacklog.assign(ready.begin() + j, ready.end());
+                break;
+            }
+            service(ready[j], true);
+        }
+    }
+
+    // Give visible textures a small extra pass while reserving most of the
+    // budget for the complete sweep (including offscreen cleanup). This scan
+    // is cheap and bounded; it does not recalculate pixel areas for candidates.
+    std::unordered_set<LLViewerFetchedTexture*> urgent_updates;
+   const U32 scan_count = llmin((U32)mUUIDMap.size(), 2048U);
+    auto urgent_iter = mUUIDMap.upper_bound(mLastUrgentUpdateKey);
+    for (U32 scanned = 0; scanned < scan_count && urgent_updates.size() < 32 && !mUUIDMap.empty(); ++scanned)
+    {
+        if (timer.getElapsedTimeF32() >= max_time * 0.25f)
+        {
+            break;
+        }
+        if (urgent_iter == mUUIDMap.end())
+        {
+            urgent_iter = mUUIDMap.begin();
+        }
+        mLastUrgentUpdateKey = urgent_iter->first;
+        LLPointer<LLViewerFetchedTexture> imagep = urgent_iter->second;
+
+        // Spend the urgent slots only on textures that can still improve. A visible texture
+        // already at full resolution (or a missing asset) gains nothing from an early visit, and
+        // used to fill the 32 slots in a busy view, while one that is still grey or blurry
+        // waited for the sweep. Checked before the face walk because it is cheaper.
+        if (imagep->getGLTexture() == nullptr || imagep->isMissingAsset() || imagep->getDiscardLevel() == 0)
+        {
+            ++urgent_iter;
+            continue;
+        }
+
+        bool visible = imagep->isJustBound();
+        U32 checked_faces = 0;
+        for (U32 ch = 0; !visible && ch < LLRender::NUM_TEXTURE_CHANNELS; ++ch)
+        {
+            for (S32 fi = 0; !visible && fi < imagep->getNumFaces(ch) && checked_faces < 8; ++fi)
+            {
+                ++checked_faces;
+                LLFace* face = (*imagep->getFaceList(ch))[fi];
+                visible = face && face->getDrawable() && face->getDrawable()->isVisible();
+            }
+        }
+        if (visible && imagep->getGLTexture())
+        {
+            updateImageDecodePriority(imagep);
+            if (imagep->isInImageList())
+            {
+                imagep->updateFetch();
+                urgent_updates.insert(imagep.get());
+            }
+        }
+        // Updating can erase map entries. Reacquire the iterator by key.
+        urgent_iter = mUUIDMap.upper_bound(mLastUrgentUpdateKey);
+    }
+
+    // <FS:Trish> Fetch priority refresh lane
+    // Keep the fetcher's priorities current for the textures it is actually working on. A
+    // request's priority is only re-sent when that texture's decode priority is recomputed, and
+    // the full sweep below takes seconds to come round in a busy region. Moving fast across
+    // mainland, the textures just driven past kept the priority they had up close for that long,
+    // and the waiter queue -- which is sorted by it -- kept serving them ahead of the region being
+    // entered. The fetching set is a small fraction of the list, so a cheap scan for it with its
+    // own round-robin refreshes every live request within a fraction of a second.
+    {
+        LL_PROFILE_ZONE_NAMED_CATEGORY_TEXTURE("vtluift - fetch priorities");
+        static constexpr U32 FETCH_REFRESH_SCAN_COUNT = 2048;
+        const F32 refresh_deadline = timer.getElapsedTimeF32() + max_time * 0.15f;
+        const U32 refresh_scan_count = llmin((U32)mUUIDMap.size(), FETCH_REFRESH_SCAN_COUNT);
+        auto refresh_iter = mUUIDMap.upper_bound(mLastFetchRefreshKey);
+        for (U32 scanned = 0; scanned < refresh_scan_count && !mUUIDMap.empty(); ++scanned)
+        {
+            if (timer.getElapsedTimeF32() >= refresh_deadline)
+            {
+                break;
+            }
+            if (refresh_iter == mUUIDMap.end())
+            {
+                refresh_iter = mUUIDMap.begin();
+            }
+            mLastFetchRefreshKey = refresh_iter->first;
+
+            LLViewerFetchedTexture* candidate = refresh_iter->second.get();
+            if (!candidate->isFetching() || urgent_updates.count(candidate))
+            {
+                ++refresh_iter;
+                continue;
+            }
+
+            LLPointer<LLViewerFetchedTexture> imagep = refresh_iter->second;
+            updateImageDecodePriority(imagep);
+            if (imagep->isInImageList())
+            {
+                imagep->updateFetch();
+                urgent_updates.insert(imagep.get());
+            }
+            // Updating can erase map entries. Reacquire the iterator by key.
+            refresh_iter = mUUIDMap.upper_bound(mLastFetchRefreshKey);
+        }
+    }
+    // </FS:Trish>
+
     typedef std::vector<LLPointer<LLViewerFetchedTexture> > entries_list_t;
     entries_list_t entries;
 
@@ -1323,16 +1543,18 @@ F32 LLViewerTextureList::updateImagesFetchTextures(F32 max_time)
         }
     }
 
-    LLTimer timer;
-
     for (auto& imagep : entries)
     {
         mLastUpdateKey = LLTextureKey(imagep->getID(), (ETexListType)imagep->getTextureListType());
 
-        if (imagep->getNumRefs() > 1) // make sure this image hasn't been deleted before attempting to update (may happen as a side effect of some other image updating)
+        if (imagep->getNumRefs() > 1 && !urgent_updates.count(imagep.get()))
         {
             updateImageDecodePriority(imagep);
-            imagep->updateFetch();
+            // Pruning can remove the image during the priority update.
+            if (imagep->isInImageList())
+            {
+                imagep->updateFetch();
+            }
         }
 
         if (timer.getElapsedTimeF32() > max_time)
@@ -1473,6 +1695,7 @@ bool LLViewerTextureList::createUploadFile(LLPointer<LLImageRaw> raw_image,
     }
     return true;
 }
+
 
 bool LLViewerTextureList::createUploadFile(const std::string& filename,
                                          const std::string& out_filename,
@@ -2108,5 +2331,3 @@ bool LLUIImageList::initFromFile()
     }
     return true;
 }
-
-

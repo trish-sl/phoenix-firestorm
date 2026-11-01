@@ -60,6 +60,16 @@ class LLTextureFetch : public LLWorkerThread
 public:
     static std::string getStateString(S32 state);
 
+    // True when a fetch that ended without data should simply be asked for again later, rather
+    // than taken as the server's final word: a retryable HTTP failure (5xx, transport error) or
+    // 429, or a worker that was aborted before it ever sent a request (lost interest, region
+    // change, shutdown) -- in which case there is no HTTP verdict at all. 403 is deliberately not
+    // included: the worker already retries a stale-region 403 itself, and a current-region 403
+    // repeated forever is what the caller must not do.
+    //
+    // Threads:  T*
+    static bool isTransientFetchFailure(S32 worker_state, const LLCore::HttpStatus& status);
+
     LLTextureFetch(LLTextureCache* cache, bool threaded, bool qa_mode);
     ~LLTextureFetch();
 
@@ -99,6 +109,7 @@ public:
     //
     // Threads:  T*
     void deleteRequest(const LLUUID& id, bool cancel);
+    bool deleteRequestIfFinished(const LLUUID& id);
 
     void deleteAllRequests();
 
@@ -234,6 +245,10 @@ public:
 
     // Threads:  T*
     int getHttpWaitersCount();
+
+    // Emits a periodic, opt-in snapshot of the HTTP texture pipeline.
+    // Threads: Ttf
+    void logPipelineDiagnostics();
     // ----------------------------------
     // Stats management
 
@@ -348,6 +363,37 @@ private:
     LLMutex mQueueMutex;        //to protect mRequestMap and mCommands only
     LLMutex mNetworkQueueMutex; //to protect mNetworkQueue, mHTTPTextureQueue and mCancelQueue. // <FS:Ansariel> OpenSim compatibility
 
+    // The agent's region as of the last main-thread update(). Workers compare it with the region
+    // their capability URL came from, so they never touch gAgent from the fetch thread for this.
+    // Protected by mNetworkQueueMutex.
+    LLUUID mAgentRegionId;
+public:
+    // Threads:  T*
+    LLUUID getAgentRegionId();
+
+    // Requests whose results (decoded data, or a final success/failure) are waiting for the main
+    // thread to collect. Without this the main thread only learns of a result when its round-robin
+    // sweep next reaches that texture, which is seconds away in a busy region. Duplicates are
+    // possible and harmless.
+    //
+    // Threads:  T*
+    void notifyRequestReady(const LLUUID& id);
+    // Threads:  Tmain
+    void takeReadyRequests(std::vector<LLUUID>& out);
+private:
+    // Workers with a request live in LLCore, so that ones nobody wants any more can be cancelled
+    // instead of holding a slot through LLCore's own timeouts and retries. Entries are added when
+    // a request is sent and removed when its completion is delivered -- both on the thread that
+    // runs commonUpdate() -- and a worker cannot be deleted while its request is live (deleteOK),
+    // so a pointer taken from here stays valid for the rest of that commonUpdate().
+    // Threads:  Ttf
+    void cancelUnwantedHttpRequests();
+    LLMutex mHttpActiveMutex;                               // never held while taking a worker's Mw
+    std::set<LLTextureFetchWorker*> mHttpActiveWorkers;     // mHttpActiveMutex
+
+    LLMutex mReadyMutex;                // leaf lock: never held while taking another
+    std::vector<LLUUID> mReadyRequests; // mReadyMutex
+
     LLTextureCache* mTextureCache;
 
     // Map of all requests by UUID
@@ -394,6 +440,7 @@ private:
     LLCore::HttpRequest::policy_t       mHttpMetricsPolicyClass;        // T*
     S32                                 mHttpHighWater;                 // Ttf
     S32                                 mHttpLowWater;                  // Ttf
+    LLFrameTimer                        mPipelineDiagnosticsTimer;      // Ttf
 
     // We use a resource semaphore to keep HTTP requests in
     // WAIT_HTTP_RESOURCE2 if there aren't sufficient slots in the
@@ -470,4 +517,3 @@ private:
     std::map<S32, F32> mStateTimersMap;
 };
 #endif // LL_LLTEXTUREFETCH_H
-
