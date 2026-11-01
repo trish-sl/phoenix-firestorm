@@ -951,7 +951,10 @@ void applyGlobalOnlineStatusChange(const LLSD& notification, const LLSD& respons
         {
             // Lets have a warning log message instead of having a crash. EXT-4947.
             LL_WARNS() << "Trying to modify rights for non-friend avatar. Skipped." << LL_ENDL;
-            return;
+            // <FS:Trish> Skip only this one, don't stop updating the remaining friends
+            //return;
+            continue;
+            // </FS:Trish>
         }
 
         S32 cur_rights = relation->getRightsGrantedTo();
@@ -968,7 +971,10 @@ void applyGlobalOnlineStatusChange(const LLSD& notification, const LLSD& respons
         LLAvatarPropertiesProcessor::getInstance()->sendFriendRights(buddy_id, new_rights);
     }
 
-    LLNotificationsUtil::add("GlobalOnlineStatusToggle");
+    // <FS:Trish> FIRE-37092: Popup names cannot match the setting name or the button might bind to the warning (settings are unordered)
+    //LLNotificationsUtil::add("GlobalOnlineStatusToggle");
+    LLNotificationsUtil::add("GlobalOnlineStatusToggleInfo");
+    // </FS:Trish>
 }
 // </FS:Ansariel>
 
@@ -1596,7 +1602,7 @@ void settings_setup_listeners()
     {
         if (!newvalue.asBoolean())
         {
-            LLNotifications::instance().setIgnored("FSPasteNoCopyAsLink", false);
+            LLNotifications::instance().setIgnored("FSPasteNoCopyAsLinkPrompt", false);
         }
     });
     // </FS:Trish>
