@@ -87,7 +87,6 @@ void LLReflectionMap::autoAdjustOrigin()
 
         if (part && part->mPartitionType == LLViewerRegion::PARTITION_VOLUME)
         {
-            mPriority = 0;
             // cast a ray towards 8 corners of bounding box
             // nudge origin towards center of empty space
 
@@ -175,7 +174,6 @@ void LLReflectionMap::autoAdjustOrigin()
     }
     else if (mViewerObject && !mViewerObject->isDead())
     {
-        mPriority = 1;
         mOrigin.load3(mViewerObject->getPositionAgent().mV);
 
         if (mViewerObject->getVolume() && ((LLVOVolume*)mViewerObject.get())->getReflectionProbeIsBox())
@@ -188,6 +186,85 @@ void LLReflectionMap::autoAdjustOrigin()
             mRadius = mViewerObject->getScale().mV[0] * 0.5f;
         }
     }
+}
+
+void LLReflectionMap::syncToViewerObject()
+{
+    if (!mViewerObject || mViewerObject->isDead())
+    {
+        return;
+    }
+
+    mOrigin.load3(mViewerObject->getPositionAgent().mV);
+
+    if (!mViewerObject->getVolumeConst())
+    {
+        return;
+    }
+
+    if (((LLVOVolume*)mViewerObject.get())->getReflectionProbeIsBox())
+    {
+        LLVector3 scale = mViewerObject->getScale().scaledVec(LLVector3(0.5f, 0.5f, 0.5f));
+        mRadius = scale.magVec();
+    }
+    else
+    {
+        mRadius = mViewerObject->getScale().mV[0] * 0.5f;
+    }
+}
+
+bool LLReflectionMap::eclipses(const LLReflectionMap* other, F32 margin) const
+{
+    if (!other || other == this || !mViewerObject || mViewerObject->isDead())
+    {
+        return false;
+    }
+
+    LLVector4a delta;
+    delta.setSub(other->mOrigin, mOrigin);
+
+    const bool is_box = mViewerObject->getVolumeConst()
+                     && ((LLVOVolume*)mViewerObject.get())->getReflectionProbeIsBox();
+
+    if (is_box)
+    {
+        LLVector3 half = mViewerObject->getScale() * 0.5f;
+        LLVector3 local(delta.getF32ptr());
+        local.rotVec(~mViewerObject->getRenderRotation());
+
+        return fabsf(local.mV[0]) + other->mRadius <= half.mV[0] + margin
+            && fabsf(local.mV[1]) + other->mRadius <= half.mV[1] + margin
+            && fabsf(local.mV[2]) + other->mRadius <= half.mV[2] + margin;
+    }
+
+    const F32 SPHERE_FULL_WEIGHT_FRACTION = 0.5f;
+    const F32 distance = delta.getLength3().getF32();
+    return distance + other->mRadius <= mRadius * SPHERE_FULL_WEIGHT_FRACTION + margin;
+}
+
+bool LLReflectionMap::neighborsAreStale() const
+{
+    if (mNeighborRadius < 0.f)
+    { // never built
+        return true;
+    }
+
+    // A tenth of the radius. Drift smaller than that cannot change which probes matter by more
+    // than the sphere weight's own falloff already blends over, and the threshold is measured
+    // against the volume the list was built at rather than against the previous frame, so slow
+    // movement still accumulates until it crosses.
+    const F32 DRIFT_FRACTION = 0.1f;
+    F32 slack = llmax(mRadius * DRIFT_FRACTION, 0.1f);
+
+    if (fabsf(mRadius - mNeighborRadius) > slack)
+    {
+        return true;
+    }
+
+    LLVector4a delta;
+    delta.setSub(mOrigin, mNeighborOrigin);
+
+    return delta.getLength3().getF32() > slack;
 }
 
 bool LLReflectionMap::intersects(LLReflectionMap* other) const

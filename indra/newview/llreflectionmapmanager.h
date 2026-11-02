@@ -26,6 +26,8 @@
 
 #pragma once
 
+#include <map>
+
 #include "llreflectionmap.h"
 #include "llrendertarget.h"
 #include "llcubemaparray.h"
@@ -43,7 +45,12 @@ class LLViewerObject;
 // reflection probe mininum scale
 #define LL_REFLECTION_PROBE_MINIMUM_SCALE 1.f;
 
-void renderReflectionProbe(LLReflectionMap* probe, std::map<LLSpatialGroup*, int> groupCount, std::map<LLViewerObject*, int> objCount, std::map<F32*, int> locCount); // <FS:Beq/> enhanced metadata render for probes
+void renderReflectionProbe(LLReflectionMap* probe);
+void renderReflectionProbe(LLReflectionMap* probe,
+                           std::map<LLSpatialGroup*, int> group_count,
+                           std::map<LLViewerObject*, int> object_count,
+                           std::map<F32*, int> location_count);
+
 class alignas(16) LLReflectionMapManager
 {
     LL_ALIGN_NEW
@@ -275,7 +282,6 @@ private:
     bool mReset = false;
 
     float mResetFade = 1.f;
-    float mGlobalFadeTarget = 1.f;
 
     // if true, only update the default probe
     bool mPaused = false;
