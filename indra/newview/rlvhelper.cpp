@@ -1821,7 +1821,10 @@ void RlvForceWear::done()
     //          |======================================================|
     // Add    : | LLAppearanceMgr | <custom>         | LLAppearanceMgr |
     // Remove : | LLAppearanceMgr | LLAppearanceMgr  | LLGestureMgr    |
-    LLPointer<LLInventoryCallback> cb = new LLUpdateAppearanceOnDestroy(false, false, boost::bind(RlvForceWear::updatePendingAttachments));
+    // <FS:Trish> FIRE-37073 RLVa wearing layers should respect layer order
+    //LLPointer<LLInventoryCallback> cb = new LLUpdateAppearanceOnDestroy(false, false, boost::bind(RlvForceWear::updatePendingAttachments));
+    LLPointer<LLInventoryCallback> cb = new LLUpdateAppearanceOnDestroy(false, true, boost::bind(RlvForceWear::updatePendingAttachments));
+    // </FS:Trish>
 
     // Clothing can wait for AIS to acknowledge removal before its local COF link disappears.
     // This preserves the FIRE-33455 behavior without leaving intentionally detached objects
