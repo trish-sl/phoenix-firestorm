@@ -3624,8 +3624,11 @@ void LLTextureFetch::commonUpdate()
         mHttpLowWater = HTTP_NONPIPE_REQUESTS_LOW_WATER;
     }
 
-    // Release waiters
-    releaseHttpWaiters();
+    // <FS:Trish> Release waiters after completions are delivered, otherwise the slots this
+    // update frees sit idle until the next frame
+    //// Release waiters
+    //releaseHttpWaiters();
+    // </FS:Trish>
 
     // Cancel live requests whose results nobody wants, before this update delivers completions.
     cancelUnwantedHttpRequests();
@@ -3643,6 +3646,11 @@ void LLTextureFetch::commonUpdate()
                                << status.toString()
                                << LL_ENDL;
     }
+
+    // <FS:Trish>
+    // Release waiters
+    releaseHttpWaiters();
+    // </FS:Trish>
 }
 
 
