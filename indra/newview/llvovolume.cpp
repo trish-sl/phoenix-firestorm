@@ -2808,7 +2808,13 @@ S32 LLVOVolume::setTEColor(const U8 te, const LLColor4& color)
     else if (color != tep->getColor())
     {
         F32 old_alpha = tep->getColor().mV[3];
-        if (color.mV[3] != old_alpha)
+        // <FS:Trish> Only rebuild batches when the alpha changes render class (invisible, blended,
+        // nearly opaque, opaque/maskable). Scripted fades otherwise rebuilt the volume every step,
+        // the vertex color update below covers the rest.
+        //if (color.mV[3] != old_alpha)
+        auto alpha_class = [](F32 alpha) { return alpha == 0.f ? 0 : alpha < 0.999f ? 1 : alpha < 1.f ? 2 : 3; };
+        if (alpha_class(color.mV[3]) != alpha_class(old_alpha))
+        // </FS:Trish>
         {
             gPipeline.markTextured(mDrawable);
             //treat this alpha change as an LoD update since render batches may need to get rebuilt
