@@ -1180,7 +1180,10 @@ void LLVOVolume::updateTextureVirtualSize(bool forced)
     const S32 num_faces = mDrawable->getNumFaces();
     F32 min_vsize=999999999.f, max_vsize=0.f;
     LLViewerCamera* camera = LLViewerCamera::getInstance();
-    std::stringstream debug_text;
+    // <FS:Trish> Only built with the texture priority debug display, constructing a stream for every update isn't free
+    //std::stringstream debug_text;
+    std::optional<std::stringstream> debug_text;
+    // </FS:Trish>
     for (S32 i = 0; i < num_faces; i++)
     {
         LLFace* face = mDrawable->getFace(i);
@@ -1265,7 +1268,8 @@ void LLVOVolume::updateTextureVirtualSize(bool forced)
             LLViewerFetchedTexture* img = LLViewerTextureManager::staticCastToFetchedTexture(imagep) ;
             if(img)
             {
-                debug_text << img->getDiscardLevel() << ":" << img->getDesiredDiscardLevel() << ":" << img->getWidth() << ":" << (S32) sqrtf(vsize) << ":" << (S32) sqrtf(img->getMaxVirtualSize()) << "\n";
+                if (!debug_text) debug_text.emplace(); // <FS:Trish/>
+                *debug_text << img->getDiscardLevel() << ":" << img->getDesiredDiscardLevel() << ":" << img->getWidth() << ":" << (S32) sqrtf(vsize) << ":" << (S32) sqrtf(img->getMaxVirtualSize()) << "\n";
                 /*F32 pri = img->getDecodePriority();
                 pri = llmax(pri, 0.0f);
                 if (pri < min_vsize) min_vsize = pri;
@@ -1332,7 +1336,8 @@ void LLVOVolume::updateTextureVirtualSize(bool forced)
     else if (gPipeline.hasRenderDebugMask(LLPipeline::RENDER_DEBUG_TEXTURE_PRIORITY))
     {
         //setDebugText(llformat("%.0f:%.0f", (F32) sqrt(min_vsize),(F32) sqrt(max_vsize)));
-        setDebugText(debug_text.str());
+        //setDebugText(debug_text.str());
+        setDebugText(debug_text ? debug_text->str() : std::string()); // <FS:Trish/>
     }
     else if (gPipeline.hasRenderDebugMask(LLPipeline::RENDER_DEBUG_FACE_AREA))
     {
