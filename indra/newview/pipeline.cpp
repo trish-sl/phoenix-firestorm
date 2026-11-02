@@ -1047,12 +1047,20 @@ bool LLPipeline::allocateScreenBufferInternal(U32 resX, U32 resY)
         if (RenderFSAAType > 0)
         {
             LL_PROFILE_ZONE_NAMED_CATEGORY_DISPLAY("FSAABuffer"); // <FS:Beq/> improve Tracy scoping 
-            if (!mFXAAMap.allocate(resX, resY, post_color_fmt)) return false;
+            // <FS:Trish> With SMAA this only holds edges and the blend buffer holds weights, 8 bit unorm like reference SMAA
+            //if (!mFXAAMap.allocate(resX, resY, post_color_fmt)) return false;
+            //if (RenderFSAAType == 2)
+            //{
+            //    LL_PROFILE_ZONE_NAMED_CATEGORY_DISPLAY("SMAABuffer"); // <FS:Beq/> improve Tracy scoping
+            //    if (!mSMAABlendBuffer.allocate(resX, resY, post_color_fmt, false)) return false;
+            //}
+            if (!mFXAAMap.allocate(resX, resY, RenderFSAAType == 2 ? GL_RGBA : post_color_fmt)) return false;
             if (RenderFSAAType == 2)
             {
-                LL_PROFILE_ZONE_NAMED_CATEGORY_DISPLAY("SMAABuffer"); // <FS:Beq/> improve Tracy scoping 
-                if (!mSMAABlendBuffer.allocate(resX, resY, post_color_fmt, false)) return false;
+                LL_PROFILE_ZONE_NAMED_CATEGORY_DISPLAY("SMAABuffer"); // <FS:Beq/> improve Tracy scoping
+                if (!mSMAABlendBuffer.allocate(resX, resY, GL_RGBA, false)) return false;
             }
+            // </FS:Trish>
         }
         else
         {
