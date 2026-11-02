@@ -32,6 +32,8 @@
 #include "llreflectionmapmanager.h"
 
 #include <vector>
+#include <map>      // <FS:Trish/> ProbeCull logging
+#include <sstream>  // <FS:Trish/>
 
 #include "llviewercamera.h"
 #include "llspatialpartition.h"
@@ -179,6 +181,39 @@ void LLReflectionMapManager::initCubeFree()
         mCubeFree.push_back(i);
     }
 }
+
+// Order probes for the cube-slot handout below: placed probes first, then by distance.
+//
+// This order decides which probes exist in VRAM at all, so it is where artist intent has to be
+// honoured. Distance alone did the opposite: mDistance is (distance to origin - radius), so a
+// large influence volume reads as nearer than a small one the camera is equally far inside --
+// an automatic probe covering a 16m octree node has a radius of about 13.9, and a manual probe
+// on a 2m prim standing in the same spot has 1. The placed probe lost the slot every time.
+//
+// A probe's radius is not a statement about its importance when the octree chose it and is
+// exactly that when a person did, so priority leads and distance orders within each group.
+// Automatic probes are a fallback for space nobody placed a probe in; they should be what gives
+// when there is not enough room for everything.
+// <FS:Trish> ProbeCull logging state
+namespace
+{
+    std::map<std::string, U32> sCullCounts;
+    F32 sLastCullSummary = 0.f;
+
+    const char* probe_type_name(const LLReflectionMap* probe)
+    {
+        if (probe->mViewerObject)
+        {
+            return "manual";
+        }
+        if (probe->mOrphaned)
+        {
+            return "orphan";
+        }
+        return probe->mGroup ? "auto" : "terrain";
+    }
+}
+// </FS:Trish>
 
 struct CompareProbeDistance
 {
@@ -352,6 +387,45 @@ void LLReflectionMapManager::update()
         return;
     }
 
+
+    // <FS:Trish> Sky change (see invalidate())
+    if (mInvalidate)
+    {
+        mInvalidate = false;
+        for (auto& probe : mProbes)
+        {
+            probe->mLastUpdateTime = 0.f;
+        }
+        if (cullLogEnabled())
+        {
+            LL_INFOS("ProbeCull") << "+invalidated " << mProbes.size() << " probes (sky change), regenerating in place" << LL_ENDL;
+        }
+    }
+
+    if (cullLogEnabled() && (gFrameTimeSeconds - sLastCullSummary) > 5.f)
+    {
+        sLastCullSummary = gFrameTimeSeconds;
+        if (!sCullCounts.empty())
+        {
+            U32 with_slot = 0, in_view = 0, occluded = 0;
+            for (auto& probe : mProbes)
+            {
+                with_slot += probe->mCubeIndex != -1 ? 1 : 0;
+                in_view += probe->mInView ? 1 : 0;
+                occluded += probe->mOccluded ? 1 : 0;
+            }
+
+            std::ostringstream counts;
+            for (const auto& [reason, count] : sCullCounts)
+            {
+                counts << " [" << reason << ": " << count << "]";
+            }
+            LL_INFOS("ProbeCull") << "last 5s:" << counts.str() << " -- probes " << mProbes.size() << ", with slot " << with_slot
+                << " of " << mReflectionProbeCount << ", in view " << in_view << ", occluded " << occluded << LL_ENDL;
+            sCullCounts.clear();
+        }
+    }
+    // </FS:Trish>
 
     bool did_update = false;
 
@@ -533,21 +607,22 @@ void LLReflectionMapManager::update()
         LLReflectionMap* probe = mProbes[i];
         llassert(probe != nullptr);
 
-        if (probe && probe->mCubeIndex != -1 && mUpdatingProbe != probe)
+        // <FS:Trish>
+        //if (probe && probe->mCubeIndex != -1 && mUpdatingProbe != probe &&
+        //    (i >= mReflectionProbeCount || !probe->isRelevant()))
+        if (probe && probe->mCubeIndex != -1 && mUpdatingProbe != probe &&
+            (i >= release_limit || !probe->isRelevant()))
         { // free this index
-            mCubeFree.push_back(probe->mCubeIndex);
-
-            probe->mCubeArray = nullptr;
-            probe->mCubeIndex = -1;
-            probe->mComplete = false;
-            probe->mFadeIn = 0;
+            releaseCubeIndex(probe, probe->isRelevant() ? "slot released (far past budget)" : "slot released (no longer relevant)");
         }
+        // </FS:Trish>
     }
 
     // next distribute the free indices
     U32 count = llmin(mReflectionProbeCount, (U32)mProbes.size());
 
-    for (U32 i = 1; i < count && !mCubeFree.empty(); ++i)
+    //for (U32 i = 1; i < count && !mCubeFree.empty(); ++i)
+    for (U32 i = 1; i < count; ++i) // <FS:Trish/> evictCubeIndex can make room
     {
         // find the closest probe that needs a cube index
         LLReflectionMap* probe = mProbes[i];
@@ -557,10 +632,17 @@ void LLReflectionMapManager::update()
         // would be handed a slot and have it taken back on the next frame, forever.
         if (probe->mCubeIndex == -1 && probe->isRelevant())
         {
-            S32 idx = allocateCubeIndex();
-            llassert(idx > 0); //if we're still in this loop, mCubeFree should not be empty and allocateCubeIndex should be returning good indices
-            probe->mCubeArray = mTexture;
-            probe->mCubeIndex = idx;
+            // <FS:Trish>
+            //S32 idx = allocateCubeIndex();
+            //llassert(idx > 0); //if we're still in this loop, mCubeFree should not be empty and allocateCubeIndex should be returning good indices
+            //probe->mCubeArray = mTexture;
+            //probe->mCubeIndex = idx;
+            if (mCubeFree.empty() && !evictCubeIndex(count))
+            {
+                break;
+            }
+            assignCubeIndex(probe);
+            // </FS:Trish>
         }
     }
 
@@ -569,6 +651,16 @@ void LLReflectionMapManager::update()
         LLReflectionMap* probe = mProbes[i];
         if (probe->getNumRefs() == 1)
         { // no references held outside manager, delete this probe
+            // <FS:Trish> ...unless it is an automatic probe whose octree group was just torn
+            constexpr F32 ORPHAN_GRACE_SECONDS = 10.f;
+            if (probe->mOrphaned &&
+                (probe->mComplete || probe->mRetainedCubeIndex != -1) &&
+                (gFrameTimeSeconds - probe->mOrphanTime) < ORPHAN_GRACE_SECONDS)
+            {
+                continue;
+            }
+            logCull(probe->mOrphaned ? "deleted (octree group gone, not rebuilt)" : "deleted (no longer referenced)", probe);
+            // </FS:Trish>
             deleteProbe(i);
             --i;
             continue;
@@ -622,6 +714,8 @@ void LLReflectionMapManager::update()
             // </FS:Trish>
             if (!did_update &&
                 i < mReflectionProbeCount &&
+                !probe->mOrphaned && // <FS:Trish/>
+                !recently_refreshed && // <FS:Trish/>
                 (oldestProbe == nullptr ||
                     check_priority(probe, oldestProbe)))
             {
@@ -730,6 +824,7 @@ LLReflectionMap* LLReflectionMapManager::addProbe(LLSpatialGroup* group)
     if (group)
     {
         probe->mOrigin = group->getOctreeNode()->getCenter();
+        probe->mGroupCenter = probe->mOrigin; // <FS:Trish/> autoAdjustOrigin moves mOrigin
     }
 
     if (gCubeSnapshot)
@@ -807,8 +902,19 @@ void LLReflectionMapManager::getReflectionMaps(std::vector<LLReflectionMap*>& ma
     U32 lastIdx = 0;
     for (U32 i = 0; count < maps.size() && i < mProbes.size(); ++i)
     {
-        mProbes[i]->mLastBindTime = gFrameTimeSeconds; // something wants to use this probe, indicate it's been requested
-        if (mProbes[i]->mCubeIndex != -1)
+        // Every probe that does not make the list gets its index cleared, not just the ones
+        // without a cube slot. A probe that is occluded or not yet complete used to keep the
+        // index it held on some earlier frame, and that slot now belongs to a different probe:
+        // the neighbour packer rejects -1 but has no way to tell a stale index from a live one,
+        // so a neighbour entry could point at an unrelated probe.
+        // <FS:Trish>
+        //if (mProbes[i]->mCubeIndex != -1 && mProbes[i]->mComplete &&
+        //    !(honor_occlusion && mProbes[i]->mOccluded))
+        if (mProbes[i]->mCubeIndex != -1 && mProbes[i]->mComplete &&
+            !(honor_occlusion && mProbes[i]->mOccluded) &&
+            !(cull_frustum && mProbes[i] != mDefaultProbe &&
+              !camera->sphereInFrustum(LLVector3(mProbes[i]->mOrigin.getF32ptr()), mProbes[i]->mRadius)))
+        // </FS:Trish>
         {
             maps[count++] = mProbes[i];
             modelview.affineTransform(mProbes[i]->mOrigin, oa);
@@ -862,6 +968,26 @@ LLReflectionMap* LLReflectionMapManager::registerSpatialGroup(LLSpatialGroup* gr
     {
         return nullptr;
     }
+
+    // <FS:Trish> A group rebuilt over the same octree node
+    const LLVector4a& center = node->getCenter();
+    for (auto& probe : mProbes)
+    {
+        if (probe->mOrphaned && probe->getNumRefs() == 1)
+        {
+            LLVector4a delta;
+            delta.setSub(probe->mGroupCenter, center);
+            if (delta.getLength3().getF32() < 0.5f)
+            {
+                probe->mGroup = group;
+                probe->mOrphaned = false;
+                logCull("+orphan adopted by rebuilt group", probe);
+                return probe;
+            }
+        }
+    }
+    // </FS:Trish>
+
     return addProbe(group);
 }
 
@@ -908,6 +1034,162 @@ S32 LLReflectionMapManager::allocateCubeIndex()
     return -1;
 }
 
+// <FS:Trish> Probe culling stability
+//static
+bool LLReflectionMapManager::cullLogEnabled()
+{
+    static LLCachedControl<bool> enabled(gSavedSettings, "FSDebugReflectionProbeCulls", false);
+    return enabled;
+}
+
+//static
+void LLReflectionMapManager::logCull(const char* reason, const LLReflectionMap* probe)
+{
+    if (!probe || !cullLogEnabled())
+    {
+        return;
+    }
+
+    ++sCullCounts[reason];
+
+    if (!probe->mInView)
+    { 
+        return;
+    }
+
+    const F32* o = probe->mOrigin.getF32ptr();
+    LL_INFOS("ProbeCull") << reason << ": " << probe_type_name(probe) << " probe " << (const void*)probe
+        << " at <" << o[0] << ", " << o[1] << ", " << o[2] << "> radius " << probe->mRadius
+        << " distance " << probe->mDistance << " slot " << probe->mCubeIndex
+        << " complete " << probe->mComplete << LL_ENDL;
+}
+
+void LLReflectionMapManager::invalidate()
+{
+    mInvalidate = true;
+}
+
+void LLReflectionMapManager::clearSlotOwners()
+{
+    for (auto& probe : mProbes)
+    {
+        probe->mRetainedCubeIndex = -1;
+        probe->mRetainedComplete = false;
+    }
+    mSlotOwner.assign(mReflectionProbeCount + 2, nullptr);
+}
+
+void LLReflectionMapManager::assignCubeIndex(LLReflectionMap* probe)
+{
+    S32 idx = -1;
+    bool reclaimed = false;
+
+    // Retake same slot if no one took it.
+    const S32 retained = probe->mRetainedCubeIndex;
+    if (retained > 0 && retained < (S32)mSlotOwner.size() && mSlotOwner[retained] == probe)
+    {
+        auto iter = std::find(mCubeFree.begin(), mCubeFree.end(), retained);
+        if (iter != mCubeFree.end())
+        {
+            mCubeFree.erase(iter);
+            idx = retained;
+            reclaimed = true;
+        }
+    }
+
+    if (idx == -1)
+    {
+        idx = allocateCubeIndex();
+        if (idx <= 0)
+        {
+            return;
+        }
+        if (idx < (S32)mSlotOwner.size() && mSlotOwner[idx] && mSlotOwner[idx] != probe)
+        { // the probe that held this slot loses what it left in it
+            mSlotOwner[idx]->mRetainedCubeIndex = -1;
+            mSlotOwner[idx]->mRetainedComplete = false;
+        }
+    }
+
+    probe->mCubeArray = mTexture;
+    probe->mCubeIndex = idx;
+    if (idx < (S32)mSlotOwner.size())
+    {
+        mSlotOwner[idx] = probe;
+    }
+
+    if (reclaimed)
+    {
+        probe->mComplete = probe->mRetainedComplete;
+        if (probe->mComplete)
+        { // The probe was always correct, so don't fade it back in from nothing!
+            probe->mFadeIn = 1.f;
+        }
+        logCull("+slot reclaimed", probe);
+    }
+    else
+    {
+        logCull("+slot assigned (regenerating)", probe);
+    }
+
+    probe->mRetainedCubeIndex = -1;
+    probe->mRetainedComplete = false;
+}
+
+void LLReflectionMapManager::releaseCubeIndex(LLReflectionMap* probe, const char* reason)
+{
+    logCull(reason, probe);
+
+    // Pushed to the back
+    mCubeFree.push_back(probe->mCubeIndex);
+    probe->mRetainedCubeIndex = probe->mCubeIndex;
+    probe->mRetainedComplete = probe->mComplete;
+
+    probe->mCubeArray = nullptr;
+    probe->mCubeIndex = -1;
+    probe->mComplete = false;
+    probe->mFadeIn = 0;
+    // Cleared with the rest of the render.
+    probe->mOccluded = false;
+    probe->mOccludedResults = 0;
+}
+
+bool LLReflectionMapManager::evictCubeIndex(U32 budget)
+{
+    LLReflectionMap* victim = nullptr;
+
+    // mProbes is sorted placed-first then by distance. 
+    // We most certainly never want to kill manually placed probes over all the autoprobes.
+    for (U32 i = (U32)mProbes.size(); i-- > budget && i > 0; )
+    {
+        LLReflectionMap* probe = mProbes[i];
+        if (probe->mCubeIndex == -1 || probe == mUpdatingProbe)
+        {
+            continue;
+        }
+
+        if (!victim)
+        {
+            victim = probe;
+        }
+
+        if (!probe->mInView)
+        {
+            victim = probe;
+            break;
+        }
+    }
+
+    if (!victim)
+    {
+        return false;
+    }
+
+    releaseCubeIndex(victim, "slot evicted (over budget)");
+    return true;
+}
+// </FS:Trish>
+
 void LLReflectionMapManager::deleteProbe(U32 i)
 {
     LL_PROFILE_ZONE_SCOPED_CATEGORY_DISPLAY;
@@ -919,6 +1201,15 @@ void LLReflectionMapManager::deleteProbe(U32 i)
     { // mark the cube index used by this probe as being free
         mCubeFree.push_back(probe->mCubeIndex);
     }
+    // <FS:Trish> 
+    for (auto& owner : mSlotOwner)
+    {
+        if (owner == probe)
+        {
+            owner = nullptr;
+        }
+    }
+    // </FS:Trish>
     if (mUpdatingProbe == probe)
     {
         mUpdatingProbe = nullptr;
@@ -1746,6 +2037,14 @@ void LLReflectionMapManager::initReflectionMaps()
             probe->mInsideManualProbe = false;
             probe->mOccludedResults = 0; // <FS:Trish/>
         }
+
+        // <FS:Trish> The cube array may have just been reallocated
+        clearSlotOwners();
+        if (cullLogEnabled())
+        {
+            LL_INFOS("ProbeCull") << "hard reset: all " << mProbes.size() << " probes dropped (" << mReflectionProbeCount << " slots)" << LL_ENDL;
+        }
+        // </FS:Trish>
 
         mCubeFree.clear();
         initCubeFree();
