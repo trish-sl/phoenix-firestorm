@@ -1291,6 +1291,7 @@ protected:
 private:
     bool            mNameIsSet;
     bool            mNameIsTemporary; // <FS:TJ/> Re-request names if any are temporary/placeholder names such as (???).(???)
+    LLFrameTimer    mNameTagStateTimer; // <FS:Trish/> Throttles name tag state/color evaluation
     LLSD            mClientTagData;
     bool            mHasClientTagColor;
     std::string     mTitle;
