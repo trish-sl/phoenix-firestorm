@@ -117,6 +117,7 @@ public:
     }
     ~LLTextureCacheWorker()
     {
+        uncountPendingRead(); // <FS:Trish/> Reads before writes
         llassert_always(!haveWork());
         ll_aligned_free_16(mReadData);
     }
@@ -130,6 +131,26 @@ public:
     handle_t read() { addWork(0); return mRequestHandle; }
     handle_t write() { addWork(1); return mRequestHandle; }
     bool complete() { return checkWork(); }
+
+    // <FS:Trish> Reads before writes
+    static constexpr F32 MAX_WRITE_DEFER_SECONDS = 1.f;
+    static constexpr U32 WRITE_DEFER_RETRY_MS = 25;
+    void countPendingRead() { mCountedPendingRead = true; ++mCache->mPendingReads; }
+    void uncountPendingRead()
+    {
+        if (mCountedPendingRead)
+        {
+            mCountedPendingRead = false;
+            --mCache->mPendingReads;
+        }
+    }
+    /*virtual*/ U32 getRetryDelayMs() override { return mDeferringWrite ? WRITE_DEFER_RETRY_MS : LLWorkerClass::getRetryDelayMs(); }
+    bool mCountedPendingRead = false;
+    bool mWriteStarted = false;
+    bool mDeferringWrite = false;
+    std::atomic<bool> mWritePrioritized{ false }; // a fetch worker is waiting on this write, don't defer it
+    LLTimer mWriteQueuedTimer;
+    // </FS:Trish>
     void ioComplete(S32 bytes)
     {
         mBytesRead = bytes;
@@ -714,6 +735,20 @@ bool LLTextureCacheWorker::doWork(S32 param)
     }
     else if (param == 1) // write
     {
+        // <FS:Trish> Reads before writes
+        if (!mWriteStarted)
+        {
+            if (!mWritePrioritized &&
+                mCache->getPendingReads() > 0 &&
+                mWriteQueuedTimer.getElapsedTimeF32() < MAX_WRITE_DEFER_SECONDS)
+            {
+                mDeferringWrite = true;
+                return false; // re-queued after getRetryDelayMs(), behind the pending reads
+            }
+            mWriteStarted = true;
+        }
+        mDeferringWrite = false;
+        // </FS:Trish>
         res = doWrite();
     }
     else
@@ -727,6 +762,10 @@ bool LLTextureCacheWorker::doWork(S32 param)
 void LLTextureCacheWorker::finishWork(S32 param, bool completed)
 {
     LL_PROFILE_ZONE_SCOPED_CATEGORY_TEXTURE;
+    if (param == 0)
+    {
+        uncountPendingRead(); // <FS:Trish/> Reads before writes
+    }
     if (mResponder.notNull())
     {
         bool success = (completed && mDataSize > 0);
@@ -1977,6 +2016,7 @@ LLTextureCache::handle_t LLTextureCache::readFromCache(const std::string& filena
     LLTextureCacheWorker* worker = new LLTextureCacheLocalFileWorker(this, filename, id,
                                                                      NULL, size, offset, 0,
                                                                      responder);
+    worker->countPendingRead(); // <FS:Trish/> Reads before writes
     handle_t handle = worker->read();
     mReaders[handle] = worker;
     return handle;
@@ -1992,6 +2032,7 @@ LLTextureCache::handle_t LLTextureCache::readFromCache(const LLUUID& id,
     LLTextureCacheWorker* worker = new LLTextureCacheRemoteWorker(this, id,
                                                                   NULL, size, offset,
                                                                   0, NULL, 0, responder);
+    worker->countPendingRead(); // <FS:Trish/> Reads before writes
     handle_t handle = worker->read();
     mReaders[handle] = worker;
     return handle;
@@ -2299,10 +2340,20 @@ bool LLTextureCache::writeComplete(handle_t handle, bool abort)
 
 void LLTextureCache::prioritizeWrite(handle_t handle)
 {
-    // Don't prioritize yet, we might be working on this now
-    //   which could create a deadlock
-    LLMutexLock lock(&mListMutex);
-    mPrioritizeWriteList.push_back(handle);
+    // <FS:Trish> The list was never consumed. Stop deferring the write behind pending reads instead,
+    // the fetch worker can't request a better discard until this write is done
+    //// Don't prioritize yet, we might be working on this now
+    ////   which could create a deadlock
+    //LLMutexLock lock(&mListMutex);
+    //mPrioritizeWriteList.push_back(handle);
+    lockWorkers();
+    handle_map_t::iterator iter = mWriters.find(handle);
+    if (iter != mWriters.end())
+    {
+        iter->second->mWritePrioritized = true;
+    }
+    unlockWorkers();
+    // </FS:Trish>
 }
 
 void LLTextureCache::addCompleted(Responder* responder, bool success)
