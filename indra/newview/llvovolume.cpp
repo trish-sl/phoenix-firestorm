@@ -33,8 +33,10 @@
 #include "llvovolume.h"
 
 #include <sstream>
+#include <unordered_map>
 
 #include "llviewercontrol.h"
+#include "llcallbacklist.h"
 #include "lldir.h"
 #include "llflexibleobject.h"
 #include "llfloatertools.h"
@@ -113,6 +115,158 @@ LLPointer<LLObjectMediaDataClient> LLVOVolume::sObjectMediaClient = NULL;
 LLPointer<LLObjectMediaNavigateClient> LLVOVolume::sObjectMediaNavigateClient = NULL;
 
 extern bool gCubeSnapshot;
+
+namespace
+{
+constexpr size_t LARGE_LINKSET_RESYNC_THRESHOLD = 128;
+constexpr F64 LARGE_LINKSET_RESYNC_INTERVAL_SEC = 10.;
+constexpr F64 LARGE_LINKSET_RESYNC_QUIET_SEC = 1.;
+constexpr F64 LARGE_LINKSET_RESYNC_MAX_WAIT_SEC = 10.;
+
+void requestTEFullResync(LLViewerObject* objectp)
+{
+    LLViewerRegion* regionp = objectp->getRegion();
+    const U32 local_id = objectp->getLocalID();
+    if (!regionp || !local_id) return;
+
+    struct Retry
+    {
+        F64 expires;
+        F64 last_request;
+        U32 attempts;
+    };
+    static std::unordered_map<LLUUID, Retry> retries;
+    static F64 next_window = 0.;
+    static U32 requests = 0;
+    const F64 now = LLFrameTimer::getTotalSeconds();
+    if (now >= next_window)
+    {
+        next_window = now + 1.;
+        requests = 0;
+        for (auto it = retries.begin(); it != retries.end();)
+        {
+            if (now >= it->second.expires) it = retries.erase(it);
+            else ++it;
+        }
+    }
+    if (requests >= 32) return;
+    auto it = retries.find(objectp->getID());
+    if (it == retries.end())
+    {
+        if (retries.size() >= 4096) return;
+        it = retries.emplace(objectp->getID(), Retry{ now + 60., now - 1., 0 }).first;
+    }
+    Retry& retry = it->second;
+    if (retry.attempts >= 3 || now - retry.last_request < 1.) return;
+    retry.last_request = now;
+    ++retry.attempts;
+    ++requests;
+    // The normal world cache-miss pass sends these together. Do not flush all
+    // regions' pending recovery work for every individual malformed update.
+    regionp->addCacheMissFull(local_id);
+}
+
+// Terse updates are unreliable; for very large linksets, alpha/TE bursts can
+// leave random child links visually stale. Resync the whole linkset once a
+// burst has gone quiet (or has run for too long), at most once per interval.
+// The queued misses are sent by the per-frame LLWorld::requestCacheMisses().
+struct LinksetResyncState
+{
+    F64 last_te_update = 0.;
+    F64 pending_since = 0.;
+    F64 last_resync = -LARGE_LINKSET_RESYNC_INTERVAL_SEC;
+    bool pending = false;
+};
+std::unordered_map<LLUUID, LinksetResyncState> sLinksetResync;
+
+void flushLargeLinksetResync(const LLUUID& root_id)
+{
+    auto it = sLinksetResync.find(root_id);
+    if (it == sLinksetResync.end())
+    {
+        return;
+    }
+
+    LinksetResyncState& state = it->second;
+    const F64 now = LLFrameTimer::getTotalSeconds();
+    if (now - state.last_te_update < LARGE_LINKSET_RESYNC_QUIET_SEC &&
+        now - state.pending_since < LARGE_LINKSET_RESYNC_MAX_WAIT_SEC)
+    {
+        doAfterInterval([root_id]() { flushLargeLinksetResync(root_id); }, (F32)LARGE_LINKSET_RESYNC_QUIET_SEC);
+        return;
+    }
+
+    state.pending = false;
+    state.last_resync = now;
+
+    LLViewerObject* rootp = gObjectList.findObject(root_id);
+    LLViewerRegion* regionp = rootp ? rootp->getRegion() : nullptr;
+    if (!rootp || rootp->isDead() || !regionp)
+    {
+        sLinksetResync.erase(it);
+        return;
+    }
+
+    if (U32 root_local_id = rootp->getLocalID())
+    {
+        regionp->addCacheMissFull(root_local_id);
+    }
+
+    for (const auto& child_ptr : rootp->getChildren())
+    {
+        LLViewerObject* childp = child_ptr.get();
+        if (childp && childp->getLocalID())
+        {
+            regionp->addCacheMissFull(childp->getLocalID());
+        }
+    }
+}
+
+void requestLargeLinksetResync(LLVOVolume* objectp)
+{
+    if (!objectp)
+    {
+        return;
+    }
+
+    LLViewerObject* rootp = objectp->getRootEdit();
+    if (!rootp || !objectp->getRegion())
+    {
+        return;
+    }
+
+    if ((rootp->getChildren().size() + 1) < LARGE_LINKSET_RESYNC_THRESHOLD)
+    {
+        return;
+    }
+
+    const F64 now = LLFrameTimer::getTotalSeconds();
+
+    static F64 next_prune = 0.;
+    if (now >= next_prune)
+    {
+        next_prune = now + 60.;
+        for (auto it = sLinksetResync.begin(); it != sLinksetResync.end();)
+        {
+            if (!it->second.pending && now - it->second.last_te_update > 60.) it = sLinksetResync.erase(it);
+            else ++it;
+        }
+    }
+
+    const LLUUID root_id = rootp->getID();
+    LinksetResyncState& state = sLinksetResync[root_id];
+    state.last_te_update = now;
+    if (state.pending)
+    {
+        return;
+    }
+
+    state.pending = true;
+    state.pending_since = now;
+    const F64 delay = llmax(LARGE_LINKSET_RESYNC_QUIET_SEC, state.last_resync + LARGE_LINKSET_RESYNC_INTERVAL_SEC - now);
+    doAfterInterval([root_id]() { flushLargeLinksetResync(root_id); }, (F32)delay);
+}
+} // namespace
 
 // NaCl - Graphics crasher protection
 static bool enableVolumeSAPProtection()
@@ -703,10 +857,36 @@ U32 LLVOVolume::processUpdateMessage(LLMessageSystem *mesgsys,
             S32 texture_length = mesgsys->getSizeFast(_PREHASH_ObjectData, block_num, _PREHASH_TextureEntry);
             if (texture_length)
             {
-                U8                          tdpbuffer[1024];
-                LLDataPackerBinaryBuffer    tdp(tdpbuffer, 1024);
-                mesgsys->getBinaryDataFast(_PREHASH_ObjectData, _PREHASH_TextureEntry, tdpbuffer, 0, block_num, 1024);
-                S32 result = unpackTEMessage(tdp);
+                // TE data in terse updates is serialized through LLDataPacker::packBinaryData(),
+                // which adds a 4-byte length prefix in front of the TE payload.
+                constexpr S32 max_texture_dp_size = (S32)LLTEContents::MAX_TE_BUFFER + (S32)sizeof(S32);
+                U8 tdpbuffer[max_texture_dp_size];
+                S32 result = TEM_INVALID;
+                if (texture_length >= max_texture_dp_size)
+                {
+                    LL_WARNS("TEXTUREENTRY") << "Excessive terse TextureEntry size " << texture_length
+                                             << " for object " << getID() << ". Rejecting update." << LL_ENDL;
+                }
+                else
+                {
+                    LLDataPackerBinaryBuffer tdp(tdpbuffer, texture_length);
+                    mesgsys->getBinaryDataFast(_PREHASH_ObjectData, _PREHASH_TextureEntry,
+                        tdpbuffer, 0, block_num, texture_length);
+                    result = unpackTEMessage(tdp);
+                }
+
+                // If a terse TE update arrives before this object has valid TE state,
+                // the update can be effectively dropped. Ask for a full update to resync.
+                if (update_type == OUT_TERSE_IMPROVED &&
+                    (result == TEM_INVALID || (result == TEM_CHANGE_NONE && getNumTEs() == 0)))
+                {
+                    requestTEFullResync(this);
+                }
+                else if (update_type == OUT_TERSE_IMPROVED && texture_length > 0)
+                {
+                    requestLargeLinksetResync(this);
+                }
+
                 if (result & teDirtyBits)
                 {
                     if (mDrawable)
