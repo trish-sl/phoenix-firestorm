@@ -1148,6 +1148,13 @@ bool LLPipeline::allocateShadowBuffer(U32 resX, U32 resY)
     if (!gCubeSnapshot) // hack to not allocate spot shadow maps during ReflectionMapManager init
     {
         U32 width = (U32)(resX * scale);
+        // <FS:Trish> Spot shadow maps are square at screen width, 3840x3840 each at 4K. Cap them.
+        static LLCachedControl<U32> spot_max_res(gSavedSettings, "RenderSpotShadowMaxResolution", 2048);
+        if (spot_max_res > 0)
+        {
+            width = llmin(width, (U32)spot_max_res);
+        }
+        // </FS:Trish>
         U32 height = width;
 
         if (shadow_detail > 1)
