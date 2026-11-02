@@ -5350,6 +5350,29 @@ void LLVOAvatar::computeUpdatePeriod()
     {
         mUpdatePeriod = 1;
     }
+
+    // <FS:Trish> Avatars outside the camera view ran a full character update (root, head, ~200 joint
+    // matrices) every frame. Their animations still advance through the hidden update in between.
+    // Visibility only covers the main camera, so keep it short with sun shadows on.
+    // Kept out of mUpdatePeriod: isImpostor() treats mUpdatePeriod > 1 as impostored, which made every
+    // avatar coming back into view regenerate an impostor and render as one for a frame.
+    mHiddenUpdatePeriod = 1;
+    if (mUpdatePeriod == 1
+        && mDrawable.notNull()
+        && !isVisible()
+        && !isSelf()
+        && !isUIAvatar()
+        && !mNeedsAnimUpdate)
+    {
+        static LLCachedControl<U32> hidden_update_period(gSavedSettings, "RenderHiddenAvatarUpdatePeriod", 4);
+        S32 period = llmax(1, (S32)hidden_update_period());
+        if (LLPipeline::RenderShadowDetail > 0)
+        {
+            period = llmin(period, 2);
+        }
+        mHiddenUpdatePeriod = period;
+    }
+    // </FS:Trish>
 }
 
 //------------------------------------------------------------------------
@@ -5735,7 +5758,10 @@ bool LLVOAvatar::computeNeedsUpdate()
     const F32 MAX_IMPOSTOR_INTERVAL = 4.0f;
     computeUpdatePeriod();
 
-    bool needs_update_by_frame_count = ((LLDrawable::getCurrentFrame()+mID.mData[0])%mUpdatePeriod == 0);
+    // <FS:Trish> Hidden avatars use their own period, see computeUpdatePeriod()
+    //bool needs_update_by_frame_count = ((LLDrawable::getCurrentFrame()+mID.mData[0])%mUpdatePeriod == 0);
+    bool needs_update_by_frame_count = ((LLDrawable::getCurrentFrame()+mID.mData[0])%llmax(mUpdatePeriod, mHiddenUpdatePeriod) == 0);
+    // </FS:Trish>
 
     bool needs_update_by_max_time = ((gFrameTimeSeconds-mLastImpostorUpdateFrameTime)> MAX_IMPOSTOR_INTERVAL);
     bool needs_update = needs_update_by_frame_count || needs_update_by_max_time;
