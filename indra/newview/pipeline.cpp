@@ -1017,6 +1017,17 @@ bool LLPipeline::allocateScreenBufferInternal(U32 resX, U32 resY)
         mRT->deferredLight.release();
     }
 
+    // <FS:Trish> Separate 8 bit light map, only written when the sun/SSAO pass runs
+    if (shadow_detail > 0 || ssao)
+    {
+        if (!mRT->lightMap.allocate(resX, resY, GL_RGBA)) return false;
+    }
+    else
+    {
+        mRT->lightMap.release();
+    }
+    // </FS:Trish>
+
     allocateShadowBuffer(resX, resY);
 
     if (!gCubeSnapshot) // hack to not re-allocate various targets for cube snapshots
@@ -1451,6 +1462,8 @@ void LLPipeline::releaseScreenBuffers()
     mRT->screen.release();
     mRT->deferredScreen.release();
     mRT->deferredLight.release();
+    mRT->lightMap.release(); // <FS:Trish/>
+    mRlvSphereDepth.release();
 
     mAuxillaryRT.screen.release();
     mAuxillaryRT.deferredScreen.release();
@@ -1462,6 +1475,7 @@ void LLPipeline::releaseScreenBuffers()
     mHeroProbeRT.screen.release();
     mHeroProbeRT.deferredScreen.release();
     mHeroProbeRT.deferredLight.release();
+    mHeroProbeRT.lightMap.release(); // <FS:Trish/>
 
     mPreviewScreen.release(); // <FS:Beq/> dedicated preview target
 }
@@ -9167,7 +9181,10 @@ void LLPipeline::bindDeferredShader(LLGLSLShader& shader, LLRenderTarget* light_
 {
     LL_PROFILE_ZONE_SCOPED_CATEGORY_PIPELINE;
     LLRenderTarget* deferred_target       = &mRT->deferredScreen;
-    LLRenderTarget* deferred_light_target = &mRT->deferredLight;
+    // <FS:Trish> Light map has its own 8 bit target
+    //LLRenderTarget* deferred_light_target = &mRT->deferredLight;
+    LLRenderTarget* deferred_light_target = &mRT->lightMap;
+    // </FS:Trish>
 
     shader.bind();
     S32 channel = 0;
@@ -9418,7 +9435,10 @@ void LLPipeline::renderDeferredLighting()
     }
 
     LLRenderTarget *screen_target         = &mRT->screen;
-    LLRenderTarget* deferred_light_target = &mRT->deferredLight;
+    // <FS:Trish> Light map has its own 8 bit target
+    //LLRenderTarget* deferred_light_target = &mRT->deferredLight;
+    LLRenderTarget* deferred_light_target = &mRT->lightMap;
+    // </FS:Trish>
 
     {
         LL_PROFILE_ZONE_NAMED_CATEGORY_PIPELINE("deferred");
@@ -10232,7 +10252,10 @@ void LLPipeline::setupSpotLight(LLGLSLShader& shader, LLDrawable* drawablep)
 void LLPipeline::unbindDeferredShader(LLGLSLShader &shader)
 {
     LLRenderTarget* deferred_target       = &mRT->deferredScreen;
-    LLRenderTarget* deferred_light_target = &mRT->deferredLight;
+    // <FS:Trish> Light map has its own 8 bit target
+    //LLRenderTarget* deferred_light_target = &mRT->deferredLight;
+    LLRenderTarget* deferred_light_target = &mRT->lightMap;
+    // </FS:Trish>
 
     stop_glerror();
     shader.disableTexture(LLShaderMgr::NORMAL_MAP, deferred_target->getUsage());

@@ -723,6 +723,14 @@ public:
         LLRenderTarget          screen;
         LLRenderTarget          deferredScreen;
         LLRenderTarget          deferredLight;
+        // <FS:Trish> Shadow/SSAO light map, four [0,1] terms so 8 bit is plenty. deferredLight stays
+        // HDR for the tonemap -> CAS intermediate and DoF.
+        LLRenderTarget          lightMap;
+        // Water scratch targets sized to the pack, only allocated for mAuxillaryRT (reflection probes),
+        // probe faces were stretch blitted into the full screen mWaterDis three times per face
+        LLRenderTarget          waterDis;
+        LLRenderTarget          waterExclusion;
+        // </FS:Trish>
 
         //sun shadow map
         LLRenderTarget          shadow[4];
