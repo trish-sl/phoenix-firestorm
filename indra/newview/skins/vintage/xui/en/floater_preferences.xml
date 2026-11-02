@@ -177,7 +177,7 @@ https://accounts.secondlife.com/change_email/
          help_topic="preferences_advanced1_tab"
          name="advanced1" />
         <panel
-         class="panel_preference"
+         class="panel_preference_experimental"
          filename="panel_preferences_experimental.xml"
          label="Experimental"
          layout="topleft"
