@@ -914,7 +914,10 @@ protected:
     //
     // Different queues of drawables being processed.
     //
-    LLDrawable::drawable_list_t     mBuildQ1; // priority
+    // <FS:Trish> Vector, every markRebuild allocated a list node
+    //LLDrawable::drawable_list_t     mBuildQ1; // priority
+    LLDrawable::drawable_vector_t   mBuildQ1; // priority
+    // </FS:Trish>
     LLSpatialGroup::sg_vector_t     mGroupQ1; //priority
 
     LLSpatialGroup::sg_vector_t     mGroupSaveQ1; // a place to save mGroupQ1 until it is safe to unref
