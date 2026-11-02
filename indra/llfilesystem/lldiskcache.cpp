@@ -145,26 +145,48 @@ void LLDiskCache::purge()
             {
                 return;
             }
-            if (std::filesystem::is_regular_file(*iter, ec) && !ec)
+            // <FS:Trish> Use the directory_entry members, on Windows they come from the directory listing.
+            // The free functions stat every file again, three times, through every filesystem filter
+            // (Defender, cloud files), which made each purge pass a long burst of kernel time.
+            // A file that fails (e.g. removed meanwhile) is skipped instead of ending the scan.
+            //if (std::filesystem::is_regular_file(*iter, ec) && !ec)
+            //{
+            //    if (fsyspath((*iter).path()).string().find(CACHE_FILENAME_PREFIX) != std::string::npos)
+            //    {
+            //        uintmax_t file_size = std::filesystem::file_size(*iter, ec);
+            //        if (ec)
+            //        {
+            //            continue;
+            //        }
+            //        const std::string file_path = fsyspath((*iter).path()).string();
+            //        const std::filesystem::file_time_type file_time = std::filesystem::last_write_time(*iter, ec);
+            //        if (ec)
+            //        {
+            //            continue;
+            //        }
+            //        file_size_total += file_size; // <FS:Beq/> try to make simple cache less naive.
+            //
+            //        file_info.push_back(file_info_t(file_time, { file_size, file_path }));
+            //    }
+            //}
+            const std::filesystem::directory_entry& entry = *iter;
+            std::error_code entry_ec;
+            if (entry.is_regular_file(entry_ec) && !entry_ec)
             {
-                if (fsyspath((*iter).path()).string().find(CACHE_FILENAME_PREFIX) != std::string::npos)
+                std::string file_path = fsyspath(entry.path()).string();
+                if (file_path.find(CACHE_FILENAME_PREFIX) != std::string::npos)
                 {
-                    uintmax_t file_size = std::filesystem::file_size(*iter, ec);
-                    if (ec)
+                    const uintmax_t file_size = entry.file_size(entry_ec);
+                    const std::filesystem::file_time_type file_time = entry_ec ? std::filesystem::file_time_type() : entry.last_write_time(entry_ec);
+                    if (!entry_ec)
                     {
-                        continue;
-                    }
-                    const std::string file_path = fsyspath((*iter).path()).string();
-                    const std::filesystem::file_time_type file_time = std::filesystem::last_write_time(*iter, ec);
-                    if (ec)
-                    {
-                        continue;
-                    }
-                    file_size_total += file_size; // <FS:Beq/> try to make simple cache less naive.
+                        file_size_total += file_size; // <FS:Beq/> try to make simple cache less naive.
 
-                    file_info.push_back(file_info_t(file_time, { file_size, file_path }));
+                        file_info.push_back(file_info_t(file_time, { file_size, std::move(file_path) }));
+                    }
                 }
             }
+            // </FS:Trish>
             iter.increment(ec);
         }
     }
@@ -584,17 +606,32 @@ uintmax_t LLDiskCache::dirFileSize(const std::string& dir, bool force)
         while (iter != std::filesystem::recursive_directory_iterator() && !ec)
             // </FS:Ansariel>
         {
-            if (std::filesystem::is_regular_file(*iter, ec) && !ec)
+            // <FS:Trish> directory_entry members use the directory listing's data, see purge()
+            //if (std::filesystem::is_regular_file(*iter, ec) && !ec)
+            //{
+            //    if (fsyspath((*iter).path()).string().find(CACHE_FILENAME_PREFIX) != std::string::npos)
+            //    {
+            //        uintmax_t file_size = std::filesystem::file_size(*iter, ec);
+            //        if (!ec)
+            //        {
+            //            total_file_size += file_size;
+            //        }
+            //    }
+            //}
+            const std::filesystem::directory_entry& entry = *iter;
+            std::error_code entry_ec;
+            if (entry.is_regular_file(entry_ec) && !entry_ec)
             {
-                if (fsyspath((*iter).path()).string().find(CACHE_FILENAME_PREFIX) != std::string::npos)
+                if (fsyspath(entry.path()).string().find(CACHE_FILENAME_PREFIX) != std::string::npos)
                 {
-                    uintmax_t file_size = std::filesystem::file_size(*iter, ec);
-                    if (!ec)
+                    uintmax_t file_size = entry.file_size(entry_ec);
+                    if (!entry_ec)
                     {
                         total_file_size += file_size;
                     }
                 }
             }
+            // </FS:Trish>
             iter.increment(ec);
         }
     }
