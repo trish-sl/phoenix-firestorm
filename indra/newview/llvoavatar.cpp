@@ -4052,6 +4052,18 @@ void LLVOAvatar::idleUpdateNameTagText(bool new_name)
     // Avatars must have a first and last name
     if (!firstname || !lastname) return;
 
+    // <FS:Trish> Status, colors (contact sets, mute, radar, marks), distance and complexity were evaluated
+    // for every tag every frame. Plain name tags re-check them a few times a second, chat bubbles still
+    // rebuild every frame and clearNameTag() (mNameIsSet) forces an immediate rebuild.
+    constexpr F32 NAME_TAG_STATE_REFRESH_SECONDS = 0.25f;
+    if (!new_name && mNameIsSet && !mVisibleChat && !mVisibleTyping &&
+        mNameTagStateTimer.getElapsedTimeF32() < NAME_TAG_STATE_REFRESH_SECONDS)
+    {
+        return;
+    }
+    mNameTagStateTimer.reset();
+    // </FS:Trish>
+
     // <FS:Ansariel> OpenSim chat distance compatibility
     static const F32 chat_range_whisper_squared = (F32)(LFSimFeatureHandler::getInstance()->whisperRange() * LFSimFeatureHandler::getInstance()->whisperRange());
     static const F32 chat_range_say_squared = (F32)(LFSimFeatureHandler::getInstance()->sayRange() * LFSimFeatureHandler::getInstance()->sayRange());
