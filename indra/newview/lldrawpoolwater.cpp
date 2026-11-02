@@ -208,7 +208,35 @@ void LLDrawPoolWater::renderPostDeferred(S32 pass)
         shader = &gWaterProgram;
     }
 
-    gPipeline.bindDeferredShader(*shader, nullptr, &gPipeline.mWaterDis);
+    // <FS:Trish> Water scratch targets are sized to the pack being rendered
+    //gPipeline.bindDeferredShader(*shader, nullptr, &gPipeline.mWaterDis);
+    LLRenderTarget& water_dis = gPipeline.getWaterDisTarget();
+    gPipeline.bindDeferredShader(*shader, nullptr, &water_dis);
+    // </FS:Trish>
+
+    if (!underwater && !gCubeSnapshot && LLPipeline::sRenderTransparentWater &&
+        LLPipeline::RenderScreenSpaceReflections)
+    {
+        // The previous-frame scene map already contains water, allowing SSR to
+        // reflect its own output. Use the matching color/depth captured before
+        // this water pass, which are both in the current camera's coordinate frame.
+        S32 channel = shader->enableTexture(LLShaderMgr::SCENE_MAP);
+        if (channel > -1)
+        {
+            //gGL.getTexUnit(channel)->bind(&gPipeline.mWaterDis);
+            gGL.getTexUnit(channel)->bind(&water_dis); // <FS:Trish/>
+        }
+        channel = shader->enableTexture(LLShaderMgr::SCENE_DEPTH);
+        if (channel > -1)
+        {
+            //gGL.getTexUnit(channel)->bind(&gPipeline.mWaterDis, true);
+            gGL.getTexUnit(channel)->bind(&water_dis, true); // <FS:Trish/>
+        }
+
+        const glm::mat4 identity(1.0f);
+        shader->uniformMatrix4fv(LLShaderMgr::MODELVIEW_DELTA_MATRIX, 1, GL_FALSE, glm::value_ptr(identity));
+        shader->uniformMatrix4fv(LLShaderMgr::INVERSE_MODELVIEW_DELTA_MATRIX, 1, GL_FALSE, glm::value_ptr(identity));
+    }
 
     LLViewerTexture* tex_a = mWaterNormp[0];
     LLViewerTexture* tex_b = mWaterNormp[1];
