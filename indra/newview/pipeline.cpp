@@ -2286,16 +2286,27 @@ void LLPipeline::updateMoveNormalAsync(LLDrawable* drawablep)
 void LLPipeline::updateMovedList(LLDrawable::drawable_vector_t& moved_list)
 {
     LL_PROFILE_ZONE_SCOPED;
-    for (LLDrawable::drawable_vector_t::iterator iter = moved_list.begin();
-         iter != moved_list.end(); )
+    // <FS:Trish> Compact in one pass, erasing each finished entry shifted the whole tail and
+    // every avatar attachment goes through this list every frame
+    //for (LLDrawable::drawable_vector_t::iterator iter = moved_list.begin();
+    //     iter != moved_list.end(); )
+    //{
+    //    LLDrawable::drawable_vector_t::iterator curiter = iter++;
+    //    LLDrawable *drawablep = *curiter;
+    //    if (!drawablep)
+    //    {
+    //        iter = moved_list.erase(curiter);
+    //        continue;
+    //    }
+    size_t write_idx = 0;
+    for (size_t read_idx = 0; read_idx < moved_list.size(); ++read_idx)
     {
-        LLDrawable::drawable_vector_t::iterator curiter = iter++;
-        LLDrawable *drawablep = *curiter;
+        LLDrawable *drawablep = moved_list[read_idx];
         if (!drawablep)
         {
-            iter = moved_list.erase(curiter);
             continue;
         }
+    // </FS:Trish>
         bool done = true;
         if (!drawablep->isDead() && (!drawablep->isState(LLDrawable::EARLY_MOVE)))
         {
@@ -2319,9 +2330,18 @@ void LLPipeline::updateMovedList(LLDrawable::drawable_vector_t& moved_list)
                     drawablep->getVObj()->dirtySpatialGroup();
                 }
             }
-            iter = moved_list.erase(curiter);
+            // <FS:Trish>
+            //iter = moved_list.erase(curiter);
+            continue;
         }
+        if (write_idx != read_idx)
+        {
+            moved_list[write_idx] = moved_list[read_idx];
+        }
+        ++write_idx;
     }
+    moved_list.resize(write_idx);
+    // </FS:Trish>
 }
 
 void LLPipeline::updateMove()
@@ -2963,7 +2983,8 @@ void LLPipeline::clearRebuildGroups()
 void LLPipeline::clearRebuildDrawables()
 {
     // Clear all drawables on the priority build queue,
-    for (LLDrawable::drawable_list_t::iterator iter = mBuildQ1.begin();
+    //for (LLDrawable::drawable_list_t::iterator iter = mBuildQ1.begin();
+    for (LLDrawable::drawable_vector_t::iterator iter = mBuildQ1.begin(); // <FS:Trish/>
          iter != mBuildQ1.end(); ++iter)
     {
         LLDrawable* drawablep = *iter;
@@ -3021,7 +3042,10 @@ void LLPipeline::rebuildPriorityGroups()
         group->clearState(LLSpatialGroup::IN_BUILD_Q1);
     }
 
-    mGroupSaveQ1 = mGroupQ1;
+    // <FS:Trish> Swap instead of copying the pointers, the old saved groups are released by the clear just the same
+    //mGroupSaveQ1 = mGroupQ1;
+    mGroupSaveQ1.swap(mGroupQ1);
+    // </FS:Trish>
     mGroupQ1.clear();
     mGroupQ1Locked = false;
 
@@ -3045,11 +3069,18 @@ void LLPipeline::updateGeom(F32 max_dtime)
     LLVOVolume::preUpdateGeom();
 
     // Iterate through all drawables on the priority build queue,
-    for (LLDrawable::drawable_list_t::iterator iter = mBuildQ1.begin();
-         iter != mBuildQ1.end();)
+    // <FS:Trish> Compacted in place, indexed because updateDrawableGeom() can append to the queue
+    //for (LLDrawable::drawable_list_t::iterator iter = mBuildQ1.begin();
+    //     iter != mBuildQ1.end();)
+    //{
+    //    LLDrawable::drawable_list_t::iterator curiter = iter++;
+    //    LLDrawable* drawablep = *curiter;
+    size_t write_idx = 0;
+    for (size_t read_idx = 0; read_idx < mBuildQ1.size(); ++read_idx)
     {
-        LLDrawable::drawable_list_t::iterator curiter = iter++;
-        LLDrawable* drawablep = *curiter;
+        LLPointer<LLDrawable> drawablep = mBuildQ1[read_idx];
+        bool keep = false;
+    // </FS:Trish>
         if (drawablep && !drawablep->isDead())
         {
             if (drawablep->isUnload())
@@ -3061,14 +3092,31 @@ void LLPipeline::updateGeom(F32 max_dtime)
             if (updateDrawableGeom(drawablep))
             {
                 drawablep->clearState(LLDrawable::IN_REBUILD_Q);
-                mBuildQ1.erase(curiter);
+                //mBuildQ1.erase(curiter); // <FS:Trish/>
             }
+            // <FS:Trish>
+            else
+            {
+                keep = true;
+            }
+            // </FS:Trish>
         }
-        else
+        // <FS:Trish>
+        //else
+        //{
+        //    mBuildQ1.erase(curiter);
+        //}
+        if (keep)
         {
-            mBuildQ1.erase(curiter);
+            if (write_idx != read_idx)
+            {
+                mBuildQ1[write_idx] = drawablep;
+            }
+            ++write_idx;
         }
+        // </FS:Trish>
     }
+    mBuildQ1.resize(write_idx); // <FS:Trish/>
 
     updateMovedList(mMovedBridge);
 }
@@ -3487,7 +3535,11 @@ void LLPipeline::stateSort(LLDrawable* drawablep, LLCamera& camera)
         return;
     }
 
-    if (LLSelectMgr::getInstance()->mHideSelectedObjects)
+    // <FS:Trish> getInstance() takes the singleton mutex, this runs per drawable in every pass
+    //if (LLSelectMgr::getInstance()->mHideSelectedObjects)
+    static LLSelectMgr* select_mgr = LLSelectMgr::getInstance();
+    if (select_mgr->mHideSelectedObjects)
+    // </FS:Trish>
     {
 //      if (drawablep->getVObj().notNull() &&
 //          drawablep->getVObj()->isSelected())
@@ -6310,7 +6362,8 @@ void LLPipeline::calcNearbyLights(LLCamera& camera)
             }
             cur_nearby_lights.insert(Light(drawable, dist, fade));
         }
-        mNearbyLights = cur_nearby_lights;
+        //mNearbyLights = cur_nearby_lights;
+        mNearbyLights.swap(cur_nearby_lights); // <FS:Trish/> no deep copy of the set every frame
 
         // FIND NEW LIGHTS THAT ARE IN RANGE
         light_set_t new_nearby_lights;
