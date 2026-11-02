@@ -29,6 +29,7 @@
 
 #include <map>
 #include <set>
+#include <unordered_map>
 
 // common includes
 #include "llstring.h"
@@ -204,6 +205,22 @@ public:
     S32 mNumUnknownUpdates;
     S32 mNumDeadObjectUpdates;
     S32 mNumDeadObjects;
+
+    struct CachedMotionState
+    {
+        LLVector3 mVelocity = LLVector3::zero;
+        LLVector3 mAcceleration = LLVector3::zero;
+        LLVector3 mAngularVelocity = LLVector3::zero;
+    };
+
+    void cacheMotionState(LLViewerObject* objectp);
+    void restoreMotionState(LLViewerObject* objectp);
+
+    // <FS:Trish> Throttled full update requests for terse updates of objects we don't know
+    void requestUnknownObjectUpdate(LLViewerRegion* regionp, U32 local_id);
+    void suppressUnknownObjectUpdates(LLViewerRegion* regionp, U32 local_id);
+    // </FS:Trish>
+
 protected:
     std::vector<U64>    mOrphanParents; // LocalID/ip,port of orphaned objects
     std::vector<OrphanInfo> mOrphanChildren;    // UUID's of orphaned objects
