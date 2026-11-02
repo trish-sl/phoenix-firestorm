@@ -231,10 +231,16 @@ const std::string sTesterName("TextureFetchTester");
 
 // Tuning/Parameterization Constants
 
-static const S32 HTTP_PIPE_REQUESTS_HIGH_WATER = 100;       // Maximum requests to have active in HTTP (pipelined)
-static const S32 HTTP_PIPE_REQUESTS_LOW_WATER = 50;         // Active level at which to refill
-static const S32 HTTP_NONPIPE_REQUESTS_HIGH_WATER = 40;
-static const S32 HTTP_NONPIPE_REQUESTS_LOW_WATER = 20;
+// Sized to what LLCore can actually have in flight, plus a small buffer. LLCore runs at most
+// per-host connections x pipelining depth requests at once (TextureFetchConcurrency, max 12, x
+// PIPELINING_DEPTH 5 = 60), or the per-host limit unpipelined; anything above that sits in its
+// FIFO ready queue, where it can neither be reordered by priority nor aborted. Holding the
+// surplus here instead keeps it in the priority-sorted waiter set -- which is what decides
+// whether the textures in front of the camera load first after a teleport.
+static const S32 HTTP_PIPE_REQUESTS_HIGH_WATER = 72;        // Maximum requests to have active in HTTP (pipelined)
+static const S32 HTTP_PIPE_REQUESTS_LOW_WATER = 36;         // Active level at which to refill
+static const S32 HTTP_NONPIPE_REQUESTS_HIGH_WATER = 24;
+static const S32 HTTP_NONPIPE_REQUESTS_LOW_WATER = 12;
 
 // BUG-3323/SH-4375
 // *NOTE:  This is a heuristic value.  Texture fetches have a habit of using a
@@ -483,6 +489,12 @@ private:
 
     // Locks:  Mw
     void setImagePriority(F32 priority);
+
+    // Issue an LLCore cancel for the live request if nothing wants its result. Never touches the
+    // worker's lifetime: the cancelled request completes through onCompleted() like any other,
+    // which is what releases the slot and lets the worker be deleted.
+    // Threads:  Ttf
+    bool cancelHttpIfUnwanted();
 
     // Locks:  Mw (ctor invokes without lock)
     void setDesiredDiscard(S32 discard, S32 size);
@@ -1131,7 +1143,85 @@ void LLTextureFetchWorker::setDesiredDiscard(S32 discard, S32 size)
 // Locks:  Mw
 void LLTextureFetchWorker::setImagePriority(F32 priority)
 {
+    if (priority < F_ALMOST_ZERO && mImagePriority >= F_ALMOST_ZERO)
+    {
+        mLowInterestTimer.reset();
+    }
     mImagePriority = priority; //should map to max virtual size, abort if zero
+}
+
+// Threads:  Ttf
+//
+// Every incomplete worker is re-run on a timer. At the default 16 ms, the thousands of requests
+// parked after a teleport each ran ~60 times a second just to find nothing had changed, and they
+// share a time-ordered queue with commonUpdate() -- which delivers the HTTP completions and
+// releases the waiters everyone is waiting on. Workers that are only waiting ask for less.
+U32 LLTextureFetchWorker::getRetryDelayMs()
+{
+    static const U32 DEFAULT_DELAY_MS = 16;
+    // Moved on only by releaseHttpWaiters(); the HTTP layer holds a few requests of buffer
+    // beyond what it runs, so this much latency on the hand-off does not idle a connection.
+    static const U32 HTTP_RESOURCE_WAIT_DELAY_MS = 50;
+    // Capability and retry waits are measured in seconds.
+    static const U32 TIMED_WAIT_MAX_DELAY_MS = 250;
+
+    LLMutexLock lock(&mWorkMutex);                                      // +Mw
+
+    if (mState == WAIT_HTTP_RESOURCE2)
+    {
+        return HTTP_RESOURCE_WAIT_DELAY_MS;
+    }
+
+    if (mState > CACHE_POST && !mCanUseCapability && mCanUseHTTP && !mRegionRetryTimer.hasExpired())
+    {
+        return TIMED_WAIT_MAX_DELAY_MS;
+    }
+
+    if (mState == LOAD_FROM_NETWORK && mHttpRetryAttempt && !mHttpRetryTimer.hasExpired())
+    {
+        const F32 remaining = mHttpRetryTimer.getRemainingTimeF32();
+        const U32 remaining_ms = remaining > 0.f ? (U32)(remaining * 1000.f) : 0;
+        return llclamp(remaining_ms, DEFAULT_DELAY_MS, TIMED_WAIT_MAX_DELAY_MS);
+    }
+
+    return DEFAULT_DELAY_MS;
+}
+
+// Threads:  Ttf
+bool LLTextureFetchWorker::cancelHttpIfUnwanted()
+{
+    // A request younger than this usually finishes on its own sooner than a cancel would land.
+    static const F32 MIN_REQUEST_AGE_TO_CANCEL = 2.f;
+    // Long enough to ride out the priority reset at teleport arrival and the sweep that restores
+    // demand afterwards, so textures that are still wanted in the new region keep their request.
+    static const F32 MIN_LOW_INTEREST_TO_CANCEL = 5.f;
+
+    LLMutexLock lock(&mWorkMutex);                                      // +Mw
+
+    if (!mHttpActive || mHttpCancelRequested || LLCORE_HTTP_HANDLE_INVALID == mHttpHandle)
+    {
+        return false;
+    }
+    if (mHttpRequestTimer.getElapsedTimeF32() < MIN_REQUEST_AGE_TO_CANCEL)
+    {
+        return false;
+    }
+
+    const bool deleted = getFlags(LLWorkerClass::WCF_DELETE_REQUESTED) != 0;
+    const bool unwanted = mImagePriority < F_ALMOST_ZERO &&
+                          mLowInterestTimer.getElapsedTimeF32() >= MIN_LOW_INTEREST_TO_CANCEL;
+    if (!deleted && !unwanted)
+    {
+        return false;
+    }
+
+    // mHttpActive is only cleared by onCompleted(), which runs on this thread, so the operation
+    // behind mHttpHandle is still alive: the handle cannot have been reused for another request.
+    mHttpCancelRequested = true;
+    mFetcher->mHttpRequest->requestCancel(mHttpHandle, LLCore::HttpHandler::ptr_t());
+    LL_DEBUGS(LOG_TXT) << mID << " cancelling HTTP request nobody wants ("
+                       << (deleted ? "deleted" : "no interest") << ")" << LL_ENDL;
+    return true;
 }
 
 // Locks:  Mw
@@ -1817,6 +1907,12 @@ bool LLTextureFetchWorker::doWork(S32 param)
         }
 
         mHttpActive = true;
+        mHttpCancelRequested = false;
+        {
+            LLMutexLock active_lock(&mFetcher->mHttpActiveMutex);
+            mFetcher->mHttpActiveWorkers.insert(this);
+        }
+        mHttpRequestTimer.reset();
         mFetcher->addToHTTPQueue(mID);
         recordTextureStart(true);
         setState(WAIT_HTTP_REQ);
@@ -2293,6 +2389,10 @@ void LLTextureFetchWorker::onCompleted(LLCore::HttpHandle handle, LLCore::HttpRe
     LLMutexLock lock(&mWorkMutex);                                      // +Mw
 
     mHttpActive = false;
+    {
+        LLMutexLock active_lock(&mFetcher->mHttpActiveMutex);
+        mFetcher->mHttpActiveWorkers.erase(this);
+    }
 
     if (log_to_viewer_log || log_to_sim)
     {
@@ -3392,16 +3492,17 @@ bool LLTextureFetch::getRequestFinished(const LLUUID& id, S32& discard_level, S3
 bool LLTextureFetch::updateRequestPriority(const LLUUID& id, F32 priority)
 {
     LL_PROFILE_ZONE_SCOPED;
-    mRequestQueue.tryPost([=, this]()
-        {
-            LLTextureFetchWorker* worker = getWorker(id);
-            if (worker)
-            {
-                worker->lockWorkMutex();                                        // +Mw
-                worker->setImagePriority(priority);
-                worker->unlockWorkMutex();                                      // -Mw
-            }
-        });
+
+    // Priority changes must not wait behind the texture work queue.  During a
+    // region crossing, this is how old-region requests become abortable while
+    // current requests continue through the normal worker lifecycle.
+    LLTextureFetchWorker* worker = getWorker(id);
+    if (worker)
+    {
+        worker->lockWorkMutex();                                        // +Mw
+        worker->setImagePriority(priority);
+        worker->unlockWorkMutex();                                      // -Mw
+    }
 
     return true;
 }
@@ -3477,8 +3578,16 @@ void LLTextureFetch::commonUpdate()
         mHttpLowWater = HTTP_NONPIPE_REQUESTS_LOW_WATER;
     }
 
-    // Release waiters
-    releaseHttpWaiters();
+    // <FS:Trish> Release waiters after completions are delivered, otherwise the slots this
+    // update frees sit idle until the next frame
+    //// Release waiters
+    //releaseHttpWaiters();
+    // </FS:Trish>
+
+    // Cancel live requests whose results nobody wants, before this update delivers completions.
+    cancelUnwantedHttpRequests();
+
+    logPipelineDiagnostics();
 
     // Run a cross-thread command, if any.
     cmdDoWork();
@@ -3491,6 +3600,11 @@ void LLTextureFetch::commonUpdate()
                                << status.toString()
                                << LL_ENDL;
     }
+
+    // <FS:Trish>
+    // Release waiters
+    releaseHttpWaiters();
+    // </FS:Trish>
 }
 
 
@@ -3536,6 +3650,62 @@ size_t LLTextureFetch::update(F32 max_time_ms)
     }
 
     return res;
+}
+
+// Threads:  Ttf
+void LLTextureFetch::cancelUnwantedHttpRequests()
+{
+    LL_PROFILE_ZONE_SCOPED;
+    // Spread cancels out; each one is an operation for LLCore's thread to process.
+    static const S32 MAX_HTTP_CANCELS_PER_UPDATE = 16;
+
+    std::vector<LLTextureFetchWorker*> active;
+    {
+        LLMutexLock lock(&mHttpActiveMutex);
+        if (mHttpActiveWorkers.empty())
+        {
+            return;
+        }
+        active.assign(mHttpActiveWorkers.begin(), mHttpActiveWorkers.end());
+    }
+
+    // Safe without the set lock: removal (and so deletion) of any of these happens in
+    // onCompleted(), which is delivered by mHttpRequest->update() later in this same thread's
+    // commonUpdate().
+    S32 cancels = 0;
+    for (LLTextureFetchWorker* worker : active)
+    {
+        if (cancels >= MAX_HTTP_CANCELS_PER_UPDATE)
+        {
+            break;
+        }
+        if (worker->cancelHttpIfUnwanted())
+        {
+            ++cancels;
+        }
+    }
+}
+
+// Threads:  T*
+void LLTextureFetch::notifyRequestReady(const LLUUID& id)
+{
+    LLMutexLock lock(&mReadyMutex);
+    mReadyRequests.push_back(id);
+}
+
+// Threads:  Tmain
+void LLTextureFetch::takeReadyRequests(std::vector<LLUUID>& out)
+{
+    LLMutexLock lock(&mReadyMutex);
+    out.swap(mReadyRequests);
+    mReadyRequests.clear();
+}
+
+// Threads:  T*
+LLUUID LLTextureFetch::getAgentRegionId()
+{
+    LLMutexLock lock(&mNetworkQueueMutex);                             // +Mfnq
+    return mAgentRegionId;
 }
 
 // called in the MAIN thread after the TextureCacheThread shuts down.
@@ -4206,7 +4376,14 @@ void LLTextureFetch::releaseHttpWaiters()
     LL_PROFILE_ZONE_SCOPED;
     // Use mHttpSemaphore rather than mHTTPTextureQueue.size()
     // to avoid a lock.
-    if (mHttpSemaphore >= mHttpLowWater)
+    //
+    // Refill once an eighth of the slots are free rather than waiting for usage to fall below
+    // the low-water mark. This runs once per frame, so the old gate let up to half the pipe sit
+    // idle between refills -- most visible right after a teleport, when the waiter set is full and
+    // frames are slow. A small batch threshold still keeps the sort below from running for one
+    // slot at a time.
+    const S32 refill_batch = llmax(4, mHttpHighWater / 8);
+    if (mHttpHighWater - mHttpSemaphore < refill_batch)
         return;
     S32 needed(mHttpHighWater - mHttpSemaphore);
     if (needed <= 0)
@@ -4238,7 +4415,10 @@ void LLTextureFetch::releaseHttpWaiters()
     // ordering assumption of std::set, std::map, etc. so we
     // don't use those containers.  We use a vector and an explicit
     // sort to keep the containers valid later.
-    typedef std::vector<LLTextureFetchWorker *> worker_list_t;
+    // The main thread can change priorities while we sort. Snapshot each one
+    // under its worker lock so the comparator has a stable ordering.
+    typedef std::pair<F32, LLTextureFetchWorker*> prioritized_worker_t;
+    typedef std::vector<prioritized_worker_t> worker_list_t;
     worker_list_t tids2;
 
     tids2.reserve(tids.size());
@@ -4249,7 +4429,9 @@ void LLTextureFetch::releaseHttpWaiters()
         LLTextureFetchWorker * worker(getWorker(* iter));
         if (worker)
         {
-            tids2.push_back(worker);
+            worker->lockWorkMutex();
+            tids2.emplace_back(worker->mImagePriority, worker);
+            worker->unlockWorkMutex();
         }
         else
         {
@@ -4266,7 +4448,10 @@ void LLTextureFetch::releaseHttpWaiters()
     // Sort into priority order, if necessary and only as much as needed
     if (tids2.size() > needed)
     {
-        LLTextureFetchWorker::Compare compare;
+        auto compare = [](const prioritized_worker_t& lhs, const prioritized_worker_t& rhs)
+        {
+            return lhs.first > rhs.first;
+        };
         std::partial_sort(tids2.begin(), tids2.begin() + needed, tids2.end(), compare);
     }
 
@@ -4277,9 +4462,16 @@ void LLTextureFetch::releaseHttpWaiters()
     // has moved any worker state around....
     for (worker_list_t::iterator iter2(tids2.begin()); tids2.end() != iter2; ++iter2)
     {
-        LLTextureFetchWorker * worker(* iter2);
+        LLTextureFetchWorker* worker = iter2->second;
 
         worker->lockWorkMutex();                                        // +Mw
+        if (worker->mImagePriority < F_ALMOST_ZERO)
+        {
+            // Let doWork take its normal low-interest completion path without
+            // allocating a network slot in the meantime.
+            worker->unlockWorkMutex();
+            continue;
+        }
         if (LLTextureFetchWorker::WAIT_HTTP_RESOURCE2 != worker->mState)
         {
             // Not in expected state, remove it, try the next one
