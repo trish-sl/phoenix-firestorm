@@ -224,6 +224,13 @@ protected:
 
     std::unordered_map<LLUUID, LLPointer<LLViewerObject> > mUUIDObjectMap;
 
+    std::unordered_map<LLUUID, CachedMotionState> mCachedMotionStates;
+
+    // <FS:Trish> region handle -> local id -> time before which no new request is sent
+    std::unordered_map<U64, std::unordered_map<U32, F64>> mUnknownUpdateRequests;
+    F64 mNextUnknownUpdatePrune = 0.;
+    // </FS:Trish>
+
     //set of objects that need to update their cost
     uuid_set_t   mStaleObjectCost;
     uuid_set_t   mPendingObjectCost;

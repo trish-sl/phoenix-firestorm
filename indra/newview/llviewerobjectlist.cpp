@@ -567,6 +567,12 @@ void LLViewerObjectList::processObjectUpdate(LLMessageSystem *mesgsys,
                 {
                     LL_DEBUGS() << "update for unknown localid " << local_id << " host " << gMessageSystem->getSender() << ":" << gMessageSystem->getSenderPort() << LL_ENDL;
                     mNumUnknownUpdates++;
+                    // <FS:Trish> Requested below if updateCacheEntry() can't create it from the object cache
+                    //// Terse updates can arrive before we have a valid local-id -> UUID mapping.
+                    //// Request a full update so state (including TE/alpha changes) is recovered.
+                    //regionp->addCacheMissFull(local_id);
+                    //regionp->requestCacheMisses();
+                    // </FS:Trish>
                 }
             }
         }
@@ -653,6 +659,12 @@ void LLViewerObjectList::processObjectUpdate(LLMessageSystem *mesgsys,
                 if (update_type == OUT_TERSE_IMPROVED)
                 {
                     // LL_INFOS() << "terse update for an unknown object (compressed):" << fullid << LL_ENDL;
+                    // Recover by requesting a full object update on the next cache-miss pass.
+                    // <FS:Trish> Throttled per object, sent by the per-frame cache miss pass
+                    //regionp->addCacheMissFull(local_id);
+                    //regionp->requestCacheMisses();
+                    requestUnknownObjectUpdate(regionp, local_id);
+                    // </FS:Trish>
                     recorder.objectUpdateFailure();
                     continue;
                 }
@@ -682,6 +694,7 @@ void LLViewerObjectList::processObjectUpdate(LLMessageSystem *mesgsys,
             if (FSAssetBlacklist::getInstance()->isBlacklisted(fullid, (pcode == LL_PCODE_LEGACY_AVATAR ? LLAssetType::AT_PERSON : LLAssetType::AT_OBJECT)))
             {
                 LL_INFOS() << "Blacklisted " << (pcode == LL_PCODE_LEGACY_AVATAR ? "avatar" : "object") << " blocked." << LL_ENDL;
+                suppressUnknownObjectUpdates(regionp, local_id); // <FS:Trish/>
                 continue;
             }
 
@@ -689,6 +702,7 @@ void LLViewerObjectList::processObjectUpdate(LLMessageSystem *mesgsys,
             if (isNonFriendDerendered(fullid, pcode))
             {
                 LL_INFOS() << "Not rendering avatar " << fullid.asString() << " because it is not on the friend list" << LL_ENDL;
+                suppressUnknownObjectUpdates(regionp, local_id); // <FS:Trish/>
                 continue;
             }
             // </FS:Ansariel>
@@ -699,6 +713,7 @@ void LLViewerObjectList::processObjectUpdate(LLMessageSystem *mesgsys,
 
             if (!objectp)
             {
+                suppressUnknownObjectUpdates(regionp, local_id); // <FS:Trish/> derendered objects end up here
                 LL_INFOS() << "createObject failure for object: " << fullid << LL_ENDL;
                 recorder.objectUpdateFailure();
                 continue;
