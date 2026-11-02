@@ -109,10 +109,6 @@ void main()
 
     float shadow = 1.0f;
 
-#ifdef HAS_SUN_SHADOW
-    shadow = sampleDirectionalShadow(pos.xyz, norm.xyz, frag);
-#endif
-
 #ifdef USE_DIFFUSE_TEX
     vec4 diffuse_tap = texture(diffuseMap,vary_texcoord0.xy);
 #endif
@@ -168,6 +164,18 @@ void main()
     diffuse_srgb.rgb *= vertex_color.rgb;
     diffuse_linear.rgb = srgb_to_linear(diffuse_srgb.rgb);
 #endif // USE_VERTEX_COLOR
+
+    // After the alpha tests rather than ahead of them, so a fragment they reject does not pay
+    // for the PCF taps. The shadow maps carry no mips, so nothing here depends on derivatives.
+#ifdef HAS_SUN_SHADOW
+    // <FS:Trish> shadow only enters as min(clamp(N.L), shadow), which is 0 facing away from the light
+    //shadow = sampleDirectionalShadow(pos.xyz, norm.xyz, frag);
+    if (dot(norm.xyz, light_dir.xyz) > 0.0)
+    {
+        shadow = sampleDirectionalShadow(pos.xyz, norm.xyz, frag);
+    }
+    // </FS:Trish>
+#endif
 
     vec3 sunlit;
     vec3 amblit;
