@@ -815,6 +815,12 @@ public:
 
     //water distortion texture (refraction)
     LLRenderTarget              mWaterDis;
+    // <FS:Trish> Water scratch targets for the pack being rendered (see RenderTargetPack::waterDis)
+    LLRenderTarget& getWaterDisTarget() { return mRT == &mAuxillaryRT ? mRT->waterDis : mWaterDis; }
+    LLRenderTarget& getWaterExclusionTarget() { return mRT == &mAuxillaryRT ? mRT->waterExclusion : mWaterExclusionMask; }
+    // </FS:Trish>
+    // Optional pre-alpha depth snapshot for RLVa sphere post effect.
+    LLRenderTarget              mRlvSphereDepth;
 
     static const U32 MAX_PREVIEW_WIDTH;
     static const U32 MAX_PREVIEW_HEIGHT; // <FS:Beq/> dedicated render target for previews

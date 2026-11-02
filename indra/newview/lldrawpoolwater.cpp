@@ -120,8 +120,8 @@ void LLDrawPoolWater::beginPostDeferredPass(S32 pass)
         LLGLDepthTest depth(GL_TRUE, GL_TRUE, GL_ALWAYS);
 
         LLRenderTarget& src = gPipeline.mRT->screen;
-        LLRenderTarget& depth_src = gPipeline.mRT->deferredScreen;
-        LLRenderTarget& dst = gPipeline.mWaterDis;
+        //LLRenderTarget& dst = gPipeline.mWaterDis;
+        LLRenderTarget& dst = gPipeline.getWaterDisTarget(); // <FS:Trish/> sized to the pack being rendered
 
         dst.copyContents(src, 0, 0, src.getWidth(), src.getHeight(), 0, 0, dst.getWidth(), dst.getHeight(),
                     GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT, GL_NEAREST);
@@ -252,13 +252,15 @@ void LLDrawPoolWater::renderPostDeferred(S32 pass)
         shader->bindTexture(LLViewerShaderMgr::BUMP_MAP2, tex_b);
     }
 
-    shader->bindTexture(LLShaderMgr::WATER_EXCLUSIONTEX, &gPipeline.mWaterExclusionMask);
+    //shader->bindTexture(LLShaderMgr::WATER_EXCLUSIONTEX, &gPipeline.mWaterExclusionMask);
+    shader->bindTexture(LLShaderMgr::WATER_EXCLUSIONTEX, &gPipeline.getWaterExclusionTarget()); // <FS:Trish/>
 
     shader->uniform1f(LLShaderMgr::BLEND_FACTOR, blend_factor);
 
     F32      fog_density = pwater->getModifiedWaterFogDensity(underwater);
 
-    shader->bindTexture(LLShaderMgr::WATER_SCREENTEX, &gPipeline.mWaterDis);
+    //shader->bindTexture(LLShaderMgr::WATER_SCREENTEX, &gPipeline.mWaterDis);
+    shader->bindTexture(LLShaderMgr::WATER_SCREENTEX, &water_dis); // <FS:Trish/>
     // <FS:Beq> set but unused "fog_color"
     // if (mShaderLevel == 1)
     // {
