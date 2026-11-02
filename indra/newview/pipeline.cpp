@@ -8213,7 +8213,7 @@ void LLPipeline::applyFXAA(LLRenderTarget* src, LLRenderTarget* dst)
 
             // bake out texture2D with RGBL for FXAA shader
             mFXAAMap.bindTarget();
-            mFXAAMap.clear(GL_COLOR_BUFFER_BIT);
+            //mFXAAMap.clear(GL_COLOR_BUFFER_BIT); // <FS:Trish/> the bake writes every pixel, blend is off in renderFinalize
 
             LLGLSLShader* shader = &gGlowCombineFXAAProgram;
             shader->bind();
@@ -9541,9 +9541,11 @@ void LLPipeline::renderDeferredLighting()
                                      mShadowSpotLight[1].isNull() ? 1 : 0);
 
                 mScreenTriangleVB->setBuffer();
-                glClearColor(1, 1, 1, 1);
-                deferred_light_target->clear(GL_COLOR_BUFFER_BIT);
-                glClearColor(0, 0, 0, 0);
+                // <FS:Trish> The sun shaders write every pixel of the full screen triangle (blend off, depth always)
+                //glClearColor(1, 1, 1, 1);
+                //deferred_light_target->clear(GL_COLOR_BUFFER_BIT);
+                //glClearColor(0, 0, 0, 0);
+                // </FS:Trish>
 
                 sun_shader.uniform2f(LLShaderMgr::DEFERRED_SCREEN_RES,
                                               (GLfloat)deferred_light_target->getWidth(),
@@ -9567,9 +9569,11 @@ void LLPipeline::renderDeferredLighting()
             LL_PROFILE_GPU_ZONE("soften shadow");
             // blur lightmap
             screen_target->bindTarget();
-            glClearColor(1, 1, 1, 1);
-            screen_target->clear(GL_COLOR_BUFFER_BIT);
-            glClearColor(0, 0, 0, 0);
+            // <FS:Trish> The blur writes every pixel of the full screen triangle
+            //glClearColor(1, 1, 1, 1);
+            //screen_target->clear(GL_COLOR_BUFFER_BIT);
+            //glClearColor(0, 0, 0, 0);
+            // </FS:Trish>
 
             bindDeferredShader(gDeferredBlurLightProgram);
 
@@ -9625,7 +9629,13 @@ void LLPipeline::renderDeferredLighting()
         screen_target->bindTarget();
         // clear color buffer here - zeroing alpha (glow) is important or it will accumulate against sky
         glClearColor(0, 0, 0, 0);
-        screen_target->clear(GL_COLOR_BUFFER_BIT);
+        // <FS:Trish> softenLight writes every pixel including alpha = 0, only clear when it doesn't run
+        //screen_target->clear(GL_COLOR_BUFFER_BIT);
+        if (!RenderDeferredAtmospheric)
+        {
+            screen_target->clear(GL_COLOR_BUFFER_BIT);
+        }
+        // </FS:Trish>
 
         if (RenderDeferredAtmospheric)
         {  // apply sunlight contribution
