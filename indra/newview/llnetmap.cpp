@@ -742,7 +742,15 @@ void LLNetMap::draw()
 
             // <FS:CR>
             //LLColor4 color = LLAvatarActions::isFriend(uuid) ? map_avatar_friend_color : map_avatar_color;
-            LLColor4 color = getAvatarColor(uuid);
+            // <FS:Trish>
+            //LLColor4 color = getAvatarColor(uuid);
+            auto [color_it, color_inserted] = mAvatarColorCache.try_emplace(uuid);
+            if (color_inserted)
+            {
+                color_it->second = getAvatarColor(uuid);
+            }
+            LLColor4 color = color_it->second;
+            // </FS:Trish>
             // </FS:CR>
 
             // <FS:Ansariel> Check for unknown Z-offset => AVATAR_UNKNOWN_Z_OFFSET
