@@ -66,6 +66,7 @@ using std::string;
 
 bool                LLViewerShaderMgr::sInitialized = false;
 bool                LLViewerShaderMgr::sSkipReload = false;
+bool                LLViewerShaderMgr::sRiggedLocalOrigin = false; // <FS:Trish/>
 
 LLVector4           gShinyOrigin;
 
@@ -875,6 +876,28 @@ std::string LLViewerShaderMgr::loadBasicShaders()
     attribs["MAX_JOINTS_PER_MESH_OBJECT"] =
         std::to_string(LLSkinningUtil::getMaxJointCount());
 
+    // Keep these choices in the global defines so shader binaries and all
+    // separately compiled skinning dependencies use the same test permutation.
+    if (gSavedSettings.getBOOL("RenderRiggedLocalOrigin"))
+    {
+        attribs["RIGGED_LOCAL_ORIGIN"] = "1";
+    }
+    if (gSavedSettings.getBOOL("RenderRiggedDirectNormals"))
+    {
+        attribs["RIGGED_DIRECT_NORMALS"] = "1";
+    }
+    const bool precise_skinning = gSavedSettings.getBOOL("RenderRiggedPreciseMath") &&
+        gGLManager.mGLSLVersionMajor >= 4;
+    attribs["SKIN_PRECISE"] = precise_skinning ? "precise" : "";
+    if (precise_skinning)
+    {
+        attribs["RIGGED_PRECISE_MATH"] = "1";
+    }
+    LL_INFOS("ShaderLoading") << "Rigged skinning tests: local origin="
+        << gSavedSettings.getBOOL("RenderRiggedLocalOrigin") << ", direct normals="
+        << gSavedSettings.getBOOL("RenderRiggedDirectNormals") << ", precise math="
+        << precise_skinning << LL_ENDL;
+
     static LLCachedControl<bool> emissive(gSavedSettings, "RenderEnableEmissiveBuffer", false);
 
     if (emissive)
@@ -929,6 +952,7 @@ std::string LLViewerShaderMgr::loadBasicShaders()
     }
 
     LLGLSLShader::sGlobalDefines = attribs;
+    sRiggedLocalOrigin = attribs.count("RIGGED_LOCAL_ORIGIN") != 0; // <FS:Trish/>
 
     // We no longer have to bind the shaders to global glhandles, they are automatically added to a map now.
     for (U32 i = 0; i < shaders.size(); i++)
