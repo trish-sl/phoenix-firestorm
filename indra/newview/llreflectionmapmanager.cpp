@@ -591,6 +591,12 @@ void LLReflectionMapManager::update()
         }
         else
         {
+            // <FS:Trish> Once every probe is complete the oldest one was re-rendered forever, one cube face every frame.
+            // Leave complete static probes alone until they reach a minimum age, sky changes reset their update time.
+            static LLCachedControl<F32> sMinRefresh(gSavedSettings, "RenderReflectionProbeMinRefresh", 10.f);
+            const bool recently_refreshed = probe->mComplete && !probe->getIsDynamic() &&
+                (gFrameTimeSeconds - probe->mLastUpdateTime) < sMinRefresh;
+            // </FS:Trish>
             if (!did_update &&
                 i < mReflectionProbeCount &&
                 (oldestProbe == nullptr ||
