@@ -1538,6 +1538,15 @@ void LLShaderMgr::initAttribsAndUniforms()
 
     llassert(mReservedUniforms.size() == LLShaderMgr::DEFERRED_SHADOW5+1);
 
+    // <Vulkanstorm> PCSS
+    mReservedUniforms.push_back("shadowDepth0");
+    mReservedUniforms.push_back("shadowDepth1");
+    mReservedUniforms.push_back("shadowDepth4");
+    mReservedUniforms.push_back("shadowDepth5");
+
+    llassert(mReservedUniforms.size() == LLShaderMgr::DEFERRED_SHADOW_DEPTH5+1);
+    // </Vulkanstorm>
+
     mReservedUniforms.push_back("positionMap");
     mReservedUniforms.push_back("diffuseRect");
     mReservedUniforms.push_back("specularRect");

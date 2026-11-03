@@ -227,6 +227,13 @@ public:
 
     void setHasMipMaps(bool hasMips) { mHasMipMaps = hasMips; }
 
+    // <Vulkanstorm> GL 3.3 sampler objects: bind a sampler object to this unit, where it
+    // overrides the bound texture's own filtering, wrap and compare state; 0 restores the
+    // texture's state. Whoever binds a sampler must bind 0 again after its pass.
+    void bindSampler(U32 sampler);
+    U32 getCurrSampler() const { return mCurrSampler; }
+    // </Vulkanstorm>
+
 protected:
     friend class LLRender;
 
@@ -234,6 +241,7 @@ protected:
     U32                 mCurrTexture;
     eTextureType        mCurrTexType;
     bool                mHasMipMaps;
+    U32                 mCurrSampler = 0; // <Vulkanstorm/> sampler object bound to this unit
 
     void debugTextureUnit(void);
 };
@@ -383,6 +391,12 @@ public:
     void resetVertexBuffer();
     void shutdown();
 
+    // <Vulkanstorm> sampler object (GL 3.3) that reads a depth texture as plain depth: compare
+    // mode off, nearest filtering, clamp to edge, whatever the texture's own state. Created on
+    // first use; 0 below GL 3.3.
+    U32 getDepthFetchSampler();
+    // </Vulkanstorm>
+
     // Refreshes renderer state to the cached values
     // Needed when the render context has changed and invalidated the current state
     void refreshState(void);
@@ -523,6 +537,7 @@ private:
     U32             mCurrTextureUnitIndex;
     bool            mCurrColorMask[4];
     F32             mLineWidth = 1.f;
+    U32             mDepthFetchSampler = 0; // <Vulkanstorm/> see getDepthFetchSampler()
 
     LLPointer<LLVertexBuffer>   mBuffer;
     LLStrider<LLVector4a>       mVerticesp;
