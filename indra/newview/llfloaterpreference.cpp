@@ -2228,6 +2228,12 @@ void LLFloaterPreference::refreshEnabledState()
 
     ctrl_shadow->setEnabled(enabled);
 
+    // <Vulkanstorm> PCSS soft shadows: only with shadows on
+    getChild<LLCheckBoxCtrl>("ShadowPCSS")->setEnabled(enabled
+        && gSavedSettings.getS32("RenderShadowDetail") > 0
+        && LLFeatureManager::getInstance()->isFeatureAvailable("RenderShadowPCSS"));
+    // </Vulkanstorm>
+
     enabled = false;
     if (!LLFeatureManager::instance().isFeatureAvailable("RenderReflectionsEnabled"))
     {
@@ -2359,6 +2365,16 @@ void LLFloaterPreference::disableUnavailableSettings()
         ctrl_shadows->setEnabled(false);
         ctrl_shadows->setValue(0);
     }
+
+    // <Vulkanstorm> PCSS soft shadows
+    if (!LLFeatureManager::getInstance()->isFeatureAvailable("RenderShadowPCSS")
+        || !LLFeatureManager::getInstance()->isFeatureAvailable("RenderShadowDetail"))
+    {
+        LLCheckBoxCtrl* ctrl_pcss = getChild<LLCheckBoxCtrl>("ShadowPCSS");
+        ctrl_pcss->setEnabled(false);
+        ctrl_pcss->setValue(false);
+    }
+    // </Vulkanstorm>
 
     // Vintage mode
     static LLCachedControl<bool> is_not_vintage(gSavedSettings, "RenderDisableVintageMode");
