@@ -145,6 +145,13 @@ void LLTexUnit::refreshState(void)
     {
         glBindTexture(GL_TEXTURE_2D, 0);
     }
+
+    // <Vulkanstorm> sampler objects
+    if (mCurrSampler)
+    {
+        glBindSampler(mIndex, mCurrSampler);
+    }
+    // </Vulkanstorm>
 }
 
 void LLTexUnit::activate(void)
@@ -844,7 +851,42 @@ void LLRender::resetVertexBuffer()
 void LLRender::shutdown()
 {
     resetVertexBuffer();
+
+    // <Vulkanstorm> sampler objects
+    if (mDepthFetchSampler)
+    {
+        glDeleteSamplers(1, &mDepthFetchSampler);
+        mDepthFetchSampler = 0;
+    }
+    // </Vulkanstorm>
 }
+
+// <Vulkanstorm> sampler objects
+U32 LLRender::getDepthFetchSampler()
+{
+    if (!mDepthFetchSampler && gGLManager.mGLVersion >= 3.29f)
+    {
+        glGenSamplers(1, &mDepthFetchSampler);
+        glSamplerParameteri(mDepthFetchSampler, GL_TEXTURE_COMPARE_MODE, GL_NONE);
+        glSamplerParameteri(mDepthFetchSampler, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glSamplerParameteri(mDepthFetchSampler, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glSamplerParameteri(mDepthFetchSampler, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glSamplerParameteri(mDepthFetchSampler, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    }
+    return mDepthFetchSampler;
+}
+
+void LLTexUnit::bindSampler(U32 sampler)
+{
+    if (mIndex < 0 || mCurrSampler == sampler)
+    {
+        return;
+    }
+    gGL.flush();
+    glBindSampler(mIndex, sampler);
+    mCurrSampler = sampler;
+}
+// </Vulkanstorm>
 
 void LLRender::refreshState(void)
 {

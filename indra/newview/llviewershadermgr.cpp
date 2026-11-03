@@ -1053,6 +1053,11 @@ std::string LLViewerShaderMgr::loadBasicShaders()
         const GLuint plain = mFragmentShaderObjects[util];
         std::map<std::string, std::string> pcss_attribs = attribs;
         pcss_attribs["PCSS_SHADOW"] = "1";
+        if (gGLManager.mGLVersion >= 3.29f)
+        {   // sampler objects (GL 3.3): plain depth reads for the blocker search; without
+            // them the PCSS build is the fixed-radius rotated PCF
+            pcss_attribs["PCSS_SHADOW_FETCH"] = "1";
+        }
         S32 level = 1;
         const GLuint pcss = loadShaderFile(util, level, GL_FRAGMENT_SHADER, &pcss_attribs, -1);
         mFragmentShaderObjects[util] = plain;

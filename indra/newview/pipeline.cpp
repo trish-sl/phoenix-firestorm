@@ -9653,6 +9653,38 @@ void LLPipeline::bindShadowMaps(LLGLSLShader& shader)
     }
 }
 
+// <Vulkanstorm> PCSS: bind (or release) shadowDepth0/1/4/5, the same depth maps as shadowMap0/1/4/5
+// on their own units with the depth fetch sampler, so the shader can read raw depth there while
+// the compare sampler stays on shadowMapN. Programs without these uniforms are left untouched.
+void LLPipeline::bindShadowDepthFetch(LLGLSLShader& shader, bool bind)
+{
+    static const S32 maps[4] = { 0, 1, 4, 5 };
+    const U32 sampler = bind ? gGL.getDepthFetchSampler() : 0;
+    for (S32 k = 0; k < 4; ++k)
+    {
+        const S32 uniform = LLShaderMgr::DEFERRED_SHADOW_DEPTH0 + k;
+        if (bind)
+        {
+            LLRenderTarget* target = maps[k] < 4 ? getSunShadowTarget(maps[k]) : getSpotShadowTarget(maps[k] - 4);
+            const S32 channel = target ? shader.enableTexture(uniform) : -1;
+            if (channel > -1)
+            {
+                gGL.getTexUnit(channel)->bind(target, true);
+                gGL.getTexUnit(channel)->bindSampler(sampler);
+            }
+        }
+        else
+        {
+            const S32 channel = shader.disableTexture(uniform);
+            if (channel > -1)
+            {
+                gGL.getTexUnit(channel)->bindSampler(0);
+            }
+        }
+    }
+}
+// </Vulkanstorm>
+
 void LLPipeline::bindDeferredShaderFast(LLGLSLShader& shader)
 {
     if (shader.mCanBindFast)
@@ -10022,6 +10054,13 @@ void LLPipeline::renderDeferredLighting()
                     const F32 sun_scale = sky ? sky->getSunScale() : 1.f;
                     sun_shader.uniform1f(LLShaderMgr::DEFERRED_SHADOW_LIGHT_SIZE, sun_angular_size * sun_scale * RenderShadowPCSSLightSize);
                 }
+                // the blocker search reads cascades 0-1 and both spot maps a second time as
+                // plain depth, through a sampler object (only the PCSS sun program has these units)
+                const bool pcss_depth_fetch = RenderShadowPCSS && !gCubeSnapshot && gGLManager.mGLVersion >= 3.29f;
+                if (pcss_depth_fetch)
+                {
+                    bindShadowDepthFetch(sun_shader, true);
+                }
                 // </Vulkanstorm>
 
                 {
@@ -10030,6 +10069,10 @@ void LLPipeline::renderDeferredLighting()
                     mScreenTriangleVB->drawArrays(LLRender::TRIANGLES, 0, 3);
                 }
 
+                if (pcss_depth_fetch)
+                {
+                    bindShadowDepthFetch(sun_shader, false); // <Vulkanstorm/> PCSS: release the units and the sampler
+                }
                 unbindDeferredShader(sun_shader);
             }
             deferred_light_target->flush();
