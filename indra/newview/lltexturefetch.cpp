@@ -2578,6 +2578,9 @@ void LLTextureFetchWorker::endWork(S32 param, bool aborted)
 void LLTextureFetchWorker::finishWork(S32 param, bool completed)
 {
     LL_PROFILE_ZONE_SCOPED;
+    // Covers aborts, which end the work item without passing through DONE.
+    mFetcher->notifyRequestReady(mID);
+
     // The following are required in case the work was aborted
     if (mCacheReadHandle != LLTextureCache::nullHandle())
     {
@@ -3309,6 +3312,33 @@ void LLTextureFetch::deleteRequest(const LLUUID& id, bool cancel)
     {
         unlockQueue();                                                  // -Mfq
     }
+}
+
+// Threads:  T*
+bool LLTextureFetch::deleteRequestIfFinished(const LLUUID& id)
+{
+    LL_PROFILE_ZONE_SCOPED;
+
+    LLTextureFetchWorker* worker = getWorker(id);
+    if (!worker)
+    {
+        return true;
+    }
+
+    worker->lockWorkMutex();                                      // +Mw
+    const bool finished = (worker->mState == LLTextureFetchWorker::DONE ||
+                           !worker->haveWork()) && !worker->mHttpActive;
+    worker->unlockWorkMutex();                                    // -Mw
+
+    if (!finished)
+    {
+        return false;
+    }
+
+    // Keep removal on the normal two-phase worker lifecycle. Do not erase the
+    // request map directly while the texture still owns the fetch state.
+    deleteRequest(id, true);
+    return true;
 }
 
 // NB:  If you change removeRequest() you should probably make
@@ -4051,6 +4081,13 @@ void LLTextureFetchWorker::setState(e_state new_state)
 
     mStateTimer.reset();
     mState = new_state;
+
+    // Decoded data is handed to the main thread from WAIT_ON_WRITE on (see getRequestFinished),
+    // and DONE is a final result either way.
+    if (new_state == WAIT_ON_WRITE || new_state == DONE)
+    {
+        mFetcher->notifyRequestReady(mID);
+    }
 }
 
 LLViewerRegion* LLTextureFetchWorker::getRegion()

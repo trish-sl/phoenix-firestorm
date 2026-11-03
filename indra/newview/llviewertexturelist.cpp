@@ -57,6 +57,7 @@
 #include "llviewerstats.h"
 #include "pipeline.h"
 #include "llappviewer.h"
+#include "llviewercamera.h" // <FS:Trish/>
 #include "llxuiparser.h"
 #include "lltracerecording.h"
 #include "llviewerdisplay.h"
@@ -1059,10 +1060,11 @@ void LLViewerTextureList::updateImageDecodePriority(LLViewerFetchedTexture* imag
                 (!on_screen && LLViewerTexture::sDesiredDiscardBias > BIAS_TRS_ON_SCREEN))
             {
                 imagep->mMaxVirtualSize = 0.f;
+                imagep->mSceneVirtualSize = 0.f;
             }
         }
 
-        imagep->addTextureStats(max_vsize);
+        imagep->updateSceneTextureStats(max_vsize);
     }
 
 #if 0
@@ -1296,6 +1298,183 @@ F32 LLViewerTextureList::updateImagesFetchTextures(F32 max_time)
 {
     LL_PROFILE_ZONE_SCOPED_CATEGORY_TEXTURE;
 
+    LLTimer timer;
+
+    // Collect results the fetcher has finished, every frame, instead of when the sweep below
+    // happens to reach each texture. updateFetch() alone is cheap -- it is the decode-priority
+    // pass (a pixel area per face) that makes the sweep slow -- and priorities do not need
+    // recomputing just to pick up data. Bounded by its own slice of the budget; leftovers carry
+    // over to the next frame rather than being dropped.
+    {
+        LL_PROFILE_ZONE_NAMED_CATEGORY_TEXTURE("vtluift - ready requests");
+        std::vector<LLUUID> ready;
+        LLAppViewer::getTextureFetch()->takeReadyRequests(ready);
+        std::vector<LLUUID> recheck;
+        recheck.swap(mReadyRequestRecheck);
+        if (!mReadyRequestBacklog.empty())
+        {
+            ready.insert(ready.begin(), mReadyRequestBacklog.begin(), mReadyRequestBacklog.end());
+            mReadyRequestBacklog.clear();
+        }
+
+        auto service = [this](const LLUUID& id, bool first_look) -> void
+        {
+            for (S32 type = TEX_LIST_STANDARD; type <= TEX_LIST_SCALE; ++type)
+            {
+                LLPointer<LLViewerFetchedTexture> imagep = findImage(id, (ETexListType)type);
+                if (imagep.notNull() && imagep->isFetching() && imagep->isInImageList())
+                {
+                    imagep->updateFetch();
+                    if (first_look && imagep->isFetching())
+                    {
+                        // Look once more next frame in case the result was not published yet.
+                        mReadyRequestRecheck.push_back(id);
+                    }
+                }
+            }
+        };
+
+        const F32 ready_budget = max_time * 0.25f;
+        size_t i = 0;
+        for (; i < recheck.size() && timer.getElapsedTimeF32() < ready_budget; ++i)
+        {
+            service(recheck[i], false);
+        }
+        for (size_t j = 0; j < ready.size(); ++j)
+        {
+            if (timer.getElapsedTimeF32() >= ready_budget)
+            {
+                mReadyRequestBacklog.assign(ready.begin() + j, ready.end());
+                break;
+            }
+            service(ready[j], true);
+        }
+    }
+
+    // <FS:Trish> Both extra lanes below only matter while something can change: the camera moved
+    // recently or textures are being fetched. Idle, they walked up to 4096 map entries every frame
+    // and recomputed priorities the regular sweep keeps current anyway.
+    static LLVector3 last_cam_origin;
+    static LLVector3 last_cam_at;
+    static F32 last_cam_view = 0.f;
+    static F32 last_cam_move_time = 0.f;
+    {
+        LLViewerCamera* cam = LLViewerCamera::getInstance();
+        if (dist_vec_squared(cam->getOrigin(), last_cam_origin) > 0.01f ||
+            cam->getAtAxis() * last_cam_at < 0.9995f ||
+            fabsf(cam->getView() - last_cam_view) > 0.001f)
+        {
+            last_cam_origin = cam->getOrigin();
+            last_cam_at = cam->getAtAxis();
+            last_cam_view = cam->getView();
+            last_cam_move_time = gFrameTimeSeconds;
+        }
+    }
+    const bool fetching = LLAppViewer::getTextureFetch()->getNumRequests() > 0;
+    const bool run_urgent_lane = fetching || gFrameTimeSeconds - last_cam_move_time < 2.f || gFrameTimeSeconds < last_cam_move_time;
+    // </FS:Trish>
+
+    // Give visible textures a small extra pass while reserving most of the
+    // budget for the complete sweep (including offscreen cleanup). This scan
+    // is cheap and bounded; it does not recalculate pixel areas for candidates.
+    std::unordered_set<LLViewerFetchedTexture*> urgent_updates;
+   const U32 scan_count = llmin((U32)mUUIDMap.size(), 2048U);
+    auto urgent_iter = mUUIDMap.upper_bound(mLastUrgentUpdateKey);
+    //for (U32 scanned = 0; scanned < scan_count && urgent_updates.size() < 32 && !mUUIDMap.empty(); ++scanned)
+    for (U32 scanned = 0; run_urgent_lane && scanned < scan_count && urgent_updates.size() < 32 && !mUUIDMap.empty(); ++scanned) // <FS:Trish/>
+    {
+        if (timer.getElapsedTimeF32() >= max_time * 0.25f)
+        {
+            break;
+        }
+        if (urgent_iter == mUUIDMap.end())
+        {
+            urgent_iter = mUUIDMap.begin();
+        }
+        mLastUrgentUpdateKey = urgent_iter->first;
+        LLPointer<LLViewerFetchedTexture> imagep = urgent_iter->second;
+
+        // Spend the urgent slots only on textures that can still improve. A visible texture
+        // already at full resolution (or a missing asset) gains nothing from an early visit, and
+        // used to fill the 32 slots in a busy view, while one that is still grey or blurry
+        // waited for the sweep. Checked before the face walk because it is cheaper.
+        if (imagep->getGLTexture() == nullptr || imagep->isMissingAsset() || imagep->getDiscardLevel() == 0)
+        {
+            ++urgent_iter;
+            continue;
+        }
+
+        bool visible = imagep->isJustBound();
+        U32 checked_faces = 0;
+        for (U32 ch = 0; !visible && ch < LLRender::NUM_TEXTURE_CHANNELS; ++ch)
+        {
+            for (S32 fi = 0; !visible && fi < imagep->getNumFaces(ch) && checked_faces < 8; ++fi)
+            {
+                ++checked_faces;
+                LLFace* face = (*imagep->getFaceList(ch))[fi];
+                visible = face && face->getDrawable() && face->getDrawable()->isVisible();
+            }
+        }
+        if (visible && imagep->getGLTexture())
+        {
+            updateImageDecodePriority(imagep);
+            if (imagep->isInImageList())
+            {
+                imagep->updateFetch();
+                urgent_updates.insert(imagep.get());
+            }
+        }
+        // Updating can erase map entries. Reacquire the iterator by key.
+        urgent_iter = mUUIDMap.upper_bound(mLastUrgentUpdateKey);
+    }
+
+    // <FS:Trish> Fetch priority refresh lane
+    // Keep the fetcher's priorities current for the textures it is actually working on. A
+    // request's priority is only re-sent when that texture's decode priority is recomputed, and
+    // the full sweep below takes seconds to come round in a busy region. Moving fast across
+    // mainland, the textures just driven past kept the priority they had up close for that long,
+    // and the waiter queue -- which is sorted by it -- kept serving them ahead of the region being
+    // entered. The fetching set is a small fraction of the list, so a cheap scan for it with its
+    // own round-robin refreshes every live request within a fraction of a second.
+    {
+        LL_PROFILE_ZONE_NAMED_CATEGORY_TEXTURE("vtluift - fetch priorities");
+        static constexpr U32 FETCH_REFRESH_SCAN_COUNT = 2048;
+        const F32 refresh_deadline = timer.getElapsedTimeF32() + max_time * 0.15f;
+        const U32 refresh_scan_count = llmin((U32)mUUIDMap.size(), FETCH_REFRESH_SCAN_COUNT);
+        auto refresh_iter = mUUIDMap.upper_bound(mLastFetchRefreshKey);
+        //for (U32 scanned = 0; scanned < refresh_scan_count && !mUUIDMap.empty(); ++scanned)
+        for (U32 scanned = 0; fetching && scanned < refresh_scan_count && !mUUIDMap.empty(); ++scanned) // <FS:Trish/> only fetching textures qualify
+        {
+            if (timer.getElapsedTimeF32() >= refresh_deadline)
+            {
+                break;
+            }
+            if (refresh_iter == mUUIDMap.end())
+            {
+                refresh_iter = mUUIDMap.begin();
+            }
+            mLastFetchRefreshKey = refresh_iter->first;
+
+            LLViewerFetchedTexture* candidate = refresh_iter->second.get();
+            if (!candidate->isFetching() || urgent_updates.count(candidate))
+            {
+                ++refresh_iter;
+                continue;
+            }
+
+            LLPointer<LLViewerFetchedTexture> imagep = refresh_iter->second;
+            updateImageDecodePriority(imagep);
+            if (imagep->isInImageList())
+            {
+                imagep->updateFetch();
+                urgent_updates.insert(imagep.get());
+            }
+            // Updating can erase map entries. Reacquire the iterator by key.
+            refresh_iter = mUUIDMap.upper_bound(mLastFetchRefreshKey);
+        }
+    }
+    // </FS:Trish>
+
     typedef std::vector<LLPointer<LLViewerFetchedTexture> > entries_list_t;
     entries_list_t entries;
 
@@ -1343,16 +1522,18 @@ F32 LLViewerTextureList::updateImagesFetchTextures(F32 max_time)
         }
     }
 
-    LLTimer timer;
-
     for (auto& imagep : entries)
     {
         mLastUpdateKey = LLTextureKey(imagep->getID(), (ETexListType)imagep->getTextureListType());
 
-        if (imagep->getNumRefs() > 1) // make sure this image hasn't been deleted before attempting to update (may happen as a side effect of some other image updating)
+        if (imagep->getNumRefs() > 1 && !urgent_updates.count(imagep.get()))
         {
             updateImageDecodePriority(imagep);
-            imagep->updateFetch();
+            // Pruning can remove the image during the priority update.
+            if (imagep->isInImageList())
+            {
+                imagep->updateFetch();
+            }
         }
 
         if (timer.getElapsedTimeF32() > max_time)
@@ -1493,6 +1674,7 @@ bool LLViewerTextureList::createUploadFile(LLPointer<LLImageRaw> raw_image,
     }
     return true;
 }
+
 
 bool LLViewerTextureList::createUploadFile(const std::string& filename,
                                          const std::string& out_filename,
@@ -2128,5 +2310,3 @@ bool LLUIImageList::initFromFile()
     }
     return true;
 }
-
-
