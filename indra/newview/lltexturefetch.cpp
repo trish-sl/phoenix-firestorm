@@ -374,6 +374,21 @@ private:
                 worker->callbackDecoded(success, error_message, raw, aux, request_id);
             }
         }
+
+        // <FS:Trish> Threads: Tid. callbackDecoded() ignores results for a worker that is gone,
+        // started another decode, or left the decode state, and none of those come back for this
+        // id, so the decode itself can be skipped.
+        virtual bool isObsolete(U32 request_id)
+        {
+            LLTextureFetchWorker* worker = mFetcher->getWorker(mID);
+            if (!worker)
+            {
+                return true;
+            }
+            LLMutexLock lock(&worker->mWorkMutex);                      // +Mw
+            return worker->mDecodeHandle != request_id || worker->mState != DECODE_IMAGE_UPDATE;
+        }                                                               // -Mw
+        // </FS:Trish>
     private:
         LLTextureFetch* mFetcher;
         LLUUID mID;
@@ -2249,10 +2264,17 @@ bool LLTextureFetchWorker::doWork(S32 param)
         // In case worked manages to request decode, be shut down,
         // then init and request decode again with first decode
         // still in progress, assign a sufficiently unique id
+        // <FS:Trish> With the fetch priority, so visible textures decode first
+        //mDecodeHandle = LLAppViewer::getImageDecodeThread()->decodeImage(mFormattedImage,
+        //                                                               discard,
+        //                                                               mNeedsAux,
+        //                                                               new DecodeResponder(mFetcher, mID, this));
         mDecodeHandle = LLAppViewer::getImageDecodeThread()->decodeImage(mFormattedImage,
                                                                        discard,
                                                                        mNeedsAux,
-                                                                       new DecodeResponder(mFetcher, mID, this));
+                                                                       new DecodeResponder(mFetcher, mID, this),
+                                                                       mImagePriority);
+        // </FS:Trish>
         if (mDecodeHandle == 0)
         {
             // Abort, failed to put into queue.

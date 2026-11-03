@@ -29,6 +29,9 @@
 #include "llimageworker.h"
 #include "llimagedxt.h"
 #include "threadpool.h"
+#include "llthread.h" // <FS:Trish/>
+
+#include <algorithm> // <FS:Trish/>
 
 /*--------------------------------------------------------------------------*/
 class ImageRequest
@@ -57,8 +60,11 @@ private:
     LLPointer<LLImageRaw> mDecodedImageAux;
     bool mDecodedRaw;
     bool mDecodedAux;
+    bool mObsolete = false; // <FS:Trish/> skipped, nobody waits for the result
     LLPointer<LLImageDecodeThread::Responder> mResponder;
     std::string mErrorString;};
+
+std::atomic<bool> LLImageDecodeThread::sPrioritize{ true }; // <FS:Trish/>
 
 
 //----------------------------------------------------------------------------
@@ -117,7 +123,11 @@ LLImageDecodeThread::handle_t LLImageDecodeThread::decodeImage(
     const LLPointer<LLImageFormatted>& image,
     S32 discard,
     bool needs_aux,
-    const LLPointer<LLImageDecodeThread::Responder>& responder)
+    // <FS:Trish>
+    //const LLPointer<LLImageDecodeThread::Responder>& responder)
+    const LLPointer<LLImageDecodeThread::Responder>& responder,
+    F32 priority)
+    // </FS:Trish>
 {
     LL_PROFILE_ZONE_SCOPED_CATEGORY_TEXTURE;
 
@@ -126,13 +136,16 @@ LLImageDecodeThread::handle_t LLImageDecodeThread::decodeImage(
         decode_id = ++mDecodeCount;
 
     // Instantiate the ImageRequest right in the lambda, why not?
-    bool posted = mThreadPool->getQueue().post(
+    // <FS:Trish> Through the priority queue
+    //bool posted = mThreadPool->getQueue().post(
+    bool posted = enqueue(
+    // </FS:Trish>
         [req = ImageRequest(image, discard, needs_aux, responder, decode_id)]
         () mutable
         {
             auto done = req.processRequest();
             req.finishRequest(done);
-        });
+        }, priority); // <FS:Trish/>
     if (! posted)
     {
         LL_DEBUGS() << "Tried to start decoding on shutdown" << LL_ENDL;
@@ -141,6 +154,61 @@ LLImageDecodeThread::handle_t LLImageDecodeThread::decodeImage(
 
     return decode_id;
 }
+
+// <FS:Trish>
+bool LLImageDecodeThread::postTask(std::function<void()> task, F32 priority)
+{
+    return enqueue(std::move(task), priority);
+}
+
+// Decodes ran strictly in submission order, so after a teleport or a fast move the textures in
+// front of the camera waited behind everything requested on the way there. Pending work now sits
+// in a heap and every item posted to the pool takes the most important one at the time it runs.
+bool LLImageDecodeThread::enqueue(std::function<void()> task, F32 priority)
+{
+    if (!sPrioritize)
+    {
+        return mThreadPool->getQueue().post([task = std::move(task)]()
+            {
+                applyDecodeThreadPriority();
+                task();
+            });
+    }
+
+    auto less_important = [](const PendingTask& a, const PendingTask& b)
+    {
+        return a.mPriority != b.mPriority ? a.mPriority < b.mPriority : a.mSeq > b.mSeq;
+    };
+    {
+        std::lock_guard<std::mutex> lock(mPendingMutex);
+        mPending.push_back({ priority, mPendingSeq++, std::move(task) });
+        std::push_heap(mPending.begin(), mPending.end(), less_important);
+    }
+    return mThreadPool->getQueue().post([this]() { runNext(); });
+}
+
+void LLImageDecodeThread::runNext()
+{
+    applyDecodeThreadPriority();
+
+    auto less_important = [](const PendingTask& a, const PendingTask& b)
+    {
+        return a.mPriority != b.mPriority ? a.mPriority < b.mPriority : a.mSeq > b.mSeq;
+    };
+    std::function<void()> task;
+    {
+        std::lock_guard<std::mutex> lock(mPendingMutex);
+        if (mPending.empty())
+        {
+            return;
+        }
+        std::pop_heap(mPending.begin(), mPending.end(), less_important);
+        task = std::move(mPending.back().mTask);
+        mPending.pop_back();
+    }
+    task();
+}
+// </FS:Trish>
 
 void LLImageDecodeThread::shutdown()
 {
@@ -185,6 +253,16 @@ bool ImageRequest::processRequest()
 
     if (mFormattedImage.isNull())
         return true;
+
+    // <FS:Trish> The texture moved on (new request, aborted, gone): don't spend a decode on it.
+    // finishRequest() still reports, as a failure, which the requester ignores for a stale id.
+    if (mResponder.notNull() && mResponder->isObsolete(mRequestId))
+    {
+        mObsolete = true;
+        mErrorString = "obsolete";
+        return true;
+    }
+    // </FS:Trish>
 
     const F32 decode_time_slice = 0.f; //disable time slicing
     bool done = true;
