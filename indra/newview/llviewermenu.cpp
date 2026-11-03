@@ -166,6 +166,12 @@
 // Firestorm includes
 #include "fsfloateravataralign.h" // <FS:Chanayane> Compass floater
 #include "fsassetblacklist.h"
+#include "fsparcelderender.h" // <FS:Trish/> Parcel derender
+// <FS:Trish> Hide UI fully
+#include "llchannelmanager.h"
+#include "llhudnametag.h"
+#include "llhudtext.h"
+// </FS:Trish>
 #include "fsdata.h"
 #include "fslslbridge.h"
 #include "fscommon.h"
@@ -3472,6 +3478,25 @@ class LLObjectDerender : public view_listener_t
 };
 // </FS:Ansariel>
 
+// <FS:Trish> Parcel derender, the parameter "permanent" also blacklists it
+class FSLandDerender : public view_listener_t
+{
+    bool handleEvent(const LLSD& userdata)
+    {
+        FSParcelDerender::instance().derenderSelectedParcel(userdata.asString() == "permanent");
+        return true;
+    }
+};
+
+class FSLandEnableDerender : public view_listener_t
+{
+    bool handleEvent(const LLSD& userdata)
+    {
+        return FSParcelDerender::instance().canDerenderSelectedParcel();
+    }
+};
+// </FS:Trish>
+
 // <FS:CR> FIRE-10082 - Don't enable derendering own attachments when RLVa is enabled
 bool enable_derender_object()
 {
@@ -6084,7 +6109,11 @@ class LLViewToggleUI : public view_listener_t
             substitutions["SHORTCUT"] = "Alt+Shift+U";
             // </FS:Ansariel>
             params.substitutions = substitutions;
-            if (!gSavedSettings.getBOOL("HideUIControls"))
+            // <FS:Trish> Hiding fully doesn't ask first
+            //if (!gSavedSettings.getBOOL("HideUIControls"))
+            static LLCachedControl<bool> hide_ui_fully(gSavedSettings, "FSHideUIFully");
+            if (!gSavedSettings.getBOOL("HideUIControls") && !hide_ui_fully)
+            // </FS:Trish>
             {
                 // hiding, so show notification
                 LLNotifications::instance().add(params);
@@ -6106,8 +6135,44 @@ class LLViewToggleUI : public view_listener_t
             gViewerWindow->setUIVisibility(gSavedSettings.getBOOL("HideUIControls"));
             LLPanelStandStopFlying::getInstance()->setVisible(gSavedSettings.getBOOL("HideUIControls"));
             gSavedSettings.setBOOL("HideUIControls",!gSavedSettings.getBOOL("HideUIControls"));
+            hideUIExtras(gSavedSettings.getBOOL("HideUIControls")); // <FS:Trish/> Hide fully
         }
     }
+
+    // <FS:Trish> Hide fully, HUDs, name tags, hover text and toasts go with the UI.
+    // Whatever was visible before comes back, even if the option was turned off meanwhile.
+    static void hideUIExtras(bool hide)
+    {
+        static bool hidden = false;
+        static bool huds_shown = true;
+        static LLCachedControl<bool> hide_ui_fully(gSavedSettings, "FSHideUIFully");
+
+        if (hide == hidden || (hide && !hide_ui_fully))
+        {
+            return;
+        }
+        hidden = hide;
+
+        if (hide)
+        {
+            huds_shown = LLPipeline::sShowHUDAttachments;
+            // RLVa: locked HUDs stay visible
+            if (!rlv_handler_t::isEnabled() || !gRlvAttachmentLocks.hasLockedHUD())
+            {
+                LLPipeline::sShowHUDAttachments = false;
+            }
+        }
+        else
+        {
+            LLPipeline::sShowHUDAttachments = huds_shown;
+        }
+
+        LLHUDNameTag::setDisplayText(!hide);
+        LLHUDText::setDisplayText(!hide);
+        // Do not disturb mutes them as well
+        LLNotificationsUI::LLChannelManager::getInstance()->muteAllChannels(hide || gAgent.isDoNotDisturb());
+    }
+    // </FS:Trish>
 };
 
 // <FS:Ansariel> Notification not showing if hiding the UI
@@ -13643,6 +13708,10 @@ void initialize_menus()
     view_listener_t::addMenu(new LLLandCanSit(), "Land.CanSit");
     view_listener_t::addMenu(new LLLandBuyPass(), "Land.BuyPass");
     view_listener_t::addMenu(new LLLandEdit(), "Land.Edit");
+    // <FS:Trish> Parcel derender
+    view_listener_t::addMenu(new FSLandDerender(), "Land.Derender");
+    view_listener_t::addMenu(new FSLandEnableDerender(), "Land.EnableDerender");
+    // </FS:Trish>
 
     // Particle muting
     view_listener_t::addMenu(new LLMuteParticle(), "Particle.Mute");
