@@ -1588,7 +1588,10 @@ bool LLVOCache::readFromCache(U64 handle, const LLUUID& id, LLVOCacheEntry::voca
 		LL_PROFILE_ZONE_NAMED_CATEGORY_NETWORK("VOCache:loadRegionObjectCache");        
         LLUUID cache_id;
         getObjectCacheFilename(handle, filename);
-        LLAPRFile apr_file(filename, APR_READ|APR_BINARY, mLocalAPRFilePoolp);
+        // <FS:Trish> Buffered, every entry is two small reads and this runs on the main thread for each region connected
+        //LLAPRFile apr_file(filename, APR_READ|APR_BINARY, mLocalAPRFilePoolp);
+        LLAPRFile apr_file(filename, APR_READ|APR_BINARY|APR_BUFFERED, mLocalAPRFilePoolp);
+        // </FS:Trish>
 
         success = check_read(&apr_file, cache_id.mData, UUID_BYTES);
 
@@ -1607,8 +1610,19 @@ bool LLVOCache::readFromCache(U64 handle, const LLUUID& id, LLVOCacheEntry::voca
 
                 if(success)
                 {
+                    // <FS:Trish> Stop at the end of the file instead of reading a garbage entry. Older
+                    // viewers stored a count that included entries they skipped writing.
+                    const S64 file_size = LLFile::size(filename);
+                    // </FS:Trish>
                     for (S32 i = 0; i < num_entries && apr_file.eof() != APR_EOF; i++)
                     {
+                        // <FS:Trish> Stop at the end of the file
+                        const S32 offset = apr_file.seek(APR_CUR, 0);
+                        if (file_size > 0 && offset >= file_size)
+                        {
+                            break;
+                        }
+                        // </FS:Trish>
                         LLPointer<LLVOCacheEntry> entry = new LLVOCacheEntry(&apr_file);
                         if (!entry->getLocalID())
                         {
@@ -1865,7 +1879,17 @@ void LLVOCache::writeToCache(U64 handle, const LLUUID& id, const LLVOCacheEntry:
 
         if(success)
         {
-            S32 num_entries = static_cast<S32>(cache_entry_map.size()); // if removal is enabled num_entries might be wrong
+            // <FS:Trish> Count only the entries that will be written, so the next read doesn't run past the end
+            //S32 num_entries = static_cast<S32>(cache_entry_map.size()); // if removal is enabled num_entries might be wrong
+            S32 num_entries = 0;
+            for (const auto& entry : cache_entry_map)
+            {
+                if (!removal_enabled || entry.second->isValid())
+                {
+                    ++num_entries;
+                }
+            }
+            // </FS:Trish>
             success = check_write(&apr_file, &num_entries, sizeof(S32));
             if (success)
             {
