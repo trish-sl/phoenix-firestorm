@@ -244,6 +244,10 @@ public:
 
     // Threads:  T*
     int getHttpWaitersCount();
+
+    // Emits a periodic, opt-in snapshot of the HTTP texture pipeline.
+    // Threads: Ttf
+    void logPipelineDiagnostics();
     // ----------------------------------
     // Stats management
 
@@ -404,6 +408,7 @@ private:
     LLCore::HttpRequest::policy_t       mHttpMetricsPolicyClass;        // T*
     S32                                 mHttpHighWater;                 // Ttf
     S32                                 mHttpLowWater;                  // Ttf
+    LLFrameTimer                        mPipelineDiagnosticsTimer;      // Ttf
 
     // We use a resource semaphore to keep HTTP requests in
     // WAIT_HTTP_RESOURCE2 if there aren't sufficient slots in the
@@ -480,4 +485,3 @@ private:
     std::map<S32, F32> mStateTimersMap;
 };
 #endif // LL_LLTEXTUREFETCH_H
-

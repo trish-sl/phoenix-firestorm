@@ -91,6 +91,12 @@ S32 LLViewerTexture::sAuxCount = 0;
 LLFrameTimer LLViewerTexture::sEvaluationTimer;
 F32 LLViewerTexture::sDesiredDiscardBias = 0.f;
 U32 LLViewerTexture::sBiasTexturesUpdated = 0;
+// <FS:Trish>
+F32 LLViewerTexture::sVRAMUsedMegabytes = 0.f;
+F32 LLViewerTexture::sVRAMTargetMegabytes = 0.f;
+bool LLViewerTexture::sSystemMemoryLow = false;
+S32 LLViewerTexture::sVRAMLiveFreeMegabytes = -1;
+// </FS:Trish>
 
 S32 LLViewerTexture::sMaxSculptRez = 128; //max sculpt image size
 constexpr S32 MAX_CACHED_RAW_IMAGE_AREA = 64 * 64;
@@ -551,6 +557,12 @@ void LLViewerTexture::updateClass()
 
     bool is_sys_low = isSystemMemoryLow();
     bool is_low = is_sys_low || over_pct > 0.f;
+
+    // <FS:Trish>
+    sVRAMUsedMegabytes = used;
+    sVRAMTargetMegabytes = target;
+    sSystemMemoryLow = is_sys_low;
+    // </FS:Trish>
 
     static bool was_low = false;
 

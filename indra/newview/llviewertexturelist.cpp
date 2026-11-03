@@ -902,6 +902,26 @@ void LLViewerTextureList::updateImages(F32 max_time)
     }
 
     updateImagesUpdateStats();
+
+    static LLCachedControl<bool> diagnostics_enabled(gSavedSettings, "TextureFetchPipelineDiagnostics", false);
+    static LLFrameTimer diagnostics_timer;
+    if (diagnostics_enabled && diagnostics_timer.getElapsedTimeF32() >= 5.f)
+    {
+        diagnostics_timer.reset();
+        LL_INFOS("Texture") << "Texture list: textures=" << mUUIDMap.size()
+                            << " create_queue=" << mCreateTextureList.size()
+                            << " downscale_queue=" << mDownScaleQueue.size()
+                            << " ready_backlog=" << mReadyRequestBacklog.size()
+                            << " budget_ms=" << max_time * 1000.f
+                            << " discard_bias=" << LLViewerTexture::sDesiredDiscardBias
+                            // <FS:Trish> What the bias is reacting to
+                            << " vram_used_mb=" << LLViewerTexture::sVRAMUsedMegabytes
+                            << " vram_target_mb=" << LLViewerTexture::sVRAMTargetMegabytes
+                            << " gpu_free_mb=" << LLViewerTexture::sVRAMLiveFreeMegabytes
+                            << " sys_mem_low=" << LLViewerTexture::sSystemMemoryLow
+                            // </FS:Trish>
+                            << LL_ENDL;
+    }
 }
 
 void LLViewerTextureList::clearFetchingRequests()
