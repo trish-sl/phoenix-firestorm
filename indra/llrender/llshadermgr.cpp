@@ -241,7 +241,11 @@ bool LLShaderMgr::attachShaderFeatures(LLGLSLShader * shader)
 
     if (features->hasShadows)
     {
-        if (!shader->attachFragmentObject("deferred/shadowUtil.glsl"))
+        // <Vulkanstorm> a program with the PCSS_SHADOW permutation takes the PCSS build of
+        // shadowUtil.glsl (compiled by the viewer's basic shaders under its own key)
+        const char* shadow_util = shader->mDefines.count("PCSS_SHADOW") ? PCSS_SHADOW_UTIL_KEY : "deferred/shadowUtil.glsl";
+        if (!shader->attachFragmentObject(shadow_util))
+        // </Vulkanstorm>
         {
             return false;
         }
@@ -1494,8 +1498,9 @@ void LLShaderMgr::initAttribsAndUniforms()
     mReservedUniforms.push_back("depth_cutoff");
     mReservedUniforms.push_back("norm_cutoff");
     mReservedUniforms.push_back("shadow_target_width");
+    mReservedUniforms.push_back("shadow_light_size"); // <Vulkanstorm/> PCSS
 
-    llassert(mReservedUniforms.size() == LLShaderMgr::DEFERRED_SHADOW_TARGET_WIDTH + 1);
+    llassert(mReservedUniforms.size() == LLShaderMgr::DEFERRED_SHADOW_LIGHT_SIZE + 1);
 
     mReservedUniforms.push_back("iterationCount");
     mReservedUniforms.push_back("rayStep");
