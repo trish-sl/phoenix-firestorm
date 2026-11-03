@@ -63,6 +63,31 @@ private:
 
 //----------------------------------------------------------------------------
 
+// <FS:Trish> Decode thread scheduling priority
+namespace
+{
+    std::atomic<bool> sDecodeInBackground{ false };
+    // What the current pool thread last applied, so the priority call only happens on a change
+    thread_local bool tAppliedBackground = false;
+
+    void applyDecodeThreadPriority()
+    {
+        const bool background = sDecodeInBackground;
+        if (background != tAppliedBackground)
+        {
+            LLThread::setCurrentThreadBackground(background);
+            tAppliedBackground = background;
+        }
+    }
+}
+
+//static
+void LLImageDecodeThread::setBackgroundPriority(bool background)
+{
+    sDecodeInBackground = background;
+}
+// </FS:Trish>
+
 // MAIN THREAD
 LLImageDecodeThread::LLImageDecodeThread(bool /*threaded*/)
     : mDecodeCount(0)
