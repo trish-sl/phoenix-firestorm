@@ -10035,7 +10035,16 @@ void LLPipeline::renderDeferredLighting()
             deferred_light_target->flush();
         }
 
-        if (RenderDeferredSSAO && !gCubeSnapshot && RenderShadowBlurSize != 0.f)
+        // <Vulkanstorm> PCSS: the blur is the denoiser of the rotated shadow kernel, so it runs
+        // without SSAO too, and a blur size of 0 skips both passes. Unchanged with PCSS off.
+        const bool pcss_shadows = RenderShadowPCSS && RenderShadowDetail > 0;
+        // <FS:Trish> Keep the existing blur size 0 skip with PCSS off as well
+        //const bool blur_light_map = pcss_shadows ? RenderShadowBlurSize > 0.f : RenderDeferredSSAO;
+        //if (RenderDeferredSSAO && !gCubeSnapshot && RenderShadowBlurSize != 0.f)
+        const bool blur_light_map = (pcss_shadows || RenderDeferredSSAO) && RenderShadowBlurSize != 0.f;
+        // </FS:Trish>
+        if (blur_light_map && !gCubeSnapshot)
+        // </Vulkanstorm>
         {
             // soften direct lighting lightmap
             LL_PROFILE_ZONE_NAMED_CATEGORY_PIPELINE("renderDeferredLighting - soften shadow");
