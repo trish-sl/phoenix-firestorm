@@ -139,6 +139,7 @@ class LLAudioBufferOpenAL : public LLAudioBuffer{
 
         bool loadWAV(const std::string& filename);
         U32 getLength();
+        ELoadState getLoadState() override; // <FS:Trish/>
 
         friend class LLAudioChannelOpenAL;
     protected:
@@ -146,6 +147,13 @@ class LLAudioBufferOpenAL : public LLAudioBuffer{
         ALuint getBuffer() {return mALBuffer;}
 
         ALuint mALBuffer;
+
+        // <FS:Trish> The file is read and parsed on a worker thread, only the copy into the
+        // OpenAL buffer happens on the main thread
+        struct LoadJob;
+        std::shared_ptr<LoadJob> mLoadJob;
+        std::string mLoadingFilename;
+        // </FS:Trish>
 };
 
 #endif
