@@ -212,6 +212,8 @@ F32 LLPipeline::CameraFocalLength;
 F32 LLPipeline::CameraFieldOfView;
 F32 LLPipeline::RenderShadowNoise;
 F32 LLPipeline::RenderShadowBlurSize;
+bool LLPipeline::RenderShadowPCSS;          // <Vulkanstorm/> PCSS
+F32 LLPipeline::RenderShadowPCSSLightSize;  // <Vulkanstorm/> PCSS
 F32 LLPipeline::RenderSSAOScale;
 U32 LLPipeline::RenderSSAOMaxScale;
 F32 LLPipeline::RenderSSAOFactor;
@@ -643,6 +645,8 @@ void LLPipeline::init()
     connectRefreshCachedSettingsSafe("CameraFieldOfView");
     connectRefreshCachedSettingsSafe("RenderShadowNoise");
     connectRefreshCachedSettingsSafe("RenderShadowBlurSize");
+    connectRefreshCachedSettingsSafe("RenderShadowPCSS");          // <Vulkanstorm/> PCSS
+    connectRefreshCachedSettingsSafe("RenderShadowPCSSLightSize"); // <Vulkanstorm/> PCSS
     connectRefreshCachedSettingsSafe("RenderSSAOScale");
     connectRefreshCachedSettingsSafe("RenderSSAOMaxScale");
     connectRefreshCachedSettingsSafe("RenderSSAOFactor");
@@ -1381,6 +1385,8 @@ void LLPipeline::refreshCachedSettings()
     CameraFieldOfView = gSavedSettings.getF32("CameraFieldOfView");
     RenderShadowNoise = gSavedSettings.getF32("RenderShadowNoise");
     RenderShadowBlurSize = gSavedSettings.getF32("RenderShadowBlurSize");
+    RenderShadowPCSS = gSavedSettings.getBOOL("RenderShadowPCSS");                    // <Vulkanstorm/> PCSS
+    RenderShadowPCSSLightSize = gSavedSettings.getF32("RenderShadowPCSSLightSize");  // <Vulkanstorm/> PCSS
     RenderSSAOScale = gSavedSettings.getF32("RenderSSAOScale");
     RenderSSAOMaxScale = gSavedSettings.getU32("RenderSSAOMaxScale");
     RenderSSAOFactor = gSavedSettings.getF32("RenderSSAOFactor");
@@ -9980,7 +9986,11 @@ void LLPipeline::renderDeferredLighting()
 
                 // The existing shadow-only variant also covers zero-strength SSAO, without
                 // adding a per-fragment branch to the normal SSAO shader.
-                const bool skip_ssao = gCubeSnapshot || (RenderDeferredSSAO && RenderSSAOFactor == 0.f);
+                // <FS:Trish> PCSS soft shadows are built into gDeferredSunProgram alone, so with them on
+                // zero-strength SSAO keeps that program (its SSAO term is then a no-op)
+                //const bool skip_ssao = gCubeSnapshot || (RenderDeferredSSAO && RenderSSAOFactor == 0.f);
+                const bool skip_ssao = gCubeSnapshot || (RenderDeferredSSAO && RenderSSAOFactor == 0.f && !(RenderShadowPCSS && RenderShadowDetail > 0));
+                // </FS:Trish>
                 LLGLSLShader& sun_shader = skip_ssao ? gDeferredSunProbeProgram : gDeferredSunProgram;
                 bindDeferredShader(sun_shader, deferred_light_target);
 
@@ -10001,6 +10011,18 @@ void LLPipeline::renderDeferredLighting()
                 sun_shader.uniform2f(LLShaderMgr::DEFERRED_SCREEN_RES,
                                               (GLfloat)deferred_light_target->getWidth(),
                                               (GLfloat)deferred_light_target->getHeight());
+
+                // <Vulkanstorm> PCSS: the shadowing light's angular size, L = 2 tan(half angle):
+                // the physical sun (0.53 degrees) times the sky's sun scale times
+                // RenderShadowPCSSLightSize; the moon uses the same size
+                if (RenderShadowPCSS && !gCubeSnapshot)
+                {
+                    static const F32 sun_angular_size = 2.f * tanf(0.5f * 0.53f * DEG_TO_RAD);
+                    LLSettingsSky::ptr_t sky = LLEnvironment::instance().getCurrentSky();
+                    const F32 sun_scale = sky ? sky->getSunScale() : 1.f;
+                    sun_shader.uniform1f(LLShaderMgr::DEFERRED_SHADOW_LIGHT_SIZE, sun_angular_size * sun_scale * RenderShadowPCSSLightSize);
+                }
+                // </Vulkanstorm>
 
                 {
                     LLGLDisable   blend(GL_BLEND);

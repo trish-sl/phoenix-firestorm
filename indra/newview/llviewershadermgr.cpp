@@ -275,6 +275,13 @@ static bool make_rigged_variant(LLGLSLShader& shader, LLGLSLShader& riggedShader
     return riggedShader.createShader();
 }
 
+// <Vulkanstorm> PCSS soft shadows: the deferred sun program's shadow filter
+static bool use_pcss_shadows()
+{
+    return gSavedSettings.getBOOL("RenderShadowPCSS") && gSavedSettings.getS32("RenderShadowDetail") > 0;
+}
+// </Vulkanstorm>
+
 static void add_common_permutations(LLGLSLShader* shader)
 {
     static LLCachedControl<bool> emissive(gSavedSettings, "RenderEnableEmissiveBuffer", false);
@@ -1036,6 +1043,27 @@ std::string LLViewerShaderMgr::loadBasicShaders()
             return shaders[i].first;
         }
     }
+
+    // <Vulkanstorm> PCSS: a second build of shadowUtil.glsl with PCSS_SHADOW defined, kept under
+    // its own key for the deferred sun program alone (LLShaderMgr::attachShaderFeatures); every
+    // other shadow consumer keeps the build above
+    if (use_pcss_shadows())
+    {
+        const std::string util = "deferred/shadowUtil.glsl";
+        const GLuint plain = mFragmentShaderObjects[util];
+        std::map<std::string, std::string> pcss_attribs = attribs;
+        pcss_attribs["PCSS_SHADOW"] = "1";
+        S32 level = 1;
+        const GLuint pcss = loadShaderFile(util, level, GL_FRAGMENT_SHADER, &pcss_attribs, -1);
+        mFragmentShaderObjects[util] = plain;
+        if (pcss == 0)
+        {
+            LL_WARNS("Shader") << "Failed to load fragment shader " << util << " with PCSS_SHADOW" << LL_ENDL;
+            return util;
+        }
+        mFragmentShaderObjects[PCSS_SHADOW_UTIL_KEY] = pcss;
+    }
+    // </Vulkanstorm>
 
     return std::string();
 }
@@ -1884,6 +1912,14 @@ bool LLViewerShaderMgr::loadShadersDeferred()
         gDeferredSunProgram.mShaderLevel = mShaderLevel[SHADER_DEFERRED];
 
         add_common_permutations(&gDeferredSunProgram);
+
+        // <Vulkanstorm> PCSS: the sun program alone (not the probe variant) filters with
+        // the PCSS build of shadowUtil.glsl
+        if (use_pcss_shadows())
+        {
+            gDeferredSunProgram.addPermutation("PCSS_SHADOW", "1");
+        }
+        // </Vulkanstorm>
 
         success = gDeferredSunProgram.createShader();
         llassert(success);
