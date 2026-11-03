@@ -23,7 +23,7 @@
      width="538">
         <panel
          follows="left|top"
-         height="1416"
+         height="1440"
          layout="topleft"
          left="0"
          name="experimental_settings"
@@ -750,6 +750,17 @@
              left="15"
              name="low_priority_texture_threads"
              tool_tip="EXPERIMENTAL. Texture decoding and caching only use CPU time the main and render threads leave free. Smoother frames while a scene loads, but loading can take longer on CPUs with few cores."
+             top_pad="4"
+             width="475" />
+            <check_box
+             control_name="FSTextureUseLiveVRAM"
+             follows="left|top"
+             height="20"
+             label="Use the video memory the driver reports for the texture budget"
+             layout="topleft"
+             left="15"
+             name="use_live_vram"
+             tool_tip="EXPERIMENTAL. On NVIDIA and AMD, textures are reduced when the GPU itself is running out of video memory, counting everything else using it, instead of using a fixed share of it. Has no effect when the texture memory limit is set manually."
              top_pad="4"
              width="475" />
         </panel>

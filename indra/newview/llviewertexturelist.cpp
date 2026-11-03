@@ -926,6 +926,7 @@ void LLViewerTextureList::updateImages(F32 max_time)
                             // <FS:Trish> What the bias is reacting to
                             << " vram_used_mb=" << LLViewerTexture::sVRAMUsedMegabytes
                             << " vram_target_mb=" << LLViewerTexture::sVRAMTargetMegabytes
+                            << " gpu_free_mb=" << LLViewerTexture::sVRAMLiveFreeMegabytes
                             << " sys_mem_low=" << LLViewerTexture::sSystemMemoryLow
                             // </FS:Trish>
                             << LL_ENDL;
