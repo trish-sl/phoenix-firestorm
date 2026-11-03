@@ -4323,6 +4323,109 @@ int LLTextureFetch::getHttpWaitersCount()
     return ret;
 }
 
+// Threads: Ttf
+void LLTextureFetch::logPipelineDiagnostics()
+{
+    static LLCachedControl<bool> diagnostics_enabled(gSavedSettings, "TextureFetchPipelineDiagnostics", false);
+    static const F32 DIAGNOSTICS_INTERVAL = 5.0f;
+
+    if (!diagnostics_enabled || mPipelineDiagnosticsTimer.getElapsedTimeF32() < DIAGNOSTICS_INTERVAL)
+    {
+        return;
+    }
+    mPipelineDiagnosticsTimer.reset();
+
+    S32 request_count = 0;
+    S32 active_http = 0;
+    S32 capability_waits = 0;
+    S32 held_capability_waits = 0;
+    S32 retrying = 0;
+    F32 oldest_http = 0.0f;
+    F32 oldest_capability_wait = 0.0f;
+    // <FS:Trish> Per-state worker counts: where a large request count is actually waiting.
+    S32 state_counts[LLTextureFetchWorker::DONE + 1] = {};
+    S32 zero_priority = 0;
+    // </FS:Trish>
+
+    // Keeping the request-map lock while inspecting a worker prevents its
+    // deletion. This method runs only on the texture-fetch thread.
+    {
+        LLMutexLock lock(&mQueueMutex);                                // +Mfq
+        request_count = static_cast<S32>(mRequestMap.size());
+        for (map_t::const_iterator iter = mRequestMap.begin(); iter != mRequestMap.end(); ++iter)
+        {
+            LLTextureFetchWorker* worker = iter->second;
+            if (!worker)
+            {
+                continue;
+            }
+
+            worker->lockWorkMutex();                                  // +Mw
+            // <FS:Trish> Per-state worker counts
+            if (worker->mState >= 0 && worker->mState <= LLTextureFetchWorker::DONE)
+            {
+                ++state_counts[worker->mState];
+            }
+            if (worker->mImagePriority < F_ALMOST_ZERO)
+            {
+                ++zero_priority;
+            }
+            // </FS:Trish>
+            if (worker->mState == LLTextureFetchWorker::WAIT_HTTP_REQ)
+            {
+                ++active_http;
+                const F32 elapsed = static_cast<F32>(worker->mHttpRequestTimer.getElapsedTimeF32());
+                oldest_http = llmax(oldest_http, elapsed);
+            }
+            if (worker->mState > LLTextureFetchWorker::CACHE_POST && !worker->mCanUseCapability && worker->mCanUseHTTP)
+            {
+                ++capability_waits;
+                const F32 elapsed = static_cast<F32>(worker->mRegionRetryTimer.getElapsedTimeF32());
+                oldest_capability_wait = llmax(oldest_capability_wait, elapsed);
+                if (worker->mHttpHasResource)
+                {
+                    ++held_capability_waits;
+                }
+            }
+            if (worker->mHttpRetryAttempt)
+            {
+                ++retrying;
+            }
+            worker->unlockWorkMutex();                                // -Mw
+        }
+    }                                                                   // -Mfq
+
+    const int waiters = getHttpWaitersCount();
+    const S32 semaphore = mHttpSemaphore;
+    LL_INFOS(LOG_TXT) << "Texture fetch pipeline: requests=" << request_count
+                      << " active_http=" << active_http
+                      << " semaphore=" << semaphore << "/" << mHttpHighWater
+                      << " waiters=" << waiters
+                      << " cap_waits=" << capability_waits
+                      << " cap_waits_holding_slots=" << held_capability_waits
+                      << " retrying=" << retrying
+                      << " oldest_http=" << oldest_http << "s"
+                      << " oldest_cap_wait=" << oldest_capability_wait << "s"
+                      << LL_ENDL;
+
+    // <FS:Trish> Per-state worker counts, plus the cache thread's backlog
+    std::ostringstream states;
+    for (S32 state = 0; state <= LLTextureFetchWorker::DONE; ++state)
+    {
+        if (state_counts[state] > 0)
+        {
+            states << " " << e_state_name[state] << "=" << state_counts[state];
+        }
+    }
+    LL_INFOS(LOG_TXT) << "Texture fetch states:" << states.str()
+                      << " | zero_priority=" << zero_priority
+                      << " cache_pending_reads=" << (mTextureCache ? mTextureCache->getPendingReads() : -1)
+                      << " cache_reads=" << (mTextureCache ? mTextureCache->getNumReads() : -1)
+                      << " cache_writes=" << (mTextureCache ? mTextureCache->getNumWrites() : -1)
+                      << LL_ENDL;
+    // </FS:Trish>
+}
+
 
 // Threads:  T*
 void LLTextureFetch::updateStateStats(U32 cache_read, U32 cache_write, U32 res_wait)
@@ -4649,4 +4752,3 @@ void LLTextureFetchTester::updateStats(const std::map<S32, F32> state_timers, co
     mSkippedStatesTime = skipped_states_time;
     outputTestResults();
 }
-
