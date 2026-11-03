@@ -90,6 +90,7 @@
 #include <iterator>
 #include <tuple> // <FS:Beq/> FIRE-30694 DeadObject Spamming cleanup
 #include "fsassetblacklist.h"
+#include "fsparcelderender.h" // <FS:Trish/> Parcel derender
 #include "fsfloaterimport.h"
 #include "fscommon.h"
 #include "llfloaterreg.h"
@@ -473,6 +474,13 @@ LLViewerObject* LLViewerObjectList::processObjectUpdateFromCache(LLVOCacheEntry*
     cached_dpp->unpackU32(local_id, "LocalID");
     cached_dpp->unpackU8(pcode, "PCode");
 
+    // <FS:Trish> Parcel derender
+    if (FSParcelDerender::isObjectSuppressed(fullid))
+    {
+        return NULL;
+    }
+    // </FS:Trish>
+
     // <FS:Ansariel> Don't process derendered objects
     if (mDerendered.end() != mDerendered.find(fullid))
     {
@@ -553,6 +561,13 @@ LLViewerObject* LLViewerObjectList::processObjectUpdateFromCache(LLVOCacheEntry*
         objectp->setLastUpdateCached(true);
     }
     LLVOAvatar::setCullNeedsUpdate();
+
+    // <FS:Trish> Parcel derender
+    if (justCreated)
+    {
+        FSParcelDerender::objectCreated(objectp);
+    }
+    // </FS:Trish>
 
     return objectp;
 }
@@ -848,6 +863,14 @@ void LLViewerObjectList::processObjectUpdate(LLMessageSystem *mesgsys,
                 continue;
             }
 
+            // <FS:Trish> Parcel derender
+            if (FSParcelDerender::isObjectSuppressed(fullid))
+            {
+                suppressUnknownObjectUpdates(regionp, local_id);
+                continue;
+            }
+            // </FS:Trish>
+
             // <FS:Ansariel> FIRE-20288: Option to render friends only
             if (isNonFriendDerendered(fullid, pcode))
             {
@@ -916,6 +939,13 @@ void LLViewerObjectList::processObjectUpdate(LLMessageSystem *mesgsys,
         }
         recorder.objectUpdateEvent(update_type);
         objectp->setLastUpdateType(update_type);
+
+        // <FS:Trish> Parcel derender
+        if (justCreated)
+        {
+            FSParcelDerender::objectCreated(objectp);
+        }
+        // </FS:Trish>
     }
 
     LLVOAvatar::setCullNeedsUpdate();
@@ -2548,6 +2578,13 @@ std::vector<LLUUID> LLViewerObjectList::findMeshObjectsBySculptID(LLUUID target_
 void LLViewerObjectList::orphanize(LLViewerObject *childp, U32 parent_id, U32 ip, U32 port)
 {
     LL_DEBUGS("ORPHANS") << "Orphaning object " << childp->getID() << " with parent " << parent_id << LL_ENDL;
+
+    // <FS:Trish> Parcel derender, avatars keep what they sit on
+    if (childp->isAvatar())
+    {
+        FSParcelDerender::avatarOrphaned(childp->getRegion(), parent_id);
+    }
+    // </FS:Trish>
 
     // We're an orphan, flag things appropriately.
     childp->mOrphaned = true;
