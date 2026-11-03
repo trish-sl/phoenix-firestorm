@@ -551,6 +551,59 @@ void LLViewerTexture::updateClass()
     // can negatively impact performance, so leave 20% of a breathing room for
     // 'bias' calculation to kick in.
     F32 target = llmax(llmin(budget - 512.f, budget * 0.8f), MIN_VRAM_BUDGET);
+
+    // <FS:Trish> When the driver reports free video memory, use that instead of the estimate
+    // above. The tracked bytes miss render targets, shadow and reflection maps, driver overhead
+    // and other programs on the GPU, and how much they miss changes with the scene, window size
+    // and settings, so no fixed bias or divisor fits. Here the target is what we hold plus what
+    // is actually free, minus a reserve, so going over means the GPU itself is running out.
+    // A manually set budget (FSLimitTextureVRAMUsage) still wins.
+    //
+    // The free figure can only be trusted while the GPU isn't under pressure: once it fills up,
+    // the driver moves allocations out to system memory to keep some free, so the figure stays
+    // above the reserve while the viewer keeps loading and everything starts paging. So while
+    // there is clearly room, also measure how much of the GPU is taken by things we don't track,
+    // and under pressure take the last measurement as what is still taken. That part mostly
+    // doesn't grow with our textures, so it is kept as an amount rather than a ratio, which
+    // would shrink the target by the same factor and leave too little room after a teleport.
+    static LLCachedControl<bool> use_live_vram(gSavedSettings, "FSTextureUseLiveVRAM", false);
+    static LLCachedControl<U32> live_vram_reserve(gSavedSettings, "FSTextureVRAMReserveMB", 2048);
+    static LLFrameTimer live_vram_timer;
+    static S32 live_vram_free = -1;
+    static F32 live_vram_untracked = -1.f; // GPU MB in use outside of what we track, measured without pressure
+    if (use_live_vram && !max_vram_budget_enabled)
+    {
+        // The query is cheap, but the answer only needs to keep up with the bias ramp
+        if (live_vram_free < 0 || live_vram_timer.getElapsedTimeF32() > 1.f)
+        {
+            live_vram_free = gGLManager.getAvailableVRAMMegabytes();
+            live_vram_timer.reset();
+        }
+        if (live_vram_free >= 0)
+        {
+            used = (F32)ll_round((LLImageGL::getTextureBytesAllocated() + LLVertexBuffer::getBytesAllocated()) / 1024.0 / 1024.0);
+            const F32 reserve = (F32)live_vram_reserve();
+            const F32 total = (F32)(gGLManager.mVRAMDetected > 0 ? gGLManager.mVRAMDetected : (S32)gGLManager.mVRAM);
+            if ((F32)live_vram_free > 2.f * reserve && total > (F32)live_vram_free)
+            {
+                live_vram_untracked = llmax(total - (F32)live_vram_free - used, 0.f);
+            }
+            target = used + (F32)live_vram_free - reserve;
+            if (live_vram_untracked >= 0.f)
+            {
+                target = llmin(target, total - reserve - live_vram_untracked);
+            }
+            target = llmax(target, MIN_VRAM_BUDGET);
+        }
+    }
+    else
+    {
+        live_vram_free = -1;
+        live_vram_untracked = -1.f;
+    }
+    sVRAMLiveFreeMegabytes = live_vram_free;
+    // </FS:Trish>
+
     sFreeVRAMMegabytes = llmax(target - used, 0.f);
 
     F32 over_pct = (used - target) / target;
