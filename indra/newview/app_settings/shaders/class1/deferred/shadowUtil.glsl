@@ -221,7 +221,30 @@ float pcssEdgeScale(vec2 uv, vec2 extent, vec2 texel)
     return clamp(min(room.x / extent.x, room.y / extent.y), 0.0, 1.0);
 }
 
-// 12 rotated Poisson taps through the compare sampler (each tap a hardware 2x2 PCF).
+// the kernel's per pixel rotation (cos, sin)
+vec2 pcssRotation()
+{
+    float angle = 6.28318531 * pcssNoise(gl_FragCoord.xy);
+    return vec2(cos(angle), sin(angle));
+}
+
+// 12 rotated Poisson taps through the compare sampler (each tap a hardware 2x2 PCF) over an
+// ellipse of half axes extent (uv). c: divided position with the constant bias already added
+// to its depth; grad: |receiver plane gradient|.
+float pcssPCF(sampler2DShadow shadowMap, vec3 c, vec2 grad, vec2 extent, vec2 rot)
+{
+    float shadow = 0.0;
+    for (int i = 0; i < PCSS_PCF_TAPS; ++i)
+    {
+        vec2 p = pcss_poisson12[i];
+        vec2 off = vec2(rot.x * p.x - rot.y * p.y, rot.y * p.x + rot.x * p.y) * extent;
+        float rpdb = min(dot(grad, abs(off)), PCSS_RPDB_MAX);
+        shadow += texture(shadowMap, vec3(c.xy + off, c.z - rpdb));
+    }
+    return shadow * (1.0 / float(PCSS_PCF_TAPS));
+}
+
+// Fixed radius rotated PCF (stage 1): cascades 2-3, and everything without PCSS_SHADOW_FETCH.
 // stc: projected, not yet divided; z_bias: the constant bias added to the reference depth.
 float pcssPoissonPCF(sampler2DShadow shadowMap, mat4 m, vec4 stc, vec3 pos, vec3 norm, float z_bias, vec2 res)
 {
@@ -233,20 +256,158 @@ float pcssPoissonPCF(sampler2DShadow shadowMap, mat4 m, vec4 stc, vec3 pos, vec3
     vec2 extent = PCSS_PCF_RADIUS * texel;
     extent *= pcssEdgeScale(stc.xy, extent, texel);
 
-    float angle = 6.28318531 * pcssNoise(gl_FragCoord.xy);
-    float ca = cos(angle);
-    float sa = sin(angle);
+    return pcssPCF(shadowMap, stc.xyz, grad, extent, pcssRotation());
+}
 
-    float shadow = 0.0;
+#if defined(PCSS_SHADOW_FETCH)
+// Stage 2, contact hardening (sun cascades 0-1 and the spot shadows): a blocker search through a
+// plain depth read of the same map (shadowDepthN, bound with a GL 3.3 sampler object that has
+// compare mode off), then a penumbra from the blockers' distance and the light's size, then the
+// rotated PCF above with that radius.
+#if defined(SUN_SHADOW)
+uniform sampler2D shadowDepth0;
+uniform sampler2D shadowDepth1;
+#endif
+#if defined(SPOT_SHADOW)
+uniform sampler2D shadowDepth4;
+uniform sampler2D shadowDepth5;
+#endif
+
+#define PCSS_BLOCKER_DIST0     4.0   // metres: farthest blocker that softens cascade 0
+#define PCSS_BLOCKER_DIST1     8.0   // metres: the same for cascade 1
+#define PCSS_BLOCKER_DIST_SPOT 4.0   // metres: the same for the spot shadows
+#define PCSS_SPOT_LIGHT_SIZE   0.15  // metres: width of a projector's emitter
+#define PCSS_PCF_RADIUS_MIN    1.0   // texels: narrowest PCF (contact)
+#define PCSS_PCF_RADIUS_MAX    12.0  // texels at shadow resolution scale 1: widest PCF and search
+#define PCSS_SEARCH_RADIUS_MIN 2.0   // texels: narrowest blocker search
+#define PCSS_SCALE_STEP        0.25  // metres: step that measures the map's scale at the pixel
+
+// texture space position (uv, depth) of a view space point
+vec3 pcssProject(mat4 m, vec3 p)
+{
+    vec4 s = m * vec4(p, 1.0);
+    return s.xyz / s.w;
+}
+
+// uv per metre, per map axis, across the light ray dir at pos (c: pos projected): the bounding
+// box of the image of a unit disc perpendicular to the ray, so right for warped and perspective maps
+vec2 pcssUVScale(mat4 m, vec3 pos, vec3 c, vec3 dir)
+{
+    vec3 t1 = normalize(cross(dir, abs(dir.x) < 0.9 ? vec3(1.0, 0.0, 0.0) : vec3(0.0, 1.0, 0.0)));
+    vec3 t2 = cross(dir, t1);
+    vec2 a = (pcssProject(m, pos + t1 * PCSS_SCALE_STEP).xy - c.xy) / PCSS_SCALE_STEP;
+    vec2 b = (pcssProject(m, pos + t2 * PCSS_SCALE_STEP).xy - c.xy) / PCSS_SCALE_STEP;
+    return vec2(length(vec2(a.x, b.x)), length(vec2(a.y, b.y)));
+}
+
+// the map's resolution scale (RenderShadowResolutionScale): its width over the screen's
+float pcssResScale(vec2 res)
+{
+    return max(res.x / screen_res.x, 1.0);
+}
+
+vec2 pcssClampExtent(vec2 extent, vec2 texel, float lo, float hi)
+{
+    return clamp(extent, texel * lo, texel * hi);
+}
+
+// mean raw depth of the blockers within the search ellipse (half axes extent, uv), -1 if none:
+// texels nearer the light than the receiver plane at the tap, less the bias
+float pcssBlockerDepth(sampler2D depthMap, vec3 c, float z_bias, vec2 grad, vec2 extent, vec2 rot)
+{
+    float sum = 0.0;
+    float count = 0.0;
     for (int i = 0; i < PCSS_PCF_TAPS; ++i)
     {
         vec2 p = pcss_poisson12[i];
-        vec2 off = vec2(ca * p.x - sa * p.y, sa * p.x + ca * p.y) * extent;
-        float rpdb = min(dot(grad, abs(off)), PCSS_RPDB_MAX);
-        shadow += texture(shadowMap, vec3(stc.xy + off, stc.z - rpdb));
+        vec2 off = vec2(rot.x * p.x - rot.y * p.y, rot.y * p.x + rot.x * p.y) * extent;
+        float d = texture(depthMap, c.xy + off).r;
+        if (d < c.z + z_bias - min(dot(grad, abs(off)), PCSS_RPDB_MAX))
+        {
+            sum += d;
+            count += 1.0;
+        }
     }
-    return shadow * (1.0 / float(PCSS_PCF_TAPS));
+    return count > 0.0 ? sum / count : -1.0;
 }
+
+// Sun cascade with contact hardening. light_dir: towards the light; d_max: farthest blocker.
+// Penumbra (full width, metres on the receiver) = blocker distance * light size; the PCF disc
+// takes that width as its diameter, which gives a disc light's edge profile.
+float pcssSunContactShadow(sampler2DShadow shadowMap, sampler2D depthMap, mat4 m, vec4 stc, vec3 pos, vec3 norm, vec3 light_dir, float d_max)
+{
+    vec3 c = stc.xyz / stc.w;
+    vec2 grad = abs(pcssDepthGradient(m, pos, norm, c));
+    float z_bias = shadow_bias * 2.0;
+    vec2 texel = 1.0 / shadow_res;
+    float r_max = PCSS_PCF_RADIUS_MAX * pcssResScale(shadow_res);
+    vec2 rot = pcssRotation();
+
+    vec2 s_uv = pcssUVScale(m, pos, c, light_dir);
+    float s_z = abs(pcssProject(m, pos + light_dir * PCSS_SCALE_STEP).z - c.z) / PCSS_SCALE_STEP;
+
+    vec2 search = pcssClampExtent(s_uv * shadow_light_size * d_max, texel, PCSS_SEARCH_RADIUS_MIN, r_max);
+    search *= pcssEdgeScale(c.xy, search, texel);
+    float z_blocker = pcssBlockerDepth(depthMap, c, z_bias, grad, search, rot);
+    if (z_blocker < 0.0)
+    {
+        return 1.0; // no blocker: lit
+    }
+
+    float w_world = max(c.z - z_blocker, 0.0) / max(s_z, 1.0e-8) * shadow_light_size;
+    vec2 extent = pcssClampExtent(0.5 * w_world * s_uv, texel, PCSS_PCF_RADIUS_MIN, r_max);
+    extent *= pcssEdgeScale(c.xy, extent, texel);
+    return pcssPCF(shadowMap, vec3(c.xy, c.z + z_bias), grad, extent, rot);
+}
+
+// a projector's position in view space: the point its matrix maps to x = y = w = 0
+vec3 pcssProjectorEye(mat4 m)
+{
+    vec4 r0 = vec4(m[0][0], m[1][0], m[2][0], m[3][0]);
+    vec4 r1 = vec4(m[0][1], m[1][1], m[2][1], m[3][1]);
+    vec4 r3 = vec4(m[0][3], m[1][3], m[2][3], m[3][3]);
+    mat3 rows_t = mat3(r0.xyz, r1.xyz, r3.xyz); // its columns are the rows
+    return -vec3(r0.w, r1.w, r3.w) * inverse(rows_t);
+}
+
+// Spot shadow with contact hardening, the textbook perspective form: an emitter of width
+// PCSS_SPOT_LIGHT_SIZE at the projector, blockers at linear distance d_b, receiver at d_r:
+// penumbra (full width, metres on the receiver) = PCSS_SPOT_LIGHT_SIZE * (d_r - d_b) / d_b.
+float pcssSpotContactShadow(sampler2DShadow shadowMap, sampler2D depthMap, mat4 m, vec4 stc, vec3 pos, vec3 norm, float bias_scale)
+{
+    vec3 c = stc.xyz / stc.w;
+    float d_r = stc.w;                       // linear distance along the projector's axis
+    vec2 grad = abs(pcssDepthGradient(m, pos, norm, c));
+    float z_bias = spot_shadow_bias * bias_scale;
+    vec2 texel = 1.0 / proj_shadow_res;
+    float r_max = PCSS_PCF_RADIUS_MAX * pcssResScale(proj_shadow_res);
+    vec2 rot = pcssRotation();
+
+    vec3 eye = pcssProjectorEye(m);
+    vec2 s_uv = pcssUVScale(m, pos, c, normalize(eye - pos));
+    // texture z (before the divide) at the projector itself: linearises a raw depth below
+    float z_eye = m[0][2] * eye.x + m[1][2] * eye.y + m[2][2] * eye.z + m[3][2];
+
+    float d_near = max(d_r - PCSS_BLOCKER_DIST_SPOT, 0.25 * d_r);
+    vec2 search = pcssClampExtent(s_uv * PCSS_SPOT_LIGHT_SIZE * (d_r - d_near) / d_near, texel, PCSS_SEARCH_RADIUS_MIN, r_max);
+    search *= pcssEdgeScale(c.xy, search, texel);
+    float z_blocker = pcssBlockerDepth(depthMap, c, z_bias, grad, search, rot);
+    if (z_blocker < 0.0)
+    {
+        return 1.0; // no blocker: lit
+    }
+
+    // along the ray eye + s (pos - eye): w = s d_r and z = z_eye + s (stc.z - z_eye); z / w = z_blocker
+    // (z_eye and the denominator share their sign: negative for a GL style projection)
+    float denom = z_blocker * d_r - stc.z + z_eye;
+    float d_b = abs(denom) > 1.0e-7 ? z_eye * d_r / denom : d_r;
+    d_b = clamp(d_b, 1.0e-3, d_r);
+    float w_world = PCSS_SPOT_LIGHT_SIZE * (d_r - d_b) / d_b;
+    vec2 extent = pcssClampExtent(0.5 * w_world * s_uv, texel, PCSS_PCF_RADIUS_MIN, r_max);
+    extent *= pcssEdgeScale(c.xy, extent, texel);
+    return pcssPCF(shadowMap, vec3(c.xy, c.z + z_bias), grad, extent, rot);
+}
+#endif // PCSS_SHADOW_FETCH
 
 // sun cascade index (0-3): the constant bias as pcfShadow applies it, and the map's own size
 // (the far cascades can be smaller than the near ones)
@@ -336,7 +497,9 @@ float sampleDirectionalShadow(vec3 pos, vec3 norm, vec2 pos_screen)
             w -= max(spos.z-far_split.x, 0.0)/transition_domain.x;
             w -= max(near_split.y-spos.z, 0.0)/transition_domain.y;
             //w = clamp(w, 0.0, 1.0);
-#if defined(PCSS_SHADOW)
+#if defined(PCSS_SHADOW) && defined(PCSS_SHADOW_FETCH)
+            float contrib = pcssSunContactShadow(shadowMap1, shadowDepth1, shadow_matrix[1], lpos, spos.xyz, norm, light_dir, PCSS_BLOCKER_DIST1)*w;
+#elif defined(PCSS_SHADOW)
             float contrib = pcssShadow(shadowMap1, 1, lpos, spos.xyz, norm)*w;
 #else
             float contrib = pcfShadow(shadowMap1, norm, lpos, 1.0, pos_screen, light_dir, shadow_matrix[1], spos.xyz)*w;
@@ -355,7 +518,9 @@ float sampleDirectionalShadow(vec3 pos, vec3 norm, vec2 pos_screen)
             float w = 1.0;
             w -= max(near_split.x-spos.z, 0.0)/transition_domain.x;
             //w = clamp(w, 0.0, 1.0);
-#if defined(PCSS_SHADOW)
+#if defined(PCSS_SHADOW) && defined(PCSS_SHADOW_FETCH)
+            float contrib = pcssSunContactShadow(shadowMap0, shadowDepth0, shadow_matrix[0], lpos, spos.xyz, norm, light_dir, PCSS_BLOCKER_DIST0)*w;
+#elif defined(PCSS_SHADOW)
             float contrib = pcssShadow(shadowMap0, 0, lpos, spos.xyz, norm)*w;
 #else
             float contrib = pcfShadow(shadowMap0, norm, lpos, 1.0, pos_screen, light_dir, shadow_matrix[0], spos.xyz)*w;
@@ -404,7 +569,9 @@ float sampleSpotShadow(vec3 pos, vec3 norm, int index, vec2 pos_screen)
     if (index == 0)
     {
         lpos = shadow_matrix[4]*spos;
-#if defined(PCSS_SHADOW)
+#if defined(PCSS_SHADOW) && defined(PCSS_SHADOW_FETCH)
+        shadow = pcssSpotContactShadow(shadowMap4, shadowDepth4, shadow_matrix[4], lpos, spos.xyz, norm, 0.8);
+#elif defined(PCSS_SHADOW)
         shadow = pcssSpotShadow(shadowMap4, 4, lpos, spos.xyz, norm, 0.8);
 #else
         shadow = pcfSpotShadow(shadowMap4, lpos, 0.8, spos.xy);
@@ -413,7 +580,9 @@ float sampleSpotShadow(vec3 pos, vec3 norm, int index, vec2 pos_screen)
     else
     {
         lpos = shadow_matrix[5]*spos;
-#if defined(PCSS_SHADOW)
+#if defined(PCSS_SHADOW) && defined(PCSS_SHADOW_FETCH)
+        shadow = pcssSpotContactShadow(shadowMap5, shadowDepth5, shadow_matrix[5], lpos, spos.xyz, norm, 0.8);
+#elif defined(PCSS_SHADOW)
         shadow = pcssSpotShadow(shadowMap5, 5, lpos, spos.xyz, norm, 0.8);
 #else
         shadow = pcfSpotShadow(shadowMap5, lpos, 0.8, spos.xy);
