@@ -129,6 +129,11 @@ bool LLAudioEngine_OpenAL::init(void* userdata, const std::string &app_title)
     LL_INFOS() << "ALC_ENUMERATE_ALL_EXT " << (mHasEnumerateAllExt ? "supported" : "NOT supported") << LL_ENDL;
     // </FS:Ansariel>
 
+    // <FS:Trish> Output device recovery fallback
+    mDefaultDeviceSpecifier = ll_safe_string(alcGetString(nullptr,
+        mHasEnumerateAllExt ? ALC_DEFAULT_ALL_DEVICES_SPECIFIER : ALC_DEFAULT_DEVICE_SPECIFIER));
+    // </FS:Trish>
+
     if (mHasReopenExt && mHasSystemEventsExt)
     {
         mEventCallbackSOFT(&LLAudioEngine_OpenAL::onDeviceEventSOFT, this);
@@ -198,6 +203,8 @@ void LLAudioEngine_OpenAL::idle()
 {
     LLAudioEngine::idle();
 
+    pollDeviceChanges(); // <FS:Trish/> Output device recovery fallback
+
     if (mDefaultDeviceChanged)
     {
         mDefaultDeviceChanged = false;
@@ -208,6 +215,53 @@ void LLAudioEngine_OpenAL::idle()
         // </FS:Ansariel>
     }
 }
+
+// <FS:Trish> Output device recovery fallback
+// Some drivers never send the OpenAL device events, and OpenAL Soft doesn't reconnect a
+// device whose endpoint went away. Poll once a second for a lost device, or for a changed
+// system default while following it, and reuse the event path to reopen the device.
+void LLAudioEngine_OpenAL::pollDeviceChanges()
+{
+    if (!mHasReopenExt || !mALDevice || mDefaultDeviceChanged
+        || !mDeviceCheckTimer.checkExpirationAndReset(1.f)
+        || LLFrameTimer::getTotalSeconds() < mNextRecoveryTime)
+    {
+        return;
+    }
+
+    bool device_lost = false;
+    if (alcIsExtensionPresent(mALDevice, "ALC_EXT_disconnect"))
+    {
+        ALCint connected = ALC_TRUE;
+        alcGetIntegerv(mALDevice, ALC_CONNECTED, 1, &connected);
+        device_lost = (connected == ALC_FALSE);
+    }
+
+    const std::string current_default = ll_safe_string(alcGetString(nullptr,
+        mHasEnumerateAllExt ? ALC_DEFAULT_ALL_DEVICES_SPECIFIER : ALC_DEFAULT_DEVICE_SPECIFIER));
+    const bool default_changed = mSelectedDeviceUUID.isNull() && !current_default.empty()
+        && current_default != mDefaultDeviceSpecifier;
+
+    if (device_lost || default_changed)
+    {
+        LL_INFOS("OpenAL") << (device_lost ? "Output device disconnected" : "Default output device changed")
+                           << " (" << mDefaultDeviceSpecifier << " -> " << current_default << "), reopening" << LL_ENDL;
+        mDefaultDeviceSpecifier = current_default;
+        mDefaultDeviceChanged = true;
+        // Don't retrigger every second if the reopen keeps failing
+        mNextRecoveryTime = LLFrameTimer::getTotalSeconds() + 5.0;
+    }
+}
+
+void LLAudioChannelOpenAL::resumeAfterDeviceReopen()
+{
+    // OpenAL Soft stops every source when the device disconnects
+    if (mCurrentSourcep && !isWaiting() && !isPlaying())
+    {
+        play();
+    }
+}
+// </FS:Trish>
 
 // static
 void ALC_APIENTRY LLAudioEngine_OpenAL::onDeviceEventSOFT(ALCenum eventType, ALCenum deviceType,
@@ -774,6 +828,16 @@ void LLAudioEngine_OpenAL::changeDevice()
     if (mReopenDeviceSOFT(mALDevice, device_name.has_value() ? device_name.value().c_str() : nullptr, nullptr))
     {
         alcMakeContextCurrent(mALContext);
+
+        // <FS:Trish> Output device recovery fallback: restart sounds stopped by a disconnect
+        for (LLAudioChannel* channel : mChannels)
+        {
+            if (LLAudioChannelOpenAL* openal_channel = dynamic_cast<LLAudioChannelOpenAL*>(channel))
+            {
+                openal_channel->resumeAfterDeviceReopen();
+            }
+        }
+        // </FS:Trish>
     }
     else
     {
