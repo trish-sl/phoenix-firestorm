@@ -110,6 +110,9 @@ float pcfShadow(sampler2DShadow shadowMap, vec3 norm, vec4 stc, float bias_mul, 
 #ifdef FS_SHADOW_FAST_PCF
     // Two opposite taps agree with the centre and it is fully lit or fully shadowed: the other
     // two taps would agree too, so skip them. Only shadow edges pay for all five.
+    // The PCSS build of the sun program (PCSS_SHADOW) never calls pcfShadow, so this has no
+    // effect there: its contact hardening path has its own early-out (no blocker found: one
+    // comparison tap), and a wide penumbra can't be judged from three taps 1.5 texels apart.
     if ((cs < 0.001 || cs > 0.999) && abs(a - cs) + abs(b - cs) < 0.002)
     {
         return cs;
@@ -359,7 +362,9 @@ float pcssSunContactShadow(sampler2DShadow shadowMap, sampler2D depthMap, mat4 m
     float z_blocker = pcssBlockerDepth(depthMap, c, z_bias, grad, search, rot);
     if (z_blocker < 0.0)
     {
-        return 1.0; // no blocker: lit
+        // no blocker in the search: one comparison tap at the centre still catches a caster
+        // thinner than the search taps' spacing inside the bilinear footprint
+        return texture(shadowMap, vec3(c.xy, c.z + z_bias));
     }
 
     float w_world = max(c.z - z_blocker, 0.0) / max(s_z, 1.0e-8) * shadow_light_size;
@@ -402,7 +407,9 @@ float pcssSpotContactShadow(sampler2DShadow shadowMap, sampler2D depthMap, mat4 
     float z_blocker = pcssBlockerDepth(depthMap, c, z_bias, grad, search, rot);
     if (z_blocker < 0.0)
     {
-        return 1.0; // no blocker: lit
+        // no blocker in the search: one comparison tap at the centre still catches a caster
+        // thinner than the search taps' spacing inside the bilinear footprint
+        return texture(shadowMap, vec3(c.xy, c.z + z_bias));
     }
 
     // along the ray eye + s (pos - eye): w = s d_r and z = z_eye + s (stc.z - z_eye); z / w = z_blocker
