@@ -315,8 +315,16 @@ vec2 pcssClampExtent(vec2 extent, vec2 texel, float lo, float hi)
 // texels nearer the light than the receiver plane at the tap, less the bias
 float pcssBlockerDepth(sampler2D depthMap, vec3 c, float z_bias, vec2 grad, vec2 extent, vec2 rot)
 {
+    // the centre first: the disk has no tap there, and a thin caster right under the
+    // receiver would otherwise slip between the taps of a wide search and read as lit
     float sum = 0.0;
     float count = 0.0;
+    float centre = texture(depthMap, c.xy).r;
+    if (centre < c.z + z_bias)
+    {
+        sum += centre;
+        count += 1.0;
+    }
     for (int i = 0; i < PCSS_PCF_TAPS; ++i)
     {
         vec2 p = pcss_poisson12[i];
