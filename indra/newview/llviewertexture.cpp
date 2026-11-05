@@ -566,8 +566,15 @@ void LLViewerTexture::updateClass()
 
     static bool was_low = false;
 
+    // <FS:Trish> Bias the viewer last ran out of memory at, 0 when none. Lowering the bias again
+    // stops a little above it while headroom is modest, otherwise the textures it lets back in
+    // fill memory, the bias rises, and the scene keeps cycling between blurry and sharp.
+    static F32 overflow_bias = 0.f;
+    // </FS:Trish>
+
     if (is_low && !was_low)
     {
+        overflow_bias = sDesiredDiscardBias; // <FS:Trish/>
         if (is_sys_low)
         {
             // Not having system memory is more serious, so discard harder
@@ -610,11 +617,35 @@ void LLViewerTexture::updateClass()
         // <FS:Beq> Improve windows memory recovery detection
         // Lower discard bias when VRAM has room and system memory has recovered.
         // // lower discard bias over time when at least 10% of budget is free
-        constexpr F32 FREE_PERCENTAGE_TRESHOLD = -0.1f;
+        // <FS:Trish> Lowering threshold is now a variable, kept below the soft zone further down
+        //constexpr F32 FREE_PERCENTAGE_TRESHOLD = -0.1f;
+        F32 FREE_PERCENTAGE_TRESHOLD = -0.1f;
+        // </FS:Trish>
         // constexpr U32 FREE_SYS_MEM_TRESHOLD = 100;
         // static LLCachedControl<U32> min_free_main_memory(gSavedSettings, "RenderMinFreeMainMemoryThreshold", 512);
         // const S32Megabytes MIN_FREE_MAIN_MEMORY(min_free_main_memory() + FREE_SYS_MEM_TRESHOLD);
         // </FS:Beq>
+
+        // <FS:Trish> Soft zone. Waiting for usage to cross the target means the bias jumps to 1.5
+        // in one go and thousands of textures get downscaled at once, which hitches. Close to the
+        // target, start raising the bias slowly instead, faster the closer usage gets, so it levels
+        // off just under the target and the overflow path is rarely reached. The bias only comes
+        // back down once usage is a little below the zone, otherwise it would rise and fall at its
+        // edge and textures would keep switching resolution.
+        static LLCachedControl<F32> soft_zone_setting(gSavedSettings, "FSTextureBiasSoftZone", 0.1f);
+        const F32 soft_zone = llclamp(soft_zone_setting(), 0.f, 0.5f);
+        if (soft_zone > 0.f)
+        {
+            FREE_PERCENTAGE_TRESHOLD = llmin(FREE_PERCENTAGE_TRESHOLD, -soft_zone - 0.05f);
+        }
+        if (soft_zone > 0.f && over_pct > -soft_zone)
+        {
+            static LLCachedControl<F32> soft_discard_increment(gSavedSettings, "RenderLowMemMinDiscardIncrement", .1f);
+            const F32 depth = (over_pct + soft_zone) / soft_zone; // 0 at the edge of the zone, 1 at the target
+            sDesiredDiscardBias += soft_discard_increment * depth * gFrameIntervalSeconds;
+        }
+        else
+        // </FS:Trish>
         if (sDesiredDiscardBias > 1.f
             && over_pct < FREE_PERCENTAGE_TRESHOLD
             // <FS:Beq> Improve windows memory recovery detection
@@ -625,7 +656,20 @@ void LLViewerTexture::updateClass()
             static LLCachedControl<F32> high_mem_discard_decrement(gSavedSettings, "RenderHighMemMinDiscardDecrement", .1f);
 
             F32 decrement = high_mem_discard_decrement - llmin(over_pct - FREE_PERCENTAGE_TRESHOLD, 0.f);
+            // <FS:Trish> Hold above the bias that last overflowed unless there is plenty of room,
+            // as after moving somewhere lighter. Once room shrinks back the hold applies from
+            // wherever the bias got to.
+            //sDesiredDiscardBias -= decrement * gFrameIntervalSeconds;
+            static LLCachedControl<F32> recovery_margin(gSavedSettings, "FSTextureBiasRecoveryMargin", 0.25f);
+            static LLCachedControl<F32> recovery_headroom(gSavedSettings, "FSTextureBiasRecoveryHeadroom", 0.3f);
+            const F32 previous_bias = sDesiredDiscardBias;
             sDesiredDiscardBias -= decrement * gFrameIntervalSeconds;
+            if (recovery_margin() > 0.f && overflow_bias > 0.f && over_pct > -recovery_headroom())
+            {
+                const F32 hold = overflow_bias + recovery_margin();
+                sDesiredDiscardBias = llmax(sDesiredDiscardBias, llmin(previous_bias, hold));
+            }
+            // </FS:Trish>
         }
     }
 
