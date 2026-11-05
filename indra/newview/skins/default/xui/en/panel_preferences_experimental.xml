@@ -23,7 +23,7 @@
      width="538">
         <panel
          follows="left|top"
-         height="1440"
+         height="1466"
          layout="topleft"
          left="0"
          name="experimental_settings"
@@ -763,6 +763,31 @@
              tool_tip="EXPERIMENTAL. On NVIDIA and AMD, textures are reduced when the GPU itself is running out of video memory, counting everything else using it, instead of using a fixed share of it. Has no effect when the texture memory limit is set manually."
              top_pad="4"
              width="475" />
+            <text
+             follows="left|top"
+             height="18"
+             layout="topleft"
+             left="35"
+             name="texture_bias_soft_zone_label"
+             tool_tip="EXPERIMENTAL. How far below the texture memory target textures start being reduced, a little at a time, so memory levels off before it runs out instead of dropping detail all at once. 0.1 starts at 90% of the target. 0 waits until the target is reached."
+             top_pad="6"
+             width="285">
+                Start reducing textures before memory is full
+            </text>
+            <spinner
+             control_name="FSTextureBiasSoftZone"
+             decimal_digits="2"
+             follows="left|top"
+             height="20"
+             increment="0.05"
+             layout="topleft"
+             left="330"
+             max_val="0.5"
+             min_val="0"
+             name="texture_bias_soft_zone"
+             tool_tip="EXPERIMENTAL. How far below the texture memory target textures start being reduced, a little at a time, so memory levels off before it runs out instead of dropping detail all at once. 0.1 starts at 90% of the target. 0 waits until the target is reached."
+             top_delta="-2"
+             width="100" />
         </panel>
     </scroll_container>
 </panel>

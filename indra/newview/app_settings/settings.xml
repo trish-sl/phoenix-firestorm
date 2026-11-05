@@ -26690,6 +26690,17 @@ Change of this parameter will affect the layout of buttons in notification toast
       <key>Value</key>
       <real>0.3</real>
     </map>
+    <key>FSTextureBiasSoftZone</key>
+    <map>
+      <key>Comment</key>
+      <string>Fraction of the texture memory target below it where the discard bias starts rising gently, so usage levels off before reaching the target instead of overflowing and dropping texture detail all at once. The bias comes back down once usage is 5% below this zone. 0 disables (0-0.5).</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>F32</string>
+      <key>Value</key>
+      <real>0.1</real>
+    </map>
     <key>FSTextureUseLiveVRAM</key>
     <map>
       <key>Comment</key>
