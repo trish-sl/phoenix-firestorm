@@ -8951,6 +8951,14 @@ void LLPipeline::renderDoF(LLRenderTarget* src, LLRenderTarget* dst)
             F32 screen_to_target_scale_factor = (F32)gViewerWindow->getWindowHeightRaw()/dst->getHeight();
             F32 adj_COF = CameraMaxCoF / screen_to_target_scale_factor;
             // </FS:Beq>
+            // <FS:Trish> Chromatic aberration can follow the depth of field's blur
+            mLensDoF.mActive = true;
+            mLensDoF.mFocalDistance = -subject_distance / 1000.f;
+            mLensDoF.mBlurConstant = blur_constant;
+            mLensDoF.mTanPixelAngle = tanf(1.f / LLDrawable::sCurPixelAngle) * screen_to_target_scale_factor;
+            mLensDoF.mMagnification = magnification;
+            mLensDoF.mMaxCoF = adj_COF;
+            // </FS:Trish>
             { // build diffuse+bloom+CoF
                 mRT->deferredLight.bindTarget();
 
@@ -9066,6 +9074,9 @@ void LLPipeline::renderFinalize()
 
     static LLCachedControl<bool> has_hdr(gSavedSettings, "RenderHDREnabled", true);
     bool hdr = gGLManager.mGLVersion > 4.05f && has_hdr();
+
+    mLensDoF.mActive = false; // <FS:Trish/> renderDoF sets it again when depth of field runs
+
     if (hdr)
     {
         copyScreenSpaceReflections(&mRT->screen, &mSceneMap);
@@ -9149,7 +9160,16 @@ void LLPipeline::renderFinalize()
 
     // <FS:Beq> Restore shader post proc for Vignette
     LLRenderTarget* auxActiveBuffer = sourceBuffer;
-    LLRenderTarget* auxTargetBuffer = RenderFSAAType ? &mRT->screen : &mPostPingMap;
+    // <FS:Trish> Use whichever ping/pong buffer isn't the source, it depends on glow and DoF
+    //LLRenderTarget* auxTargetBuffer = RenderFSAAType ? &mRT->screen : &mPostPingMap;
+    LLRenderTarget* auxTargetBuffer = RenderFSAAType ? &mRT->screen : (sourceBuffer == &mPostPingMap ? &mPostPongMap : &mPostPingMap);
+    // </FS:Trish>
+    // <FS:Trish> Lens effects, on the anti-aliased image so the aberration and grain stay crisp
+    if (renderLensEffects(auxActiveBuffer, auxTargetBuffer))
+    {
+        std::swap(auxActiveBuffer, auxTargetBuffer);
+    }
+    // </FS:Trish>
 // [RLVa:KB] - @setsphere
     if (RlvActions::hasBehaviour(RLV_BHVR_SETSPHERE))
     {
