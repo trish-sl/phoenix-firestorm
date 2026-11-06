@@ -841,6 +841,26 @@ void LLPipeline::resizeShadowTexture()
     gResizeShadowTexture = false;
 }
 
+// <FS:Trish> RenderResolutionMultiplier above 1 supersamples: the scene renders larger and the
+// final present's bilinear fetch filters it down (an exact 2x2 box at 2.0). Capped at 2 and at
+// the largest texture the GPU can allocate. Returns 1 when no scaling applies.
+static F32 fs_resolution_multiplier(U32 resX, U32 resY)
+{
+    F32 mult = LLPipeline::RenderResolutionMultiplier;
+    if (mult <= 0.f || mult == 1.f)
+    {
+        return 1.f;
+    }
+    if (mult > 1.f)
+    {
+        mult = llmin(mult, 2.f);
+        const U32 largest = llmax(llmax(resX, resY), 1u);
+        mult = llmax(1.f, llmin(mult, (F32)gGLManager.mGLMaxTextureSize / (F32)largest));
+    }
+    return mult;
+}
+// </FS:Trish>
+
 void LLPipeline::resizeScreenTexture()
 {
     if (gPipeline.shadersLoaded())
@@ -856,11 +876,18 @@ void LLPipeline::resizeScreenTexture()
             scaledResX /= RenderResolutionDivisor;
             scaledResY /= RenderResolutionDivisor;
         }
-        else if (RenderResolutionMultiplier > 0.f && RenderResolutionMultiplier < 1.f)
+        // <FS:Trish> Allow supersampling
+        //else if (RenderResolutionMultiplier > 0.f && RenderResolutionMultiplier < 1.f)
+        //{
+        //    scaledResX = (GLuint)(scaledResX * RenderResolutionMultiplier);
+        //    scaledResY = (GLuint)(scaledResY * RenderResolutionMultiplier);
+        //}
+        else if (F32 mult = fs_resolution_multiplier(resX, resY); mult != 1.f)
         {
-            scaledResX = (GLuint)(scaledResX * RenderResolutionMultiplier);
-            scaledResY = (GLuint)(scaledResY * RenderResolutionMultiplier);
+            scaledResX = (GLuint)(scaledResX * mult);
+            scaledResY = (GLuint)(scaledResY * mult);
         }
+        // </FS:Trish>
 // [/SL:KB]
 
 //      if (gResizeScreenTexture || (resX != mRT->screen.getWidth()) || (resY != mRT->screen.getHeight()))
@@ -986,11 +1013,19 @@ bool LLPipeline::allocateScreenBufferInternal(U32 resX, U32 resY)
         resY /= res_mod;
     }
 // [SL:KB] - Patch: Settings-RenderResolutionMultiplier | Checked: Catznip-5.4
-    else if (RenderResolutionMultiplier > 0.f && RenderResolutionMultiplier < 1.f)
+    // <FS:Trish> Allow supersampling
+    //else if (RenderResolutionMultiplier > 0.f && RenderResolutionMultiplier < 1.f)
+    //{
+    //    resX = (GLuint)(resX * RenderResolutionMultiplier);
+    //    resY = (GLuint)(resY * RenderResolutionMultiplier);
+    //}
+    // Reflection probe and mirror targets have fixed sizes of their own, never supersample those
+    else if (F32 mult = fs_resolution_multiplier(resX, resY); mult < 1.f || (mult > 1.f && mRT == &mMainRT))
     {
-        resX = (GLuint)(resX * RenderResolutionMultiplier);
-        resY = (GLuint)(resY * RenderResolutionMultiplier);
+        resX = (GLuint)(resX * mult);
+        resY = (GLuint)(resY * mult);
     }
+    // </FS:Trish>
 // [/SL:KB]
 
     S32 shadow_detail = RenderShadowDetail;
