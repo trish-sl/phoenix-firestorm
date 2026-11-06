@@ -192,6 +192,7 @@
 #include "llworkerthread.h"
 #include "lltexturecache.h"
 #include "lltexturefetch.h"
+#include "fsdecodedtexturecache.h" // <FS:Trish/>
 #include "llimageworker.h"
 #include "llevents.h"
 
@@ -2451,6 +2452,7 @@ bool LLAppViewer::cleanup()
     sTextureFetch->shutdown();
     sTextureCache->shutdown();
     sImageDecodeThread->shutdown();
+    FSDecodedTextureCache::instance().shutdown(); // <FS:Trish/>
     sPurgeDiskCacheThread->shutdown();
     if (mGeneralThreadPool)
     {
@@ -5754,6 +5756,11 @@ bool LLAppViewer::initCache()
 
     LLAppViewer::getTextureCache()->initCache(LL_PATH_CACHE, texture_cache_size, texture_cache_mismatch);
 
+    // <FS:Trish> Decoded texture pixels, cleared along with the texture cache
+    FSDecodedTextureCache::instance().init(gDirUtilp->getExpandedFilename(LL_PATH_CACHE, "decodedtextures"),
+                                           mPurgeCache || mPurgeTextures || texture_cache_mismatch, read_only);
+    // </FS:Trish>
+
     const U32 CACHE_NUMBER_OF_REGIONS_FOR_OBJECTS = 128;
     LLVOCache::getInstance()->initCache(LL_PATH_CACHE, CACHE_NUMBER_OF_REGIONS_FOR_OBJECTS, getObjectCacheVersion());
 
@@ -5898,6 +5905,7 @@ void LLAppViewer::purgeCacheImmediate()
 {
     LL_INFOS("AppCache") << "Purging Object Cache and Texture Cache immediately..." << LL_ENDL;
     LLAppViewer::getTextureCache()->purgeCache(LL_PATH_CACHE, false);
+    FSDecodedTextureCache::instance().clear(); // <FS:Trish/>
     if (LLVOCache::instanceExists())
     {
         LLVOCache::getInstance()->removeCache(LL_PATH_CACHE, true);
