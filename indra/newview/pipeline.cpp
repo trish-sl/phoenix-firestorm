@@ -12064,7 +12064,13 @@ void LLPipeline::generateSunShadow(LLCamera& camera)
         }
 
         near_clip    = llclamp(-max.mV[2], 0.01f, 4.0f);
-        F32 far_clip = llclamp(-min.mV[2]*2.f, 16.0f, 512.0f);
+        // <FS:Trish> How far sun shadows reach. The four cascades share this range, so a shorter
+        // one gives the near cascades many more texels per meter.
+        //F32 far_clip = llclamp(-min.mV[2]*2.f, 16.0f, 512.0f);
+        static LLCachedControl<F32> shadow_max_distance(gSavedSettings, "FSRenderShadowMaxDistance", 512.f);
+        const F32 max_far_clip = gCubeSnapshot ? 512.f : llclamp((F32)shadow_max_distance, 16.f, 512.f); // probes keep the full range
+        F32 far_clip = llclamp(-min.mV[2]*2.f, 16.0f, max_far_clip);
+        // </FS:Trish>
 
         //far_clip = llmin(far_clip, 128.f);
         far_clip = llmin(far_clip, camera.getFar());
