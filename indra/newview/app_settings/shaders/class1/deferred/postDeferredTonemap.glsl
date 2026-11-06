@@ -56,6 +56,19 @@ void main()
     vec4 diff = texture(diffuseRect, vary_fragcoord);
 
 #ifndef NO_POST
+    if (bloom_strength > 0.0)
+    {
+        // The chain sums every level, so divide by their count for the average blur. It holds
+        // only what passed the threshold, so it adds light around bright areas.
+        vec3 bloom = texture(bloomMap, vary_fragcoord).rgb / max(bloom_levels, 1.0);
+        diff.rgb += bloom * bloom_strength;
+    }
+
+    if (grade_enabled != 0)
+    {
+        diff.rgb = max(grade_white_balance * diff.rgb, vec3(0.0));
+    }
+
     diff.rgb = toneMap(diff.rgb);
 #else
     diff.rgb = clamp(diff.rgb, vec3(0.0), vec3(1.0));

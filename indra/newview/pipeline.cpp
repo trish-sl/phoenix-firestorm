@@ -8041,6 +8041,27 @@ void LLPipeline::tonemap(LLRenderTarget* src, LLRenderTarget* dst, bool gamma_co
         shader->uniform1i(tonemap_type, tonemap_type_setting);
         shader->uniform1f(tonemap_mix, psky->getTonemapMix(should_auto_adjust()));
 
+        // <FS:Trish> Bloom and colour grading, both part of this pass
+        if (!no_post)
+        {
+            static LLStaticHashedString s_bloom_strength("bloom_strength");
+            static LLStaticHashedString s_bloom_levels("bloom_levels");
+            static LLCachedControl<F32> bloom_strength(gSavedSettings, "FSRenderBloomStrength", 0.15f);
+            if (mBloomLevelCount > 0)
+            {
+                shader->bindTexture(LLShaderMgr::DEFERRED_BLOOM, &mBloomLevels[0], false, LLTexUnit::TFO_BILINEAR);
+                shader->uniform1f(s_bloom_strength, llmax((F32)bloom_strength, 0.f));
+                shader->uniform1f(s_bloom_levels, (F32)mBloomLevelCount);
+            }
+            else
+            {
+                shader->uniform1f(s_bloom_strength, 0.f);
+            }
+
+            bindColorGrading(shader);
+        }
+        // </FS:Trish>
+
         mScreenTriangleVB->setBuffer();
         mScreenTriangleVB->drawArrays(LLRender::TRIANGLES, 0, 3);
 
