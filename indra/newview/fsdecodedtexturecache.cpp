@@ -830,7 +830,25 @@ public:
     bool postBuild() override
     {
         mCacheStats = findChild<LLTextBox>("decoded_texture_cache_stats");
+
+        // RenderShadowSplitExponent is a Vector3, which no control binds to directly: one
+        // spinner per component, written back to the setting on commit
+        bindVectorComponent("shadow_split_persp", "RenderShadowSplitExponent", VX);
+        bindVectorComponent("shadow_split_ortho", "RenderShadowSplitExponent", VY);
+        bindVectorComponent("shadow_split_transition", "RenderShadowSplitExponent", VZ);
+
         return LLPanelPreference::postBuild();
+    }
+
+    // Phototools and quick prefs edit the same setting, so pick up its current value whenever
+    // the tab is shown
+    void onVisibilityChange(bool new_visibility) override
+    {
+        LLPanelPreference::onVisibilityChange(new_visibility);
+        if (new_visibility)
+        {
+            refreshVectorComponents();
+        }
     }
 
     void draw() override
@@ -845,6 +863,40 @@ public:
     }
 
 private:
+    struct VectorComponent
+    {
+        LLUICtrl* mCtrl;
+        std::string mSetting;
+        S32 mIndex;
+    };
+
+    void bindVectorComponent(const std::string& ctrl_name, const std::string& setting, S32 index)
+    {
+        LLUICtrl* ctrl = findChild<LLUICtrl>(ctrl_name);
+        if (!ctrl || !gSavedSettings.controlExists(setting))
+        {
+            return;
+        }
+        ctrl->setCommitCallback([setting, index](LLUICtrl* ctrl, const LLSD&)
+        {
+            LLVector3 value = gSavedSettings.getVector3(setting);
+            value.mV[index] = (F32)ctrl->getValue().asReal();
+            gSavedSettings.setVector3(setting, value);
+        });
+        mVectorComponents.push_back({ ctrl, setting, index });
+        ctrl->setValue(gSavedSettings.getVector3(setting).mV[index]);
+    }
+
+    void refreshVectorComponents()
+    {
+        for (const VectorComponent& component : mVectorComponents)
+        {
+            component.mCtrl->setValue(gSavedSettings.getVector3(component.mSetting).mV[component.mIndex]);
+        }
+    }
+
+    std::vector<VectorComponent> mVectorComponents;
+
     std::string formatStats() const
     {
         const FSDecodedTextureCache::Stats stats = FSDecodedTextureCache::instance().getStats();
