@@ -354,6 +354,7 @@ bool    LLPipeline::sBakeSunlight = false;
 bool    LLPipeline::sNoAlpha = false;
 bool    LLPipeline::sUseFarClip = true;
 bool    LLPipeline::sShadowRender = false;
+F32     LLPipeline::sShadowMinCasterSize = 0.f; // <FS:Trish/>
 bool    LLPipeline::sRenderGlow = false;
 bool    LLPipeline::sReflectionRender = false;
 bool    LLPipeline::sDistortionRender = false;
@@ -11442,6 +11443,12 @@ void LLPipeline::generateSunShadow(LLCamera& camera)
             //find a good origin for shadow projection
             LLVector3 origin;
 
+            // <FS:Trish> World size of the smallest texel in this cascade, set with the projection below
+            F32 min_texel_size = 0.f;
+            const F32 shadow_map_width = (F32)llmax(mRT->shadow[j].getWidth(), 1U);
+            const F32 shadow_map_height = (F32)llmax(mRT->shadow[j].getHeight(), 1U);
+            // </FS:Trish>
+
             //get a temporary view projection
             view[j] = look(camera.getOrigin(), lightDir, -up);
 
@@ -11554,6 +11561,8 @@ void LLPipeline::generateSunShadow(LLCamera& camera)
                     proj[j] = glm::ortho(min.mV[0], max.mV[0],
                                         min.mV[1], max.mV[1],
                                         -max.mV[2], -min.mV[2]);
+                    // <FS:Trish/> Ortho texels are the same size everywhere
+                    min_texel_size = llmin((max.mV[0] - min.mV[0]) / shadow_map_width, (max.mV[1] - min.mV[1]) / shadow_map_height);
                 }
                 else
                 {
@@ -11645,6 +11654,8 @@ void LLPipeline::generateSunShadow(LLCamera& camera)
                         proj[j] = glm::ortho(min.mV[0], max.mV[0],
                                 min.mV[1], max.mV[1],
                                 -max.mV[2], -min.mV[2]);
+                        // <FS:Trish/> Ortho texels are the same size everywhere
+                        min_texel_size = llmin((max.mV[0] - min.mV[0]) / shadow_map_width, (max.mV[1] - min.mV[1]) / shadow_map_height);
                     }
                     else
                     {
@@ -11673,6 +11684,11 @@ void LLPipeline::generateSunShadow(LLCamera& camera)
                             0, (yfar + ynear) / (ynear - yfar), 0, -1.0f,
                             0, 0, -fz, 0,
                             0, (2.f * yfar * ynear) / (ynear - yfar), 0, 0);
+
+                        // <FS:Trish> Perspective texels grow with distance from the origin, so
+                        // the smallest ones are at the near plane: 2 * ynear * tan(fov) / resolution
+                        min_texel_size = 2.f * ynear * llmin(tanf(fovx) / shadow_map_width, tanf(fovz) / shadow_map_height);
+                        // </FS:Trish>
                     }
                 }
             }
@@ -11713,6 +11729,12 @@ void LLPipeline::generateSunShadow(LLCamera& camera)
             mRT->shadow[j].clear();
 
             {
+                // <FS:Trish> Casters smaller than this many of the cascade's smallest texels can't
+                // show up in it. Not applied to probe shadows, which use their own path.
+                static LLCachedControl<F32> min_caster_texels(gSavedSettings, "RenderShadowMinCasterTexels", 1.f);
+                const F32 min_caster_size = (!gCubeSnapshot && min_caster_texels > 0.f && llfinite(min_texel_size))
+                    ? llmax(min_texel_size, 0.f) * min_caster_texels : 0.f;
+                // </FS:Trish>
                 static LLCullResult result[4];
                 if (have_union_cull)
                 {   // re-bucket the shared union cull down to this cascade's frustum
