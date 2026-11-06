@@ -875,6 +875,8 @@ public:
         bindVectorComponent("shadow_split_ortho", "RenderShadowSplitExponent", VY);
         bindVectorComponent("shadow_split_transition", "RenderShadowSplitExponent", VZ);
 
+        bindSunRaysQuality();
+
         return LLPanelPreference::postBuild();
     }
 
@@ -897,6 +899,7 @@ public:
             mStatsTimer.reset();
             mCacheStats->setText(formatStats());
         }
+        refreshSunRaysQuality();
         LLPanelPreference::draw();
     }
 
@@ -934,6 +937,64 @@ private:
     }
 
     std::vector<VectorComponent> mVectorComponents;
+
+    // Sun rays quality presets set samples per ray and resolution. The combo has no setting of
+    // its own: it shows whichever preset the two values match, else Custom, so editing either
+    // spinner, debug settings or a cancelled preferences change all show up in it.
+    struct SunRaysPreset
+    {
+        S32 mSteps;
+        F32 mResolution;
+    };
+    static constexpr SunRaysPreset SUN_RAYS_PRESETS[] = { { 12, 0.5f }, { 24, 0.5f }, { 32, 0.75f } }; // Low, Medium, High
+    static constexpr S32 SUN_RAYS_PRESET_COUNT = 3;
+    static constexpr S32 SUN_RAYS_CUSTOM = 3;
+
+    void bindSunRaysQuality()
+    {
+        mSunRaysQuality = findChild<LLUICtrl>("sun_rays_quality");
+        if (!mSunRaysQuality)
+        {
+            return;
+        }
+        mSunRaysQuality->setCommitCallback([](LLUICtrl* ctrl, const LLSD&)
+        {
+            const S32 preset = ctrl->getValue().asInteger();
+            if (preset >= 0 && preset < SUN_RAYS_PRESET_COUNT)
+            {
+                gSavedSettings.setS32("FSRenderSunRaysSteps", SUN_RAYS_PRESETS[preset].mSteps);
+                gSavedSettings.setF32("FSRenderSunRaysResolution", SUN_RAYS_PRESETS[preset].mResolution);
+            }
+        });
+        refreshSunRaysQuality();
+    }
+
+    void refreshSunRaysQuality()
+    {
+        if (!mSunRaysQuality)
+        {
+            return;
+        }
+        static LLCachedControl<S32> steps_setting(gSavedSettings, "FSRenderSunRaysSteps", 24);
+        static LLCachedControl<F32> resolution_setting(gSavedSettings, "FSRenderSunRaysResolution", 0.5f);
+        const S32 steps = steps_setting;
+        const F32 resolution = resolution_setting;
+        S32 preset = SUN_RAYS_CUSTOM;
+        for (S32 i = 0; i < SUN_RAYS_PRESET_COUNT; ++i)
+        {
+            if (steps == SUN_RAYS_PRESETS[i].mSteps && fabsf(resolution - SUN_RAYS_PRESETS[i].mResolution) < 0.01f)
+            {
+                preset = i;
+                break;
+            }
+        }
+        if (mSunRaysQuality->getValue().asInteger() != preset || mSunRaysQuality->getValue().isUndefined())
+        {
+            mSunRaysQuality->setValue(LLSD(preset));
+        }
+    }
+
+    LLUICtrl* mSunRaysQuality = nullptr;
 
     std::string formatStats() const
     {
