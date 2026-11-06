@@ -1691,6 +1691,11 @@ void LLPipeline::createLUTBuffers()
     mExposureMap.flush();
 
     mLuminanceMap.allocate(256, 256, GL_R16F, false, LLTexUnit::TT_TEXTURE, LLTexUnit::TMG_AUTO);
+    // <FS:Trish> Defined contents, the luminance pass is skipped while the exposure range is fixed
+    mLuminanceMap.bindTarget();
+    mLuminanceMap.clear();
+    mLuminanceMap.flush();
+    // </FS:Trish>
 
     mLastExposure.allocate(1, 1, GL_R16F);
 }
@@ -7842,46 +7847,20 @@ void LLPipeline::generateExposure(LLRenderTarget* src, LLRenderTarget* dst, bool
         static LLStaticHashedString dynamic_exposure_params2("dynamic_exposure_params2");
         static LLStaticHashedString dynamic_exposure_e("dynamic_exposure_enabled");
         static LLCachedControl<bool> should_auto_adjust(gSavedSettings, "RenderSkyAutoAdjustLegacy", false);
-        static LLCachedControl<bool> dynamic_exposure_enabled(gSavedSettings, "RenderDynamicExposureEnabled", true);
+        // <FS:Trish> Range moved to getExposureRange(), renderFinalize needs it to skip the luminance pass
+        //static LLCachedControl<bool> dynamic_exposure_enabled(gSavedSettings, "RenderDynamicExposureEnabled", true);
+        // </FS:Trish>
         static LLCachedControl<F32> dynamic_exposure_coefficient(gSavedSettings, "RenderDynamicExposureCoefficient", 0.175f);
         static LLCachedControl<F32> dynamic_exposure_speed_error(gSavedSettings, "RenderDynamicExposureSpeedError", 0.1f);
         static LLCachedControl<F32> dynamic_exposure_speed_target(gSavedSettings, "RenderDynamicExposureSpeedTarget", 2.f);
 
         LLSettingsSky::ptr_t sky = LLEnvironment::instance().getCurrentSky();
 
-        F32 probe_ambiance = LLEnvironment::instance().getCurrentSky()->getReflectionProbeAmbiance(should_auto_adjust());
-
+        // <FS:Trish>
         F32 exp_min = 1.f;
         F32 exp_max = 1.f;
-
-        static LLCachedControl<bool> use_exposure_sky_settings(gSavedSettings, "RenderUseExposureSkySettings", false);
-
-        if (use_exposure_sky_settings)
-        {
-            if (dynamic_exposure_enabled)
-            {
-                exp_min = sky->getHDROffset(should_auto_adjust()) - sky->getHDRMin(should_auto_adjust());
-                exp_max = sky->getHDROffset(should_auto_adjust()) + sky->getHDRMax(should_auto_adjust());
-            }
-            else
-            {
-                exp_min = sky->getHDROffset(should_auto_adjust());
-                exp_max = sky->getHDROffset(should_auto_adjust());
-            }
-        }
-        else if (dynamic_exposure_enabled)
-        {
-            if (probe_ambiance > 0.f)
-            {
-                F32 hdr_scale = sqrtf(LLEnvironment::instance().getCurrentSky()->getGamma()) * 2.f;
-
-                if (hdr_scale > 1.f)
-                {
-                    exp_min = 1.f / hdr_scale;
-                    exp_max = hdr_scale;
-                }
-            }
-        }
+        getExposureRange(exp_min, exp_max);
+        // </FS:Trish>
 
         shader->uniform1f(dt, gFrameIntervalSeconds);
         shader->uniform2f(noiseVec, ll_frand() * 2.0f - 1.0f, ll_frand() * 2.0f - 1.0f);
@@ -7899,6 +7878,49 @@ void LLPipeline::generateExposure(LLRenderTarget* src, LLRenderTarget* dst, bool
         dst->flush();
     }
 }
+
+// <FS:Trish> Moved out of generateExposure() unchanged
+void LLPipeline::getExposureRange(F32& exp_min, F32& exp_max)
+{
+    static LLCachedControl<bool> should_auto_adjust(gSavedSettings, "RenderSkyAutoAdjustLegacy", false);
+    static LLCachedControl<bool> dynamic_exposure_enabled(gSavedSettings, "RenderDynamicExposureEnabled", true);
+    static LLCachedControl<bool> use_exposure_sky_settings(gSavedSettings, "RenderUseExposureSkySettings", false);
+
+    LLSettingsSky::ptr_t sky = LLEnvironment::instance().getCurrentSky();
+
+    F32 probe_ambiance = sky->getReflectionProbeAmbiance(should_auto_adjust());
+
+    exp_min = 1.f;
+    exp_max = 1.f;
+
+    if (use_exposure_sky_settings)
+    {
+        if (dynamic_exposure_enabled)
+        {
+            exp_min = sky->getHDROffset(should_auto_adjust()) - sky->getHDRMin(should_auto_adjust());
+            exp_max = sky->getHDROffset(should_auto_adjust()) + sky->getHDRMax(should_auto_adjust());
+        }
+        else
+        {
+            exp_min = sky->getHDROffset(should_auto_adjust());
+            exp_max = sky->getHDROffset(should_auto_adjust());
+        }
+    }
+    else if (dynamic_exposure_enabled)
+    {
+        if (probe_ambiance > 0.f)
+        {
+            F32 hdr_scale = sqrtf(sky->getGamma()) * 2.f;
+
+            if (hdr_scale > 1.f)
+            {
+                exp_min = 1.f / hdr_scale;
+                exp_max = hdr_scale;
+            }
+        }
+    }
+}
+// </FS:Trish>
 
 extern LLPointer<LLImageGL> gEXRImage;
 
@@ -8970,7 +8992,21 @@ void LLPipeline::renderFinalize()
     {
         copyScreenSpaceReflections(&mRT->screen, &mSceneMap);
 
-        generateLuminance(&mRT->screen, &mLuminanceMap);
+        // <FS:Trish> Added into the HDR scene before exposure is measured, so the exposure accounts
+        // for them. After the SSR copy, so reflections don't pick them up a second time.
+        renderSunRays();
+        renderBloom();
+        // </FS:Trish>
+
+        // <FS:Trish> With a fixed exposure range the exposure shader's target doesn't depend on luminance
+        //generateLuminance(&mRT->screen, &mLuminanceMap);
+        F32 exp_min, exp_max;
+        getExposureRange(exp_min, exp_max);
+        if (exp_min != exp_max)
+        {
+            generateLuminance(&mRT->screen, &mLuminanceMap);
+        }
+        // </FS:Trish>
 
         generateExposure(&mLuminanceMap, &mExposureMap);
 
@@ -8997,8 +9033,15 @@ void LLPipeline::renderFinalize()
     LLRenderTarget* sourceBuffer = &mPostPingMap;
     LLRenderTarget* targetBuffer = &mPostPongMap;
 
-    combineGlow(sourceBuffer, targetBuffer);
-    std::swap(sourceBuffer, targetBuffer);
+    // <FS:Trish> With glow off this was a full screen copy adding a cleared buffer
+    //combineGlow(sourceBuffer, targetBuffer);
+    //std::swap(sourceBuffer, targetBuffer);
+    if (sRenderGlow)
+    {
+        combineGlow(sourceBuffer, targetBuffer);
+        std::swap(sourceBuffer, targetBuffer);
+    }
+    // </FS:Trish>
 
     gGLViewport[0] = gViewerWindow->getWorldViewRectRaw().mLeft;
     gGLViewport[1] = gViewerWindow->getWorldViewRectRaw().mBottom;
