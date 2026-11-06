@@ -23,7 +23,7 @@
      width="538">
         <panel
          follows="left|top"
-         height="1466"
+         height="1566"
          layout="topleft"
          left="0"
          name="experimental_settings"
@@ -566,6 +566,50 @@
              height="18"
              layout="topleft"
              left="15"
+             name="avatar_loading_heading"
+             top_pad="10"
+             width="475">
+                Avatar loading
+            </text>
+            <check_box
+             control_name="FSAvatarCloudFastRetry"
+             follows="left|top"
+             height="20"
+             label="Retry sooner for avatars stuck as a cloud"
+             layout="topleft"
+             left="15"
+             name="avatar_cloud_fast_retry"
+             tool_tip="EXPERIMENTAL. When another avatar is missing its shape or body textures, ask the region for its appearance again after 15, 30 and 60 seconds, instead of only every 2 minutes."
+             top_pad="4"
+             width="475" />
+            <check_box
+             control_name="FSAvatarRetryEmptyAppearance"
+             follows="left|top"
+             height="20"
+             label="Ask again when an avatar's appearance arrives without a shape"
+             layout="topleft"
+             left="15"
+             name="avatar_retry_empty_appearance"
+             tool_tip="EXPERIMENTAL. When the region sends another avatar's appearance without a shape, ask for it again right away (at most every 10 seconds) instead of waiting for the cloud timeout."
+             top_pad="2"
+             width="475" />
+            <check_box
+             control_name="FSAvatarDropStaleAppearance"
+             follows="left|top"
+             height="20"
+             label="Ignore out of order appearance updates"
+             layout="topleft"
+             left="15"
+             name="avatar_drop_stale_appearance"
+             tool_tip="EXPERIMENTAL. During an outfit change, appearance updates for another avatar can arrive out of order. Ignore one that is older than the last applied, if it arrives within 10 seconds of it. Logged under Avatar."
+             top_pad="2"
+             width="475" />
+            <text
+             follows="left|top"
+             font="SansSerifBold"
+             height="18"
+             layout="topleft"
+             left="15"
              name="hide_ui_heading"
              top_pad="10"
              width="475">
@@ -602,7 +646,7 @@
              left="15"
              name="decoded_texture_cache"
              tool_tip="Stores the pixels of decoded textures so places you return to load them without JPEG2000 decoding. Uses several times more disk space than the regular texture cache. Cleared together with the texture cache."
-             top="1146"
+             top="1242"
              width="475" />
             <text
              follows="left|top"
@@ -610,7 +654,7 @@
              layout="topleft"
              left="35"
              name="decoded_texture_cache_mode_label"
-             top="1172"
+             top="1268"
              width="285">
                 Keep decoded textures from
             </text>
@@ -622,7 +666,7 @@
              left="330"
              name="decoded_texture_cache_mode"
              tool_tip="A region can take several GB of decoded textures. Listed regions only keeps just the regions named below. Current region only keeps what you see where you are, so relogging or moving around the same region reuses it, and drops it once you are somewhere else. Places visited before only keeps textures that were already in the texture cache, so a first visit writes nothing."
-             top="1169"
+             top="1265"
              width="160">
                 <combo_box.item
                  name="decoded_texture_cache_mode_listed"
@@ -647,7 +691,7 @@
              layout="topleft"
              left="35"
              name="decoded_texture_cache_regions_label"
-             top="1197"
+             top="1293"
              width="455">
                 Regions to keep (comma separated):
             </text>
@@ -659,7 +703,7 @@
              left="35"
              name="decoded_texture_cache_regions"
              tool_tip="Region names, separated by commas. Their decoded textures are kept on any visit, not dropped when you leave, and removed last when the cache is full."
-             top="1216"
+             top="1312"
              width="455" />
             <text
              follows="left|top"
@@ -667,7 +711,7 @@
              layout="topleft"
              left="35"
              name="decoded_texture_cache_size_label"
-             top="1246"
+             top="1342"
              width="285">
                 Decoded texture cache size (MB)
             </text>
@@ -682,7 +726,7 @@
              max_val="131072"
              min_val="1024"
              name="decoded_texture_cache_size"
-             top="1243"
+             top="1339"
              width="100" />
             <text
              follows="left|top"
@@ -691,7 +735,7 @@
              left="35"
              name="decoded_texture_cache_min_size_label"
              tool_tip="Textures smaller than this (larger side, in pixels) decode quickly enough and are not kept."
-             top="1271"
+             top="1367"
              width="285">
                 Smallest texture kept (pixels)
             </text>
@@ -706,7 +750,7 @@
              max_val="2048"
              min_val="64"
              name="decoded_texture_cache_min_size"
-             top="1268"
+             top="1364"
              width="100" />
             <check_box
              control_name="FSDecodedTextureCacheUncompressed"
@@ -717,7 +761,7 @@
              left="35"
              name="decoded_texture_cache_uncompressed"
              tool_tip="Decompressing is most of the cost of loading from the decoded cache, and texture pixels only compress to about 65%. Applies to newly stored textures."
-             top="1294"
+             top="1390"
              width="455" />
             <text
              follows="left|top"
@@ -725,7 +769,7 @@
              layout="topleft"
              left="35"
              name="decoded_texture_cache_stats"
-             top="1319"
+             top="1415"
              width="455"
              wrap="true">
                 Reading the decoded texture cache...
@@ -739,7 +783,7 @@
              left="15"
              name="prioritize_texture_decodes"
              tool_tip="Decodes textures in order of importance instead of request order, so what is in front of you sharpens first after a teleport or while moving. Decodes for textures nothing waits for anymore are skipped."
-             top="1357"
+             top="1453"
              width="475" />
             <check_box
              control_name="FSLowPriorityTextureThreads"
