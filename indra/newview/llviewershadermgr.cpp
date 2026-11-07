@@ -424,9 +424,13 @@ static void add_common_permutations(LLGLSLShader* shader)
 // With PCSS (RenderShadowPCSS) the extra slots take the same contact hardening filter as the
 // first two: PCSS_SHADOW links the PCSS build of shadowUtil.glsl, and FS_SPOT_PCSS_FETCH mirrors
 // the GL 3.3 condition under which that build has PCSS_SHADOW_FETCH (loadBasicShaders).
+// Coloured projector shadows (FSRenderColoredShadows and FSRenderColoredShadowsProjectors) link
+// fsSpotColoredShadowF.glsl (FS_SPOT_COLORED_SHADOW). With all of them off, nothing is added.
 static void fs_add_spot_shadow_extra(LLGLSLShader& shader)
 {
     static LLCachedControl<S32> spot_shadow_count(gSavedSettings, "FSRenderSpotShadowCount", 2);
+    static LLCachedControl<bool> colored_shadows(gSavedSettings, "FSRenderColoredShadows", false);
+    static LLCachedControl<bool> colored_projectors(gSavedSettings, "FSRenderColoredShadowsProjectors", false);
     const bool spot_shadows = gSavedSettings.getS32("RenderShadowDetail") > 1;
     if (spot_shadows && spot_shadow_count > 2)
     {
@@ -440,6 +444,11 @@ static void fs_add_spot_shadow_extra(LLGLSLShader& shader)
                 shader.addPermutation("FS_SPOT_PCSS_FETCH", "1");
             }
         }
+    }
+    if (spot_shadows && colored_shadows && colored_projectors)
+    {
+        shader.addPermutation("FS_SPOT_COLORED_SHADOW", "1");
+        shader.mShaderFiles.push_back(make_pair("deferred/fsSpotColoredShadowF.glsl", GL_FRAGMENT_SHADER));
     }
 }
 // </FS:Trish>
