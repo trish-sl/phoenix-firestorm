@@ -112,7 +112,11 @@ private:
     eVoiceState mCurrentVoiceState;
     bool        mForceVoiceStateUpdate;
 
-    typedef std::map<LLUUID, LLFloater*> avatarID_panel_map_t;
+    // <FS:Trish> Handles, not raw pointers: a session floater can be destroyed without its close
+    // signal reaching us (LL #6501, crash in LLFloater::getHost)
+    //typedef std::map<LLUUID, LLFloater*> avatarID_panel_map_t;
+    typedef std::map<LLUUID, LLHandle<LLFloater> > avatarID_panel_map_t;
+    // </FS:Trish>
     avatarID_panel_map_t mSessions;
     boost::signals2::connection mNewMessageConnection;
 

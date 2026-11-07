@@ -376,7 +376,7 @@ void FSFloaterIMContainer::addFloater(LLFloater* floaterp,
     }
 
     LLUUID session_id = floaterp->getKey();
-    mSessions[session_id] = floaterp;
+    mSessions[session_id] = floaterp->getHandle(); // <FS:Trish/> handle, see the header
     floaterp->mCloseSignal.connect(boost::bind(&FSFloaterIMContainer::onCloseFloater, this, session_id));
 }
 
@@ -441,7 +441,11 @@ bool FSFloaterIMContainer::hasFloater(LLFloater* floaterp)
 
 void FSFloaterIMContainer::onCloseFloater(LLUUID& id)
 {
-    LLFloater* session_floater = mSessions[id];
+    // <FS:Trish> handle, see the header
+    //LLFloater* session_floater = mSessions[id];
+    avatarID_panel_map_t::iterator found = mSessions.find(id);
+    LLFloater* session_floater = (found != mSessions.end()) ? found->second.get() : nullptr;
+    // </FS:Trish>
     bool was_session_shown = session_floater && session_floater->isShown();
 
     mSessions.erase(id);
@@ -458,7 +462,11 @@ void FSFloaterIMContainer::onCloseFloater(LLUUID& id)
 void FSFloaterIMContainer::onNewMessageReceived(const LLSD& msg)
 {
     LLUUID session_id = msg["session_id"].asUUID();
-    LLFloater* floaterp = get_ptr_in_map(mSessions, session_id);
+    // <FS:Trish> handle, see the header
+    //LLFloater* floaterp = get_ptr_in_map(mSessions, session_id);
+    avatarID_panel_map_t::iterator found = mSessions.find(session_id);
+    LLFloater* floaterp = (found != mSessions.end()) ? found->second.get() : nullptr;
+    // </FS:Trish>
     LLFloater* current_floater = LLMultiFloater::getActiveFloater();
 
     // KC: Don't flash tab on friend status changes per setting
@@ -696,9 +704,9 @@ void FSFloaterIMContainer::sessionIDUpdated(const LLUUID& old_session_id, const 
 {
     if (avatarID_panel_map_t::iterator found = mSessions.find(old_session_id); found != mSessions.end())
     {
-        LLFloater* floaterp = found->second;
+        LLHandle<LLFloater> floater_handle = found->second; // <FS:Trish/> handle, see the header
         mSessions.erase(found);
-        mSessions[new_session_id] = floaterp;
+        mSessions[new_session_id] = floater_handle;
     }
 }
 
