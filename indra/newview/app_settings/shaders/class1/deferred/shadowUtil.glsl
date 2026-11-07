@@ -63,13 +63,15 @@ float pcfShadow(sampler2DShadow shadowMap, vec3 norm, vec4 stc, float bias_mul, 
     {
         return texture(shadowMap, stc.xyz);
     }
-    stc.x = floor(stc.x*shadow_res.x + fract(pos_screen.y*shadow_res.y))/shadow_res.x; // add some chaotic jitter to X sample pos according to Y to disguise the snapping going on here
+    // Each map's own size: the far cascades can be smaller than the near ones
+    vec2 res = vec2(textureSize(shadowMap, 0));
+    stc.x = floor(stc.x*res.x + fract(pos_screen.y*res.y))/res.x; // add some chaotic jitter to X sample pos according to Y to disguise the snapping going on here
     float cs = texture(shadowMap, stc.xyz);
     float shadow = cs * 4.0;
-    shadow += texture(shadowMap, stc.xyz+vec3( 1.5/shadow_res.x,  0.5/shadow_res.y, 0.0));
-    shadow += texture(shadowMap, stc.xyz+vec3( 0.5/shadow_res.x, -1.5/shadow_res.y, 0.0));
-    shadow += texture(shadowMap, stc.xyz+vec3(-1.5/shadow_res.x, -0.5/shadow_res.y, 0.0));
-    shadow += texture(shadowMap, stc.xyz+vec3(-0.5/shadow_res.x,  1.5/shadow_res.y, 0.0));
+    shadow += texture(shadowMap, stc.xyz+vec3( 1.5/res.x,  0.5/res.y, 0.0));
+    shadow += texture(shadowMap, stc.xyz+vec3( 0.5/res.x, -1.5/res.y, 0.0));
+    shadow += texture(shadowMap, stc.xyz+vec3(-1.5/res.x, -0.5/res.y, 0.0));
+    shadow += texture(shadowMap, stc.xyz+vec3(-0.5/res.x,  1.5/res.y, 0.0));
     return clamp(shadow * 0.125, 0.0, 1.0);
 #else
     return 1.0;
