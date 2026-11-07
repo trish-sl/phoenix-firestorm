@@ -209,6 +209,7 @@ LLGLSLShader            gFSBloomPrefilterProgram;
 LLGLSLShader            gFSBloomDownProgram;
 LLGLSLShader            gFSBloomUpProgram;
 LLGLSLShader            gFSLensEffectsProgram;
+LLGLSLShader            gFSAvatarMatteProgram;
 // </FS:Trish>
 LLGLSLShader            gDeferredPostGammaCorrectProgram;
 LLGLSLShader            gLegacyPostGammaCorrectProgram;
@@ -1284,6 +1285,7 @@ bool LLViewerShaderMgr::loadShadersDeferred()
         gFSBloomDownProgram.unload();
         gFSBloomUpProgram.unload();
         gFSLensEffectsProgram.unload();
+        gFSAvatarMatteProgram.unload();
         // </FS:Trish>
 
         for (auto i = 0; i < 4; ++i)
@@ -2759,6 +2761,7 @@ bool LLViewerShaderMgr::loadShadersDeferred()
             { &gFSBloomDownProgram,        "FS Bloom Downsample",   "deferred/fsBloomDownF.glsl",        false },
             { &gFSBloomUpProgram,          "FS Bloom Upsample",     "deferred/fsBloomUpF.glsl",          false },
             { &gFSLensEffectsProgram,      "FS Lens Effects",       "deferred/fsLensEffectsF.glsl",      false },
+            { &gFSAvatarMatteProgram,      "FS Avatar Matte",       "deferred/fsAvatarMatteF.glsl",      false },
         };
         for (const FSPostShader& post : fs_post_shaders)
         {

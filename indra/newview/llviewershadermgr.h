@@ -269,6 +269,7 @@ extern LLGLSLShader         gFSBloomPrefilterProgram;
 extern LLGLSLShader         gFSBloomDownProgram;
 extern LLGLSLShader         gFSBloomUpProgram;
 extern LLGLSLShader         gFSLensEffectsProgram;
+extern LLGLSLShader         gFSAvatarMatteProgram;
 // </FS:Trish>
 extern LLGLSLShader         gExposureProgram;
 extern LLGLSLShader         gExposureProgramNoFade;
