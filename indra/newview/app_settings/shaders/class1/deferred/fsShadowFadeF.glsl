@@ -22,10 +22,14 @@
 
 // Smooth sun shadow fade (FSRenderShadowSmoothFade), used by sampleDirectionalShadow in
 // shadowUtil.glsl. Compiled with the basic shaders and attached next to shadowUtil.glsl only while
-// the global define FS_SHADOW_EDGE_FADE is set; its value is the fraction of the shadow range over
-// which shadows fade out at its far end.
+// the global define FS_SHADOW_EDGE_FADE is set.
 
 uniform vec4 shadow_clip;
+
+// Fraction of the shadow range over which shadows fade out at its far end
+// (FSRenderShadowFadeLength, 0.02-0.5). A uniform rather than a define, so changing it does not
+// rebuild the shaders; set with shadow_clip by LLPipeline::bindDeferredShader.
+uniform float fs_shadow_fade_length;
 
 // Non-zero: pick one cascade per pixel in the overlap of two cascades, by a dither, instead of
 // blending both. Set by the deferred sun pass alone, and only while the shadow blur runs after it
@@ -62,11 +66,11 @@ float fsCascadeFadeIn(float f)
     return f > 1.0 - fsCascadeNoise() ? 1.0 : 0.0;
 }
 
-// shadow faded smoothly to lit over the last FS_SHADOW_EDGE_FADE of the shadow range, ending at
+// shadow faded smoothly to lit over the last fs_shadow_fade_length of the shadow range, ending at
 // its far end (shadow_clip.w), where the shadow maps stop; z: view space z of the lookup
 float fsShadowEdgeFade(float shadow, float z)
 {
     float range = shadow_clip.w;
-    float len = max(range * float(FS_SHADOW_EDGE_FADE), 0.5);
+    float len = max(range * clamp(fs_shadow_fade_length, 0.02, 0.5), 0.5);
     return mix(shadow, 1.0, smoothstep(range - len, range, -z));
 }
