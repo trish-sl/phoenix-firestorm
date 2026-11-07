@@ -565,6 +565,44 @@ void LLFloaterTools::setStatusText(const std::string& text)
     }
 }
 
+// <FS:Trish> Link number of a prim in its linkset, as scripts count them: 0 for an unlinked prim,
+// 1 for the root, then the children in order. Also gives the number of prims in the linkset.
+static bool fs_get_link_number(LLViewerObject* objectp, S32& link_num, S32& link_count)
+{
+    link_num = 0;
+    link_count = 0;
+    LLViewerObject* root = objectp ? objectp->getRootEdit() : nullptr;
+    if (!root)
+    {
+        return false;
+    }
+    const LLViewerObject::child_list_t& children = root->getChildren();
+    link_count = (S32)children.size() + 1;
+    if (children.empty())
+    {
+        link_num = 0; // a childless prim is always link zero
+        link_count = 1;
+        return true;
+    }
+    if (objectp == root)
+    {
+        link_num = 1;
+        return true;
+    }
+    S32 index = 1;
+    for (const LLPointer<LLViewerObject>& child : children)
+    {
+        ++index;
+        if (child == objectp)
+        {
+            link_num = index;
+            return true;
+        }
+    }
+    return false;
+}
+// </FS:Trish>
+
 void LLFloaterTools::refresh()
 {
     const S32 INFO_WIDTH = getRect().getWidth();
@@ -608,6 +646,16 @@ void LLFloaterTools::refresh()
             nodep = LLSelectMgr::getInstance()->getSelection()->getFirstNode();
         }
 
+        // <FS:Trish> Show which link the faces belong to, "Link 3/12, Faces: 0, 2".
+        // Idea from the i-doll fork (Amalthea Skydancer).
+        S32 link_num = 0;
+        S32 link_count = 0;
+        if (fs_get_link_number(objectp, link_num, link_count) && link_count > 1)
+        {
+            desc_string = llformat("Link %d/%d, ", link_num, link_count) + desc_string;
+        }
+        // </FS:Trish>
+
         if (objectp && objectp->getNumTEs() == LLSelectMgr::getInstance()->getSelection()->getTECount())
             num_string = "ALL_SIDES";
         else if (objectp && nodep)
@@ -629,27 +677,18 @@ void LLFloaterTools::refresh()
     {
         desc_string = getString("link_number");
         LLViewerObject* objectp = LLSelectMgr::getInstance()->getSelection()->getFirstObject();
-        if (objectp && objectp->getRootEdit())
+        // <FS:Trish> Shared with the face display above, and shows the link count
+        S32 link_num = 0;
+        S32 link_count = 0;
+        if (fs_get_link_number(objectp, link_num, link_count))
         {
-            LLViewerObject::child_list_t children = objectp->getRootEdit()->getChildren();
-            if (children.empty())
-                num_string = "0"; //a childless prim is always link zero, and unhappy
-            else if (objectp->getRootEdit()->isSelected())
-                num_string = "1"; //root prim is always link one
-            else
+            LLResMgr::getInstance()->getIntegerString(num_string, link_num);
+            if (link_count > 1)
             {
-                S32 index = 1;
-                for (LLViewerObject::child_list_t::iterator iter = children.begin(); iter != children.end(); ++iter)
-                {
-                    index++;
-                    if ((*iter)->isSelected())
-                    {
-                        LLResMgr::getInstance()->getIntegerString(num_string, index);
-                        break;
-                    }
-                }
+                num_string += llformat("/%d", link_count);
             }
         }
+        // </FS:Trish>
     }
     else
     {
