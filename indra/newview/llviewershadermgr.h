@@ -322,6 +322,12 @@ extern LLGLSLShader         gFSWBOITCompositeProgram;
 extern bool                 gFSAlphaWBOITShaders;   // the alpha shaders were built with FS_WBOIT
 // </FS:Trish>
 
+// <FS:Trish> Coloured shadows (FSRenderColoredShadows)
+extern LLGLSLShader         gFSColoredShadowProgram;
+extern LLGLSLShader         gFSColoredShadowPBRProgram;
+extern bool                 gFSColoredShadowShaders;    // the caster programs are built and the soften program samples the maps
+// </FS:Trish>
+
 // Encodes detail level for dropping textures, in accordance with the GLTF spec where possible
 // 0 is highest detail, -1 drops emissive, etc
 // Dropping metallic roughness is off-spec - Reserve for potato machines as needed
