@@ -10366,6 +10366,7 @@ void LLPipeline::bindDeferredShader(LLGLSLShader& shader, LLRenderTarget* light_
         shader.uniform1f(sShadowFadeLength, llclamp((F32)fade_length, 0.02f, 0.5f));
     }
     // </FS:Trish>
+    LLViewerShaderMgr::uploadValueUniforms(shader); // <FS:Trish/> specular exponent for the deferred lights and soften
     shader.uniform1f(LLShaderMgr::DEFERRED_SUN_WASH, RenderDeferredSunWash);
     shader.uniform1f(LLShaderMgr::DEFERRED_SHADOW_NOISE, RenderShadowNoise);
     shader.uniform1f(LLShaderMgr::DEFERRED_BLUR_SIZE, RenderShadowBlurSize);
