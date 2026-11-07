@@ -185,6 +185,7 @@ set(viewer_SOURCE_FILES
     fspanelradar.cpp
     fsparcelderender.cpp
     fsparticipantlist.cpp
+    fspointlightbatch.cpp
     fspose.cpp
     fsposeranimator.cpp
     fsposestate.cpp
@@ -1069,6 +1070,7 @@ set(viewer_HEADER_FILES
     fspanelradar.h
     fsparcelderender.h
     fsparticipantlist.h
+    fspointlightbatch.h
     fspose.h
     fsposeranimator.h
 	fsposestate.h
