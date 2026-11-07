@@ -2988,8 +2988,12 @@ bool idle_startup()
         LLMessageSystem* msg = gMessageSystem;
         LL_INFOS() << " Inventory" << LL_ENDL;
         LLInventoryModel::registerCallbacks(msg);
-        LL_INFOS() << " Landmark" << LL_ENDL;
-        LLLandmark::registerCallbacks(msg);
+        // <FS:Trish> Registered with the viewer callbacks instead: the favorites and landmarks
+        // panels load cached landmark assets earlier in this state and send RegionHandleRequest
+        // before this point, so their replies came in with no handler and were dropped
+        //LL_INFOS() << " Landmark" << LL_ENDL;
+        //LLLandmark::registerCallbacks(msg);
+        // </FS:Trish>
         do_startup_frame();
 
         // <FS:Ansariel> Moved before inventory creation.
@@ -3893,6 +3897,10 @@ bool login_alert_status(const LLSD& notification, const LLSD& response)
 
 void register_viewer_callbacks(LLMessageSystem* msg)
 {
+    // <FS:Trish> Landmark region handle replies (RegionIDAndHandleReply), registered before
+    // anything can send a RegionHandleRequest
+    LLLandmark::registerCallbacks(msg);
+    // </FS:Trish>
     msg->setHandlerFuncFast(_PREHASH_LayerData,                 process_layer_data);
     // <FS:Ansariel> OpenSim compatibility
     msg->setHandlerFuncFast(_PREHASH_ImageData,                 LLViewerTextureList::receiveImageHeader);
