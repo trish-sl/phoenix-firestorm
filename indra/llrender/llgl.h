@@ -106,6 +106,7 @@ public:
     bool mHasParallelShaderCompile = false; // <FS:Trish/> GL_KHR/ARB_parallel_shader_compile
     bool mHasNVShadingRateImage = false; // <FS:Trish/> GL_NV_shading_rate_image (FSRenderVRS)
     bool mHasNVRepresentativeFragmentTest = false; // <FS:Trish/> GL_NV_representative_fragment_test (FSPerfRepresentativeFragmentTest)
+    S32 mFSVertexViewportIndex = 0; // <FS:Trish/> gl_ViewportIndex from the vertex shader (FSPerfShadowSinglePass): 0 none, 1 ARB, 2 NV, 3 AMD
 
     // Vendor-specific extensions
     bool mHasAMDAssociations = false;

@@ -53,6 +53,7 @@
 #include "fsssrhiz.h" // <FS:Trish/>
 #include "llviewercamera.h" // <FS:Trish/> height fog: far clip for the sky
 #include "fsskinonce.h" // <FS:Trish/>
+#include "fsshadowsinglepass.h" // <FS:Trish/>
 
 static LLStaticHashedString sTexture0("texture0");
 static LLStaticHashedString sTexture1("texture1");
@@ -1673,6 +1674,7 @@ bool LLViewerShaderMgr::loadShadersDeferred()
         gFSAlphaWBOITShaders = false;
         // </FS:Trish>
         unload_fs_colored_shadow_casters(); // <FS:Trish/>
+        fsUnloadShadowSinglePassShaders(); // <FS:Trish/>
 
         for (auto i = 0; i < 4; ++i)
         {
@@ -2997,6 +2999,15 @@ bool LLViewerShaderMgr::loadShadersDeferred()
         success = success && gDeferredShadowGLTFAlphaBlendProgram.createShader();
         llassert(success);
     }
+
+    // <FS:Trish> FSPerfShadowSinglePass: single pass copies of the sun shadow caster programs. Optional,
+    // a failure leaves the cascades on their own passes.
+    fsUnloadShadowSinglePassShaders();
+    if (success)
+    {
+        fsLoadShadowSinglePassShaders(mShaderLevel[SHADER_DEFERRED], use_sun_shadow);
+    }
+    // </FS:Trish>
 
     if (success)
     {
