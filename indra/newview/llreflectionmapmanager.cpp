@@ -1913,6 +1913,7 @@ void LLReflectionMapManager::setUniforms()
         updateUniforms();
     }
     glBindBufferBase(GL_UNIFORM_BUFFER, LLGLSLShader::UB_REFLECTION_PROBES, mUBO);
+    applyProbeShaderUniforms(); // <FS:Trish/>
 }
 
 
@@ -2531,5 +2532,28 @@ bool LLReflectionMapManager::isProbeUnchanged(LLReflectionMap* probe, F32 max_st
     }
 
     return !probe->mFSSceneDirty;
+}
+// </FS:Trish>
+
+// <FS:Trish> Probe blend uniform (FSRenderProbeBlendSmooth)
+// Uniforms for the probe sampling code that do not live in the UBO. Bound shader only, from
+// setUniforms (LLPipeline::bindReflectionProbes). Not touched until the option is first used,
+// so with it off nothing changes.
+void LLReflectionMapManager::applyProbeShaderUniforms()
+{
+    static LLCachedControl<F32> blend_smooth(gSavedSettings, "FSRenderProbeBlendSmooth", 0.f);
+    const F32 smooth = llclamp((F32)blend_smooth, 0.f, 1.f);
+    if (smooth <= 0.f && !mBlendUniformTouched)
+    {
+        return;
+    }
+    mBlendUniformTouched = true;
+
+    LLGLSLShader* shader = LLGLSLShader::sCurBoundShaderPtr;
+    if (shader)
+    {
+        static LLStaticHashedString sBlendSmooth("probe_blend_smooth");
+        shader->uniform1f(sBlendSmooth, smooth);
+    }
 }
 // </FS:Trish>
