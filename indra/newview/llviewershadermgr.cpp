@@ -52,6 +52,7 @@
 #include "fspointlightbatch.h" // <FS:Trish/>
 #include "fsssrhiz.h" // <FS:Trish/>
 #include "llviewercamera.h" // <FS:Trish/> height fog: far clip for the sky
+#include "fsskinonce.h" // <FS:Trish/>
 
 static LLStaticHashedString sTexture0("texture0");
 static LLStaticHashedString sTexture1("texture1");
@@ -1065,6 +1066,7 @@ void LLViewerShaderMgr::setShaders()
 
 void LLViewerShaderMgr::unloadShaders()
 {
+    FSSkinOnce::cleanupGL(); // <FS:Trish/> skin-once capture program and pool
     while (!LLGLSLShader::sInstances.empty())
     {
         LLGLSLShader* shader = *(LLGLSLShader::sInstances.begin());
@@ -1259,6 +1261,7 @@ std::string LLViewerShaderMgr::loadBasicShaders()
         attribs["FS_HEIGHT_FOG"] = "1";
     }
     // </FS:Trish>
+    FSSkinOnce::configureShaders(attribs); // <FS:Trish/> FSPerfSkinOncePerFrame: FS_SKIN_ONCE and the draw hook
 
     LLGLSLShader::sGlobalDefines = attribs;
     sRiggedLocalOrigin = attribs.count("RIGGED_LOCAL_ORIGIN") != 0; // <FS:Trish/>
