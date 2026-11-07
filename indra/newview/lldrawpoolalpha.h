@@ -58,13 +58,29 @@ public:
     /*virtual*/ void renderPostDeferred(S32 pass);
     /*virtual*/ S32  getNumPasses() { return 1; }
 
-    void forwardRender(bool write_depth = false);
+    // <FS:Trish> Weighted blended order-independent transparency (FSRenderAlphaWBOIT)
+    enum EWBOITPhase
+    {
+        WBOIT_OFF = 0,      // stock sorted alpha, every draw
+        WBOIT_ACCUMULATE,   // source-over draws only, into the WBOIT targets, no glow, no depth writes
+        WBOIT_RESIDUAL,     // custom blend draws only, sorted over the composite, plus every draw's glow
+        WBOIT_DEPTH,        // depth only for the accumulated draws, where stock alpha writes depth
+    };
+    // </FS:Trish>
+
+    // <FS:Trish> WBOIT phase
+    //void forwardRender(bool write_depth = false);
+    void forwardRender(bool write_depth = false, EWBOITPhase wboit_phase = WBOIT_OFF);
+    // </FS:Trish>
     /*virtual*/ void prerender();
 
     void renderDebugAlpha();
 
     void renderGroupAlpha(LLSpatialGroup* group, U32 type, U32 mask, bool texture = true);
-    void renderAlpha(U32 mask, bool depth_only = false, bool rigged = false);
+    // <FS:Trish> WBOIT phase
+    //void renderAlpha(U32 mask, bool depth_only = false, bool rigged = false);
+    void renderAlpha(U32 mask, bool depth_only = false, bool rigged = false, EWBOITPhase wboit_phase = WBOIT_OFF);
+    // </FS:Trish>
     void renderAlphaHighlight();
 
     static bool sShowDebugAlpha;
@@ -87,6 +103,10 @@ private:
     void renderRiggedPbrEmissives(std::vector<LLDrawInfo*>& emissives);
     bool TexSetup(LLDrawInfo* draw, bool use_material);
     void RestoreTexSetup(bool tex_setup);
+
+    // <FS:Trish> Switch the non-rigged alpha shaders between stock and WBOIT output
+    void setWBOITOutput(bool enable);
+    // </FS:Trish>
 
     // our 'normal' alpha blend function for this pass
     LLRender::eBlendFactor mColorSFactor;

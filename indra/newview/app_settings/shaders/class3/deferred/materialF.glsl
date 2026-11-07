@@ -58,7 +58,15 @@ float filterSpecularRoughness(float perceptualRoughness, vec3 n);
 
 #if (DIFFUSE_ALPHA_MODE == DIFFUSE_ALPHA_MODE_BLEND)
 
+#ifdef FS_WBOIT
+// Weighted blended order-independent transparency (FSRenderAlphaWBOIT, see fsWBOITCompositeF).
+// Same block in class2 alphaF, class1 fullbrightF, class3 materialF and class2 pbralphaF.
+layout(location = 0) out vec4 frag_color;
+layout(location = 1) out vec4 fs_wboit_weight;
+uniform int fs_wboit; // 1 while accumulating, 0 for the stock sorted output
+#else
 out vec4 frag_color;
+#endif
 
 #ifdef HAS_SUN_SHADOW
 float sampleDirectionalShadow(vec3 pos, vec3 norm, vec2 pos_screen);
@@ -434,6 +442,17 @@ void main()
     if (classic_mode > 0)
         final_scale = 1.1;
     frag_color = max(vec4(color * final_scale, al), vec4(0));
+#ifdef FS_WBOIT
+    fs_wboit_weight = vec4(0.0);
+    if (fs_wboit != 0)
+    { // weight falls with the square of the view distance in metres (McGuire and Bavoil eq. 7)
+        float wboit_a = clamp(frag_color.a, 0.0, 1.0);
+        float wboit_z = 1.0 / gl_FragCoord.w;
+        float wboit_w = wboit_a * clamp(1.0 / (1e-5 + pow(wboit_z / 5.0, 2.0) + pow(wboit_z / 200.0, 6.0)), 1e-3, 300.0);
+        frag_color = vec4(min(frag_color.rgb, vec3(64.0)) * wboit_a * wboit_w, wboit_a);
+        fs_wboit_weight = vec4(wboit_a * wboit_w, 0.0, 0.0, 0.0);
+    }
+#endif
 
 #else // mode is not DIFFUSE_ALPHA_MODE_BLEND, encode to gbuffer
     // deferred path               // See: C++: addDeferredAttachment(), shader: softenLightF.glsl

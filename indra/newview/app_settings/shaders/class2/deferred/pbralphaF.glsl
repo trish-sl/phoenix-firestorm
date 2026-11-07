@@ -53,7 +53,15 @@ uniform vec3 moon_dir;
 // separately compiled units linked into one program, and several of them declare this.
 uniform int classic_mode;
 
+#ifdef FS_WBOIT
+// Weighted blended order-independent transparency (FSRenderAlphaWBOIT, see fsWBOITCompositeF).
+// Same block in class2 alphaF, class1 fullbrightF, class3 materialF and class2 pbralphaF.
+layout(location = 0) out vec4 frag_color;
+layout(location = 1) out vec4 fs_wboit_weight;
+uniform int fs_wboit; // 1 while accumulating, 0 for the stock sorted output
+#else
 out vec4 frag_color;
+#endif
 
 in vec3 vary_fragcoord;
 
@@ -294,6 +302,17 @@ void main()
     // values -- and whatever it writes goes on to the bloom pyramid.
     frag_color = max(vec4(clampHDRRange(color.rgb * final_scale), a), vec4(0));
 #endif // FOR_IMPOSTOR
+#ifdef FS_WBOIT
+    fs_wboit_weight = vec4(0.0);
+    if (fs_wboit != 0)
+    { // weight falls with the square of the view distance in metres (McGuire and Bavoil eq. 7)
+        float wboit_a = clamp(frag_color.a, 0.0, 1.0);
+        float wboit_z = 1.0 / gl_FragCoord.w;
+        float wboit_w = wboit_a * clamp(1.0 / (1e-5 + pow(wboit_z / 5.0, 2.0) + pow(wboit_z / 200.0, 6.0)), 1e-3, 300.0);
+        frag_color = vec4(min(frag_color.rgb, vec3(64.0)) * wboit_a * wboit_w, wboit_a);
+        fs_wboit_weight = vec4(wboit_a * wboit_w, 0.0, 0.0, 0.0);
+    }
+#endif
 }
 
 #else

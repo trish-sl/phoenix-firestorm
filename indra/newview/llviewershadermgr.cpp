@@ -257,6 +257,11 @@ LLGLSLShader            gDeferredPBRTerrainProgram[TERRAIN_PAINT_TYPE_COUNT];
 
 LLGLSLShader            gGLTFPBRMetallicRoughnessProgram;
 
+// <FS:Trish> Weighted blended order-independent transparency
+LLGLSLShader            gFSWBOITCompositeProgram;
+bool                    gFSAlphaWBOITShaders = false;  // the alpha shaders were built with FS_WBOIT
+// </FS:Trish>
+
 
 //helper for making a rigged variant of a given shader
 static bool make_rigged_variant(LLGLSLShader& shader, LLGLSLShader& riggedShader)
@@ -1253,6 +1258,13 @@ bool LLViewerShaderMgr::loadShadersDeferred()
     bool use_sun_shadow = mShaderLevel[SHADER_DEFERRED] > 1 &&
         gSavedSettings.getS32("RenderShadowDetail") > 0;
 
+    // <FS:Trish> WBOIT: the non-rigged world alpha shaders get a second, explicitly located
+    // output. Explicit fragment output locations need GLSL 3.30.
+    const bool use_wboit = gSavedSettings.getBOOL("FSRenderAlphaWBOIT") &&
+        (gGLManager.mGLSLVersionMajor > 3 || (gGLManager.mGLSLVersionMajor == 3 && gGLManager.mGLSLVersionMinor >= 30));
+    gFSAlphaWBOITShaders = false;
+    // </FS:Trish>
+
     if (mShaderLevel[SHADER_DEFERRED] == 0)
     {
         gDeferredTreeProgram.unload();
@@ -1326,6 +1338,10 @@ bool LLViewerShaderMgr::loadShadersDeferred()
         gFSBloomUpProgram.unload();
         gFSLensEffectsProgram.unload();
         gFSAvatarMatteProgram.unload();
+        // </FS:Trish>
+        // <FS:Trish> WBOIT
+        gFSWBOITCompositeProgram.unload();
+        gFSAlphaWBOITShaders = false;
         // </FS:Trish>
 
         for (auto i = 0; i < 4; ++i)
@@ -1533,6 +1549,12 @@ bool LLViewerShaderMgr::loadShadersDeferred()
             else
             {
                 gDeferredMaterialProgram[i].mRiggedVariant = &gDeferredMaterialProgram[i + 0x10];
+                // <FS:Trish> WBOIT, blended alpha mode only
+                if (use_wboit && alpha_mode == LLMaterial::DIFFUSE_ALPHA_MODE_BLEND)
+                {
+                    gDeferredMaterialProgram[i].addPermutation("FS_WBOIT", "1");
+                }
+                // </FS:Trish>
             }
 
             success = gDeferredMaterialProgram[i].createShader();
@@ -1673,6 +1695,12 @@ bool LLViewerShaderMgr::loadShadersDeferred()
 
         shader->mShaderLevel = mShaderLevel[SHADER_DEFERRED];
         success = make_rigged_variant(*shader, gDeferredSkinnedPBRAlphaProgram);
+        // <FS:Trish> WBOIT, after the rigged variant copied the defines: rigged alpha stays sorted
+        if (use_wboit)
+        {
+            shader->addPermutation("FS_WBOIT", "1");
+        }
+        // </FS:Trish>
         if (success)
         {
             success = shader->createShader();
@@ -2025,6 +2053,13 @@ bool LLViewerShaderMgr::loadShadersDeferred()
                 shader->addPermutation("IS_HUD", "1");
             }
 
+            // <FS:Trish> WBOIT
+            if (use_wboit && !rigged && !hud)
+            {
+                shader->addPermutation("FS_WBOIT", "1");
+            }
+            // </FS:Trish>
+
             shader->mShaderLevel = mShaderLevel[SHADER_DEFERRED];
 
             success = shader->createShader();
@@ -2222,6 +2257,12 @@ bool LLViewerShaderMgr::loadShadersDeferred()
 
         gDeferredFullbrightAlphaMaskAlphaProgram.mShaderLevel = mShaderLevel[SHADER_DEFERRED];
         success = make_rigged_variant(gDeferredFullbrightAlphaMaskAlphaProgram, gDeferredSkinnedFullbrightAlphaMaskAlphaProgram);
+        // <FS:Trish> WBOIT, after the rigged variant copied the defines: rigged alpha stays sorted
+        if (use_wboit)
+        {
+            gDeferredFullbrightAlphaMaskAlphaProgram.addPermutation("FS_WBOIT", "1");
+        }
+        // </FS:Trish>
         success = success && gDeferredFullbrightAlphaMaskAlphaProgram.createShader();
         llassert(success);
     }
@@ -2825,6 +2866,28 @@ bool LLViewerShaderMgr::loadShadersDeferred()
                 LL_WARNS("ShaderLoading") << post.mName << " failed to build, that effect stays off" << LL_ENDL;
                 post.mShader->unload();
             }
+        }
+    }
+    // </FS:Trish>
+
+    // <FS:Trish> WBOIT composite. Optional like the post effects: without it, alpha stays sorted.
+    gFSWBOITCompositeProgram.unload();
+    if (success && use_wboit)
+    {
+        gFSWBOITCompositeProgram.mName = "FS WBOIT Composite";
+        gFSWBOITCompositeProgram.mShaderFiles.clear();
+        gFSWBOITCompositeProgram.clearPermutations();
+        gFSWBOITCompositeProgram.mShaderFiles.push_back(make_pair("deferred/postDeferredNoTCV.glsl", GL_VERTEX_SHADER));
+        gFSWBOITCompositeProgram.mShaderFiles.push_back(make_pair("deferred/fsWBOITCompositeF.glsl", GL_FRAGMENT_SHADER));
+        gFSWBOITCompositeProgram.mShaderLevel = mShaderLevel[SHADER_DEFERRED];
+        if (gFSWBOITCompositeProgram.createShader())
+        {
+            gFSAlphaWBOITShaders = true;
+        }
+        else
+        {
+            LL_WARNS("ShaderLoading") << "FS WBOIT Composite failed to build, transparency stays sorted" << LL_ENDL;
+            gFSWBOITCompositeProgram.unload();
         }
     }
     // </FS:Trish>

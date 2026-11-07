@@ -205,8 +205,37 @@ void LLDrawPoolAlpha::renderPostDeferred(S32 pass)
         forwardRender(true);
     }
 
-    // second pass, regular forward alpha rendering
-    forwardRender();
+    // <FS:Trish> Weighted blended order-independent transparency. Rigged alpha (hair, clothing
+    // layers) keeps the stock sorted, depth writing first pass above, so everything is ordered
+    // against it as before. The non-rigged source-over alpha then accumulates order independently
+    // and is composited over the scene. Draws with a custom blend function can't be accumulated:
+    // they follow, sorted, along with the glow of every draw. Main camera only; probes, mirrors,
+    // HUDs and impostors take the stock path (canUseWBOIT).
+    //// second pass, regular forward alpha rendering
+    //forwardRender();
+    if (gPipeline.canUseWBOIT() && gPipeline.beginWBOIT())
+    {
+        setWBOITOutput(true);
+        forwardRender(false, WBOIT_ACCUMULATE);
+        setWBOITOutput(false);
+        gPipeline.endWBOIT();
+
+        forwardRender(false, WBOIT_RESIDUAL);
+
+        // Stock alpha writes depth here (water fog below the water plane, screen copy skipped,
+        // impostor masks). The accumulation couldn't, or overlapping layers would have rejected
+        // each other, so lay the depth down now that the colour is in.
+        if (LLDrawPoolWater::sSkipScreenCopy || getType() == LLDrawPool::POOL_ALPHA_PRE_WATER)
+        {
+            forwardRender(false, WBOIT_DEPTH);
+        }
+    }
+    else
+    {
+        // second pass, regular forward alpha rendering
+        forwardRender();
+    }
+    // </FS:Trish>
 
     // final pass, render to depth for depth of field effects
     if (!LLPipeline::sImpostorRender && LLPipeline::RenderDepthOfField && !gCubeSnapshot && !LLPipeline::sRenderingHUDs && getType() == LLDrawPool::POOL_ALPHA_POST_WATER)
@@ -229,7 +258,10 @@ void LLDrawPoolAlpha::renderPostDeferred(S32 pass)
     }
 }
 
-void LLDrawPoolAlpha::forwardRender(bool rigged)
+// <FS:Trish> WBOIT phase
+//void LLDrawPoolAlpha::forwardRender(bool rigged)
+void LLDrawPoolAlpha::forwardRender(bool rigged, EWBOITPhase wboit_phase)
+// </FS:Trish>
 {
     gPipeline.enableLightsDynamic();
 
@@ -245,6 +277,18 @@ void LLDrawPoolAlpha::forwardRender(bool rigged)
         || LLPipeline::sImpostorRenderAlphaDepthPass
         || getType() == LLDrawPoolAlpha::POOL_ALPHA_PRE_WATER; // needed for accurate water fog
 
+    // <FS:Trish> WBOIT: overlapping accumulated layers must not reject each other, their depth
+    // is laid down afterwards by the depth only phase
+    if (wboit_phase == WBOIT_ACCUMULATE)
+    {
+        write_depth = false;
+    }
+    else if (wboit_phase == WBOIT_DEPTH)
+    {
+        write_depth = true;
+        gGL.setColorMask(false, false);
+    }
+    // </FS:Trish>
 
     LLGLDepthTest depth(GL_TRUE, write_depth ? GL_TRUE : GL_FALSE);
 
@@ -252,6 +296,15 @@ void LLDrawPoolAlpha::forwardRender(bool rigged)
     mColorDFactor = LLRender::BF_ONE_MINUS_SOURCE_ALPHA; // }
     mAlphaSFactor = LLRender::BF_ZERO;                         // } glow suppression
     mAlphaDFactor = LLRender::BF_ONE_MINUS_SOURCE_ALPHA;       // }
+    // <FS:Trish> WBOIT accumulation: the shaders write colour * alpha * weight to add up in the
+    // first target's rgb and alpha * weight to add up in the second's red. The stock alpha
+    // factors multiply the first target's alpha by (1 - alpha): the revealage.
+    if (wboit_phase == WBOIT_ACCUMULATE)
+    {
+        mColorSFactor = LLRender::BF_ONE;
+        mColorDFactor = LLRender::BF_ONE;
+    }
+    // </FS:Trish>
     gGL.blendFunc(mColorSFactor, mColorDFactor, mAlphaSFactor, mAlphaDFactor);
 
     if (rigged && mType == LLDrawPool::POOL_ALPHA_POST_WATER)
@@ -264,11 +317,19 @@ void LLDrawPoolAlpha::forwardRender(bool rigged)
 
     // If the face is more than 90% transparent, then don't update the Depth buffer for Dof
     // We don't want the nearly invisible objects to cause of DoF effects
-    renderAlpha(getVertexDataMask() | LLVertexBuffer::MAP_TEXTURE_INDEX | LLVertexBuffer::MAP_TANGENT | LLVertexBuffer::MAP_TEXCOORD1 | LLVertexBuffer::MAP_TEXCOORD2, false, rigged);
+    // <FS:Trish> WBOIT phase
+    //renderAlpha(getVertexDataMask() | LLVertexBuffer::MAP_TEXTURE_INDEX | LLVertexBuffer::MAP_TANGENT | LLVertexBuffer::MAP_TEXCOORD1 | LLVertexBuffer::MAP_TEXCOORD2, false, rigged);
+    renderAlpha(getVertexDataMask() | LLVertexBuffer::MAP_TEXTURE_INDEX | LLVertexBuffer::MAP_TANGENT | LLVertexBuffer::MAP_TEXCOORD1 | LLVertexBuffer::MAP_TEXCOORD2,
+        wboit_phase == WBOIT_DEPTH, rigged, wboit_phase);
+    // </FS:Trish>
 
     gGL.setColorMask(true, false);
 
-    if (!rigged && (LLPipeline::sRenderingHUDs || getType() == LLDrawPoolAlpha::POOL_ALPHA_POST_WATER))
+    // <FS:Trish> WBOIT: highlights go on the scene once, with the residual pass
+    //if (!rigged && (LLPipeline::sRenderingHUDs || getType() == LLDrawPoolAlpha::POOL_ALPHA_POST_WATER))
+    if (!rigged && (wboit_phase == WBOIT_OFF || wboit_phase == WBOIT_RESIDUAL) &&
+        (LLPipeline::sRenderingHUDs || getType() == LLDrawPoolAlpha::POOL_ALPHA_POST_WATER))
+    // </FS:Trish>
     { //render "highlight alpha" on final non-rigged pass for non-HUDs (HUDs only run pre-water alpha pass)
         // NOTE -- hacky call here protected by !rigged instead of alongside "forwardRender"
         // so renderDebugAlpha is executed while gls_pipeline_alpha and depth GL state
@@ -276,6 +337,35 @@ void LLDrawPoolAlpha::forwardRender(bool rigged)
         renderDebugAlpha();
     }
 }
+
+// <FS:Trish> Weighted blended order-independent transparency: the non-rigged alpha shaders are
+// built with FS_WBOIT while FSRenderAlphaWBOIT is on. fs_wboit picks their output: 0 the stock
+// colour, 1 the weighted accumulation terms. Rigged variants are never switched.
+void LLDrawPoolAlpha::setWBOITOutput(bool enable)
+{
+    static LLStaticHashedString fs_wboit("fs_wboit");
+
+    std::vector<LLGLSLShader*> shaders = { simple_shader, fullbright_shader, pbr_shader };
+    for (U32 i = 0; i < LLMaterial::SHADER_COUNT; ++i)
+    {
+        if ((i & 0x3) == LLMaterial::DIFFUSE_ALPHA_MODE_BLEND)
+        {
+            shaders.push_back(&gDeferredMaterialProgram[i]);
+        }
+    }
+
+    for (LLGLSLShader* shader : shaders)
+    {
+        if (shader && shader->isComplete())
+        {
+            shader->bind();
+            shader->uniform1i(fs_wboit, enable ? 1 : 0);
+        }
+    }
+
+    LLGLSLShader::unbind();
+}
+// </FS:Trish>
 
 void LLDrawPoolAlpha::renderDebugAlpha()
 {
@@ -580,7 +670,10 @@ void LLDrawPoolAlpha::renderRiggedPbrEmissives(std::vector<LLDrawInfo*>& emissiv
     }
 }
 
-void LLDrawPoolAlpha::renderAlpha(U32 mask, bool depth_only, bool rigged)
+// <FS:Trish> WBOIT phase
+//void LLDrawPoolAlpha::renderAlpha(U32 mask, bool depth_only, bool rigged)
+void LLDrawPoolAlpha::renderAlpha(U32 mask, bool depth_only, bool rigged, EWBOITPhase wboit_phase)
+// </FS:Trish>
 {
     LL_PROFILE_ZONE_SCOPED_CATEGORY_DRAWPOOL;
     bool initialized_lighting = false;
@@ -685,6 +778,38 @@ void LLDrawPoolAlpha::renderAlpha(U32 mask, bool depth_only, bool rigged)
                 LL_PROFILE_ZONE_NAMED_CATEGORY_DRAWPOOL("ra - push batch");
 
                 LLRenderPass::applyModelMatrix(params);
+
+                // <FS:Trish> WBOIT: only plain source-over blending can be accumulated. The
+                // residual phase draws the rest and queues the glow of the accumulated draws
+                // (the model matrix above is what the glow pass below draws them with).
+                if (wboit_phase != WBOIT_OFF)
+                {
+                    const bool accumulated = params.mBlendFuncSrc == LLRender::BF_SOURCE_ALPHA &&
+                        params.mBlendFuncDst == LLRender::BF_ONE_MINUS_SOURCE_ALPHA &&
+                        (!params.mMaterial || params.mGLTFMaterial ||
+                         (params.mShaderMask & 0x3) == LLMaterial::DIFFUSE_ALPHA_MODE_BLEND);
+                    if (wboit_phase == WBOIT_RESIDUAL && accumulated)
+                    {
+                        if (!depth_only && getType() != LLDrawPool::POOL_ALPHA_PRE_WATER &&
+                            params.mVertexBuffer->hasDataType(LLVertexBuffer::TYPE_EMISSIVE))
+                        {
+                            if (params.mAvatar != nullptr)
+                            {
+                                (params.mGLTFMaterial.isNull() ? rigged_emissives : pbr_rigged_emissives).push_back(&params);
+                            }
+                            else
+                            {
+                                (params.mGLTFMaterial.isNull() ? emissives : pbr_emissives).push_back(&params);
+                            }
+                        }
+                        continue;
+                    }
+                    if (wboit_phase != WBOIT_RESIDUAL && !accumulated)
+                    {
+                        continue;
+                    }
+                }
+                // </FS:Trish>
 
                 LLMaterial* mat = NULL;
                 LLGLTFMaterial *gltf_mat = params.mGLTFMaterial;
@@ -799,7 +924,17 @@ void LLDrawPoolAlpha::renderAlpha(U32 mask, bool depth_only, bool rigged)
                 bool tex_setup = TexSetup(&params, (mat != nullptr));
 
                 {
-                    gGL.blendFunc((LLRender::eBlendFactor) params.mBlendFuncSrc, (LLRender::eBlendFactor) params.mBlendFuncDst, mAlphaSFactor, mAlphaDFactor);
+                    // <FS:Trish> WBOIT accumulation keeps its additive blend for every draw
+                    //gGL.blendFunc((LLRender::eBlendFactor) params.mBlendFuncSrc, (LLRender::eBlendFactor) params.mBlendFuncDst, mAlphaSFactor, mAlphaDFactor);
+                    if (wboit_phase == WBOIT_ACCUMULATE)
+                    {
+                        gGL.blendFunc(mColorSFactor, mColorDFactor, mAlphaSFactor, mAlphaDFactor);
+                    }
+                    else
+                    {
+                        gGL.blendFunc((LLRender::eBlendFactor) params.mBlendFuncSrc, (LLRender::eBlendFactor) params.mBlendFuncDst, mAlphaSFactor, mAlphaDFactor);
+                    }
+                    // </FS:Trish>
 
                     bool reset_minimum_alpha = false;
                     if (!LLPipeline::sImpostorRender &&
@@ -821,7 +956,10 @@ void LLDrawPoolAlpha::renderAlpha(U32 mask, bool depth_only, bool rigged)
                 }
 
                 // If this alpha mesh has glow, then draw it a second time to add the destination-alpha (=glow).  Interleaving these state-changing calls is expensive, but glow must be drawn Z-sorted with alpha.
-                if (getType() != LLDrawPool::POOL_ALPHA_PRE_WATER &&
+                // <FS:Trish> WBOIT: no glow while accumulating, the residual phase adds it
+                //if (getType() != LLDrawPool::POOL_ALPHA_PRE_WATER &&
+                if (wboit_phase != WBOIT_ACCUMULATE && getType() != LLDrawPool::POOL_ALPHA_PRE_WATER &&
+                // </FS:Trish>
                     params.mVertexBuffer->hasDataType(LLVertexBuffer::TYPE_EMISSIVE))
                 {
                     if (params.mAvatar != nullptr)
@@ -858,7 +996,10 @@ void LLDrawPoolAlpha::renderAlpha(U32 mask, bool depth_only, bool rigged)
             }
 
             // render emissive faces into alpha channel for bloom effects
-            if (!depth_only)
+            // <FS:Trish> WBOIT: not into the accumulation targets
+            //if (!depth_only)
+            if (!depth_only && wboit_phase != WBOIT_ACCUMULATE)
+            // </FS:Trish>
             {
                 gPipeline.enableLightsDynamic();
 
