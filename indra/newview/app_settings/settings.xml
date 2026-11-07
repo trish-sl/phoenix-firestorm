@@ -26723,6 +26723,17 @@ Change of this parameter will affect the layout of buttons in notification toast
       <key>Value</key>
       <real>10.0</real>
     </map>
+    <key>FSRLVaProfileCommands</key>
+    <map>
+      <key>Comment</key>
+      <string>EXPERIMENTAL. Accept the profile RLVa commands from the i-doll fork: @editprofile, @editpicks, @editdisplayname, @editpfp, @setprofileimage and @blockedimmsg. While off they are refused as disabled; restrictions already set can still be lifted.</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>Boolean</string>
+      <key>Value</key>
+      <integer>0</integer>
+    </map>
     <key>FSRenderShadowFarCascadeInterval</key>
     <map>
       <key>Comment</key>
