@@ -862,9 +862,18 @@ void FSDecodedTextureCache::evictIfNeeded()
 #include "llfloaterpreference.h"
 #include "lltextbox.h"
 
+#include <boost/algorithm/string.hpp>
+
 class FSPanelPreferenceExperimental : public LLPanelPreference
 {
 public:
+    FSPanelPreferenceExperimental()
+    {
+        // Each section heading's "Reset to default" button lists the settings of that section
+        mCommitCallbackRegistrar.add("FSExperimental.ResetSection",
+            [this](LLUICtrl*, const LLSD& param) { onResetSection(param.asString()); });
+    }
+
     bool postBuild() override
     {
         mCacheStats = findChild<LLTextBox>("decoded_texture_cache_stats");
@@ -904,6 +913,35 @@ public:
     }
 
 private:
+    // Sets the listed settings (comma separated) back to their defaults. Settings that rebuild
+    // shaders when changed do so through their own listeners, and Cancel still restores the values
+    // the floater was opened with.
+    void onResetSection(const std::string& names)
+    {
+        std::vector<std::string> list;
+        boost::split(list, names, boost::is_any_of(","));
+        for (std::string name : list)
+        {
+            LLStringUtil::trim(name);
+            if (name.empty())
+            {
+                continue;
+            }
+            LLControlVariable* control = gSavedSettings.getControl(name);
+            if (!control)
+            {
+                LL_WARNS("Preferences") << "Reset to default: no setting " << name << LL_ENDL;
+                continue;
+            }
+            if (!control->isDefault())
+            {
+                control->resetToDefault(true);
+            }
+        }
+        refreshVectorComponents();
+        refreshSunRaysQuality();
+    }
+
     struct VectorComponent
     {
         LLUICtrl* mCtrl;
