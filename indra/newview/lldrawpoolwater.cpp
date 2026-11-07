@@ -214,6 +214,28 @@ static S32 fs_bind_water_foam(LLGLSLShader* shader, LLRenderTarget& water_dis)
     gGL.getTexUnit(unit)->bind(depth, true);
     return unit;
 }
+
+// Sun glints: uniforms for fsWaterGlintF.glsl, linked into the water shader only when enabled
+static void fs_bind_water_glints(LLGLSLShader* shader)
+{
+    static LLCachedControl<bool> enabled(gSavedSettings, "FSRenderSunGlints", false);
+    static LLCachedControl<F32> intensity(gSavedSettings, "FSRenderSunGlintsIntensity", 1.f);
+    static LLCachedControl<F32> density(gSavedSettings, "FSRenderSunGlintsDensity", 1.f);
+    static LLStaticHashedString s_params("fs_glint_params");
+
+    if (!enabled || shader->getUniformLocation(s_params) < 0)
+    {
+        return;
+    }
+
+    // The angle one pixel covers at the centre of the view, for the glints' footprint
+    LLViewerCamera* camera = LLViewerCamera::getInstance();
+    const F32 pixel_angle = 2.f * tanf(camera->getView() * 0.5f) / (F32)llmax(camera->getViewHeightInPixels(), 1);
+
+    // Wrapped so the phase keeps its precision; the pattern jumps once an hour
+    const F32 phase = (F32)fmod(LLFrameTimer::getElapsedSeconds(), 3600.0);
+    shader->uniform4f(s_params, llclamp((F32)intensity, 0.f, 4.f), llclamp((F32)density, 0.1f, 4.f), phase, pixel_angle);
+}
 // </FS:Trish>
 
 void LLDrawPoolWater::renderPostDeferred(S32 pass)
@@ -412,6 +434,7 @@ void LLDrawPoolWater::renderPostDeferred(S32 pass)
     }
 
     const S32 fs_foam_unit = fs_bind_water_foam(shader, water_dis); // <FS:Trish/>
+    fs_bind_water_glints(shader); // <FS:Trish/>
 
     LLGLDisable cullface(GL_CULL_FACE);
 

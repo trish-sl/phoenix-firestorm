@@ -117,6 +117,10 @@ vec3 getPositionWithNDC(vec3 ndc);
 float fsWaterFoam(vec2 screen_tc, vec3 pos, vec3 up, vec2 view_offset);
 #endif
 
+#ifdef FS_WATER_GLINTS
+float fsWaterGlint(vec3 pos, vec3 n, vec3 up, vec3 v, vec3 l, vec2 view_offset);
+#endif
+
 void generateWaveNormals(out vec3 wave1, out vec3 wave2, out vec3 wave3)
 {
     // Generate all of our wave normals.
@@ -343,6 +347,12 @@ void main()
     fade *= 60;
     fade = min(1, fade);
     color = mix(fb.rgb, color, fade);
+
+#ifdef FS_WATER_GLINTS
+    // Sun glints (fsWaterGlintF.glsl), added to the regular sun highlight above, lit and
+    // shadowed like it
+    color += fsWaterGlint(pos.xyz, wavef, up, v, normalize(light_dir), view.xy) * sunlit_linear * shadow * atten * fade;
+#endif
 
 #ifdef FS_WATER_FOAM
     // Shoreline foam on top of everything else (fsWaterFoamF.glsl): rough and white, so it
