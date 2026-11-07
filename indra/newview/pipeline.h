@@ -956,6 +956,7 @@ public:
     bool                    fsBindExtraSpotShadow(LLGLSLShader& shader, U32 slot);
     void                    fsEndExtraSpotShadows();
     S32                     mFSSpotShadowUnit = -1;                         // texture unit of fs_spot_shadow_map, -1 when unused
+    S32                     mFSSpotDepthUnit = -1;                          // ...of fs_spot_shadow_depth (PCSS), -1 when unused
     // </FS:Trish>
 
     // exposure map for getting average color in scene
