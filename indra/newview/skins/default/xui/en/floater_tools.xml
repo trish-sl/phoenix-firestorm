@@ -355,13 +355,30 @@
      layout="topleft"
      left_pad="2"
      name="unlink_btn"
-     width="90"
+     width="44"
      font="DejaVu"
      font.size="LSmall"
      pad_bottom="1">
 	  <button.commit_callback
 	     function="BuildTool.UnlinkObjects"/>
     </button>
+    <!-- <FS:Trish> Make the selected linked part the root -->
+    <button
+     follows="left|top"
+     height="20"
+     label="Root"
+     layout="topleft"
+     left_pad="2"
+     name="make_root_btn"
+     tool_tip="Make the selected linked part the root of its linkset (select it with Edit linked). The linkset is unlinked and linked again with this part first. Link numbers change."
+     width="44"
+     font="DejaVu"
+     font.size="LSmall"
+     pad_bottom="1">
+	  <button.commit_callback
+	     function="BuildTool.MakeRoot"/>
+    </button>
+    <!-- </FS:Trish> -->
     <combo_box
      height="20"
      layout="topleft"

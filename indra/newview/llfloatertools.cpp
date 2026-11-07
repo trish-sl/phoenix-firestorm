@@ -28,6 +28,7 @@
 
 #include "llfloatertools.h"
 #include "fspanelbuildinfo.h" // <FS:Trish/> link number helper
+#include "fsmakeroot.h" // <FS:Trish/>
 
 #include "llfontgl.h"
 #include "llcoord.h"
@@ -523,6 +524,7 @@ LLFloaterTools::LLFloaterTools(const LLSD& key)
 
     mCommitCallbackRegistrar.add("BuildTool.LinkObjects",       boost::bind(&LLSelectMgr::linkObjects, LLSelectMgr::getInstance()));
     mCommitCallbackRegistrar.add("BuildTool.UnlinkObjects",     boost::bind(&LLSelectMgr::unlinkObjects, LLSelectMgr::getInstance()));
+    mCommitCallbackRegistrar.add("BuildTool.MakeRoot",          [](LLUICtrl*, const LLSD&) { FSMakeRoot::instance().makeRoot(); }); // <FS:Trish/>
 
     // <FS>
     mCommitCallbackRegistrar.add("BuildTool.CopyKeys",          boost::bind(&LLFloaterTools::onClickBtnCopyKeys,this));
@@ -957,6 +959,13 @@ void LLFloaterTools::updatePopup(LLCoordGL center, MASK mask)
 
     mBtnLink->setEnabled(LLSelectMgr::instance().enableLinkObjects());
     mBtnUnlink->setEnabled(LLSelectMgr::instance().enableUnlinkObjects());
+    // <FS:Trish> Make root
+    if (LLView* make_root = findChildView("make_root_btn"))
+    {
+        make_root->setVisible(edit_visible);
+        make_root->setEnabled(edit_visible && FSMakeRoot::instance().canMakeRoot());
+    }
+    // </FS:Trish>
 
     // <FS:PP> FIRE-14493: Buttons to cycle through linkset
     mBtnPrevPart->setVisible(edit_visible);
