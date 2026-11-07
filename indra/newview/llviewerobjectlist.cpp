@@ -138,6 +138,7 @@ void LLViewerObjectList::destroy()
     resetObjectBeacons();
     mActiveObjects.clear();
     mDeadObjects.clear();
+    mDeadObjectList.clear(); // <FS:Trish/>
     mMapObjects.clear();
     mUUIDObjectMap.clear();
     mCachedMotionStates.clear();
@@ -1861,6 +1862,7 @@ void LLViewerObjectList::cleanupReferences(LLViewerObject *objectp)
     // <FS:Beq> FIRE-30694 DeadObject Spam
     //  mDeadObjects.insert(objectp->mID);
         mDeadObjects.insert( objectp->mID );
+        mDeadObjectList.push_back(objectp); // <FS:Trish/>
         mNumDeadObjects++;
         llassert( mNumDeadObjects == mDeadObjects.size() );
     // </FS:Beq>
@@ -1989,6 +1991,7 @@ void LLViewerObjectList::killAllObjects()
         objectp = *iter;
         objectp->setOnActiveList(false);
         objectp->setListIndex(-1);
+        objectp->mObjectListIndex = -1; // <FS:Trish/>
         objectp->mRegionIndex = 0;
         objectp->mOnMap = false;
         killObject(objectp);
@@ -2001,6 +2004,7 @@ void LLViewerObjectList::killAllObjects()
     // Direct clear instead of cleanDeadObjects - all objects are already dead
     mObjects.clear();
     mDeadObjects.clear();
+    mDeadObjectList.clear(); // <FS:Trish/>
     mNumDeadObjects = 0;
 
     if(!mObjects.empty())
@@ -2026,72 +2030,113 @@ void LLViewerObjectList::cleanDeadObjects(bool use_timer)
     // <FS:Beq/> FIRE-30694 DeadObject Spam
     S32 num_divergent = 0;
     S32 num_removed = 0;
-    LLViewerObject *objectp;
+    //LLViewerObject *objectp; // <FS:Trish/>
 
     // <FS:Ansariel> Use timer for cleaning up dead objects
     static const F64 max_time = 0.01; // Let's try 10ms per frame
     LLTimer timer;
     // </FS:Ansariel>
 
-    vobj_list_t::reverse_iterator target = mObjects.rbegin();
-
-    vobj_list_t::iterator iter = mObjects.begin();
-    for ( ; iter != mObjects.end(); )
+    // <FS:Trish> Remove just the objects on the dead list (swap-remove by stored index) instead of
+    // scanning all of mObjects for isDead() every time something died
+    size_t processed = 0;
+    while (processed < mDeadObjectList.size())
     {
-        // Scan for all of the dead objects and put them all on the end of the list with no ref count ops
-        objectp = *iter;
-        if (objectp == NULL)
-        { //we caught up to the dead tail
-            break;
-        }
+        // Take the reference out of the list so the object can't be destroyed inside a vector operation
+        LLPointer<LLViewerObject> deadp = std::move(mDeadObjectList[processed++]);
 
-        if (objectp->isDead())
+        auto delete_me = mDeadObjects.find(deadp->mID);
+        if (delete_me != mDeadObjects.end())
         {
-            // <FS:Beq> FIRE-30694 DeadObject Spam
-            // mDeadObjects.erase(objectp->mID); // <FS:Ansariel> Use timer for cleaning up dead objects
-            auto delete_me = mDeadObjects.find(objectp->mID);
-            if( delete_me !=mDeadObjects.end() )
-            {
-                mDeadObjects.erase( delete_me );
-            }
-            else
-            {
-                LL_WARNS() << "Attempt to delete object " << objectp->mID << " but object not in dead list" << LL_ENDL;
-                num_divergent++; // this is the number we are adrift in the count
-            }
-
-            LLPointer<LLViewerObject>::swap(*iter, *target);
-            *target = NULL;
-            ++target;
-            num_removed++;
-
-            // <FS:Ansariel> Use timer for cleaning up dead objects
-            //if (num_removed == mNumDeadObjects || iter->isNull())
-            if (num_removed == mNumDeadObjects || iter->isNull() || (use_timer && timer.getElapsedTimeF64() > max_time))
-            // </FS:Ansariel>
-            {
-                // We've cleaned up all of the dead objects or caught up to the dead tail
-                break;
-            }
+            mDeadObjects.erase(delete_me);
         }
         else
         {
-            ++iter;
+            LL_WARNS() << "Attempt to delete object " << deadp->mID << " but object not in dead list" << LL_ENDL;
+            num_divergent++; // this is the number we are adrift in the count
+        }
+        num_removed++;
+
+        S32 idx = deadp->mObjectListIndex;
+        if (idx >= 0 && idx < (S32)mObjects.size() && mObjects[idx] == deadp)
+        {
+            S32 last = (S32)mObjects.size() - 1;
+            if (idx != last)
+            {
+                LLPointer<LLViewerObject>::swap(mObjects[idx], mObjects[last]);
+                mObjects[idx]->mObjectListIndex = idx;
+            }
+            mObjects.pop_back();
+            deadp->mObjectListIndex = -1;
+        }
+
+        if (use_timer && timer.getElapsedTimeF64() > max_time)
+        {
+            break;
         }
     }
+    mDeadObjectList.erase(mDeadObjectList.begin(), mDeadObjectList.begin() + processed);
+    //vobj_list_t::reverse_iterator target = mObjects.rbegin();
 
-    // <FS:Ansariel> Use timer for cleaning up dead objects
-    //llassert(num_removed == mNumDeadObjects);
+    //vobj_list_t::iterator iter = mObjects.begin();
+    //for ( ; iter != mObjects.end(); )
+    //{
+    //    // Scan for all of the dead objects and put them all on the end of the list with no ref count ops
+    //    objectp = *iter;
+    //    if (objectp == NULL)
+    //    { //we caught up to the dead tail
+    //        break;
+    //    }
 
-    ////erase as a block
-    //mObjects.erase(mObjects.begin()+(mObjects.size()-mNumDeadObjects), mObjects.end());
+    //    if (objectp->isDead())
+    //    {
+    //        // <FS:Beq> FIRE-30694 DeadObject Spam
+    //        // mDeadObjects.erase(objectp->mID); // <FS:Ansariel> Use timer for cleaning up dead objects
+    //        auto delete_me = mDeadObjects.find(objectp->mID);
+    //        if( delete_me !=mDeadObjects.end() )
+    //        {
+    //            mDeadObjects.erase( delete_me );
+    //        }
+    //        else
+    //        {
+    //            LL_WARNS() << "Attempt to delete object " << objectp->mID << " but object not in dead list" << LL_ENDL;
+    //            num_divergent++; // this is the number we are adrift in the count
+    //        }
 
-    //// We've cleaned the global object list, now let's do some paranoia testing on objects
-    //// before blowing away the dead list.
-    //mDeadObjects.clear();
-    //mNumDeadObjects = 0;
-    mObjects.erase(mObjects.begin()+(mObjects.size()-num_removed), mObjects.end());
+    //        LLPointer<LLViewerObject>::swap(*iter, *target);
+    //        *target = NULL;
+    //        ++target;
+    //        num_removed++;
+
+    //        // <FS:Ansariel> Use timer for cleaning up dead objects
+    //        //if (num_removed == mNumDeadObjects || iter->isNull())
+    //        if (num_removed == mNumDeadObjects || iter->isNull() || (use_timer && timer.getElapsedTimeF64() > max_time))
+    //        // </FS:Ansariel>
+    //        {
+    //            // We've cleaned up all of the dead objects or caught up to the dead tail
+    //            break;
+    //        }
+    //    }
+    //    else
+    //    {
+    //        ++iter;
+    //    }
+    //}
+
+    //// <FS:Ansariel> Use timer for cleaning up dead objects
+    ////llassert(num_removed == mNumDeadObjects);
+
+    //////erase as a block
+    ////mObjects.erase(mObjects.begin()+(mObjects.size()-mNumDeadObjects), mObjects.end());
+
+    ////// We've cleaned the global object list, now let's do some paranoia testing on objects
+    ////// before blowing away the dead list.
+    ////mDeadObjects.clear();
+    ////mNumDeadObjects = 0;
+    //mObjects.erase(mObjects.begin()+(mObjects.size()-num_removed), mObjects.end());
+    //mNumDeadObjects -= num_removed;
     mNumDeadObjects -= num_removed;
+    // </FS:Trish>
 
     // TODO(Beq) If this still happens, we ought to realign at this point. Do a full sweep and reset.
     if ( mNumDeadObjects != mDeadObjects.size() )
@@ -2100,6 +2145,14 @@ void LLViewerObjectList::cleanDeadObjects(bool use_timer)
     }
     // </FS:Ansariel>
 }
+
+// <FS:Trish> Add to mObjects and remember the index for cleanDeadObjects
+void LLViewerObjectList::addToObjectList(LLViewerObject* objectp)
+{
+    objectp->mObjectListIndex = (S32)mObjects.size();
+    mObjects.push_back(objectp);
+}
+// </FS:Trish>
 
 void LLViewerObjectList::removeFromActiveList(LLViewerObject* objectp)
 {
@@ -2547,7 +2600,10 @@ LLViewerObject *LLViewerObjectList::createObjectViewer(const LLPCode pcode, LLVi
 
     mUUIDObjectMap[fullid] = objectp;
 
-    mObjects.push_back(objectp);
+    // <FS:Trish> Track the object's index in mObjects
+    //mObjects.push_back(objectp);
+    addToObjectList(objectp);
+    // </FS:Trish>
 
     updateActive(objectp);
 
@@ -2574,7 +2630,10 @@ LLViewerObject *LLViewerObjectList::createObjectFromCache(const LLPCode pcode, L
                     regionp->getHost().getAddress(),
                     regionp->getHost().getPort(),
                     objectp);
-    mObjects.push_back(objectp);
+    // <FS:Trish> Track the object's index in mObjects
+    //mObjects.push_back(objectp);
+    addToObjectList(objectp);
+    // </FS:Trish>
 
     updateActive(objectp);
 
@@ -2628,7 +2687,10 @@ LLViewerObject *LLViewerObjectList::createObject(const LLPCode pcode, LLViewerRe
                     gMessageSystem->getSenderPort(),
                     objectp);
 
-    mObjects.push_back(objectp);
+    // <FS:Trish> Track the object's index in mObjects
+    //mObjects.push_back(objectp);
+    addToObjectList(objectp);
+    // </FS:Trish>
 
     updateActive(objectp);
 
