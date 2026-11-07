@@ -1528,7 +1528,7 @@
              bottom="-1">
                 <panel
                  follows="left|top"
-                 height="478"
+                 height="540"
                  layout="topleft"
                  left="0"
                  name="experimental_rendering_settings"
@@ -1833,6 +1833,42 @@
                      name="shadow_split_transition"
                      tool_tip="EXPERIMENTAL. How quickly the shadow detail setting moves from the sun overhead value to the sun ahead/behind value as the sun lines up with the view. Default 2."
                      top="443"
+                     width="100" />
+                    <text
+                     follows="left|top"
+                     font="SansSerifBold"
+                     height="18"
+                     layout="topleft"
+                     left="15"
+                     name="shadow_performance_heading"
+                     top="481"
+                     width="475">
+                        Shadow performance
+                    </text>
+                    <text
+                     follows="left|top"
+                     height="18"
+                     layout="topleft"
+                     left="35"
+                     name="shadow_far_cascade_interval_label"
+                     tool_tip="EXPERIMENTAL. Render the two far sun shadow maps every this many frames instead of every frame (the furthest every twice this). Moving the camera, turning it or the sun moving re-renders them at once. 1 renders every frame."
+                     top="507"
+                     width="285">
+                        Update far sun shadows every N frames
+                    </text>
+                    <spinner
+                     control_name="FSRenderShadowFarCascadeInterval"
+                     decimal_digits="0"
+                     follows="left|top"
+                     height="20"
+                     increment="1"
+                     layout="topleft"
+                     left="330"
+                     max_val="8"
+                     min_val="1"
+                     name="shadow_far_cascade_interval"
+                     tool_tip="EXPERIMENTAL. Render the two far sun shadow maps every this many frames instead of every frame (the furthest every twice this). Moving the camera, turning it or the sun moving re-renders them at once. 1 renders every frame."
+                     top="505"
                      width="100" />
                 </panel>
             </scroll_container>
