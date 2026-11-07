@@ -27,6 +27,7 @@
 #include "llviewerprecompiledheaders.h"
 
 #include "llfloatertools.h"
+#include "fspanelbuildinfo.h" // <FS:Trish/> link number helper
 
 #include "llfontgl.h"
 #include "llcoord.h"
@@ -565,44 +566,6 @@ void LLFloaterTools::setStatusText(const std::string& text)
     }
 }
 
-// <FS:Trish> Link number of a prim in its linkset, as scripts count them: 0 for an unlinked prim,
-// 1 for the root, then the children in order. Also gives the number of prims in the linkset.
-static bool fs_get_link_number(LLViewerObject* objectp, S32& link_num, S32& link_count)
-{
-    link_num = 0;
-    link_count = 0;
-    LLViewerObject* root = objectp ? objectp->getRootEdit() : nullptr;
-    if (!root)
-    {
-        return false;
-    }
-    const LLViewerObject::child_list_t& children = root->getChildren();
-    link_count = (S32)children.size() + 1;
-    if (children.empty())
-    {
-        link_num = 0; // a childless prim is always link zero
-        link_count = 1;
-        return true;
-    }
-    if (objectp == root)
-    {
-        link_num = 1;
-        return true;
-    }
-    S32 index = 1;
-    for (const LLPointer<LLViewerObject>& child : children)
-    {
-        ++index;
-        if (child == objectp)
-        {
-            link_num = index;
-            return true;
-        }
-    }
-    return false;
-}
-// </FS:Trish>
-
 void LLFloaterTools::refresh()
 {
     const S32 INFO_WIDTH = getRect().getWidth();
@@ -650,7 +613,7 @@ void LLFloaterTools::refresh()
         // Idea from the i-doll fork (Amalthea Skydancer).
         S32 link_num = 0;
         S32 link_count = 0;
-        if (fs_get_link_number(objectp, link_num, link_count) && link_count > 1)
+        if (FSPanelBuildInfo::getLinkNumber(objectp, link_num, link_count) && link_count > 1)
         {
             desc_string = llformat("Link %d/%d, ", link_num, link_count) + desc_string;
         }
@@ -680,7 +643,7 @@ void LLFloaterTools::refresh()
         // <FS:Trish> Shared with the face display above, and shows the link count
         S32 link_num = 0;
         S32 link_count = 0;
-        if (fs_get_link_number(objectp, link_num, link_count))
+        if (FSPanelBuildInfo::getLinkNumber(objectp, link_num, link_count))
         {
             LLResMgr::getInstance()->getIntegerString(num_string, link_num);
             if (link_count > 1)
