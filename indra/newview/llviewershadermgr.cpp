@@ -50,6 +50,7 @@
 #include "lljoint.h"
 #include "llskinningutil.h"
 #include "fspointlightbatch.h" // <FS:Trish/>
+#include "fsssrhiz.h" // <FS:Trish/>
 
 static LLStaticHashedString sTexture0("texture0");
 static LLStaticHashedString sTexture1("texture1");
@@ -1169,6 +1170,13 @@ std::string LLViewerShaderMgr::loadBasicShaders()
     if (ssr)
     {
         attribs["SSR"] = "1";
+
+        // <FS:Trish> Hierarchical-Z screen-space reflections (fsssrhiz.cpp)
+        if (FSSSRHiZ::enabled())
+        {
+            attribs["FS_SSR_HIZ"] = "1";
+        }
+        // </FS:Trish>
     }
 
     if (has_reflection_probes)
@@ -3689,6 +3697,13 @@ bool LLViewerShaderMgr::loadShadersDeferred()
         gPostScreenSpaceReflectionProgram.mShaderLevel = 3;
         success = gPostScreenSpaceReflectionProgram.createShader();
     }
+
+    // <FS:Trish> SSR hi-Z pyramid programs; optional, failure keeps the classic march
+    if (success)
+    {
+        FSSSRHiZ::loadShaders(mShaderLevel[SHADER_DEFERRED]);
+    }
+    // </FS:Trish>
 
     if (success) {
         gDeferredBufferVisualProgram.mName = "Deferred Buffer Visualization Shader";
