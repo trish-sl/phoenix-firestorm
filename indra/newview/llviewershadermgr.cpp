@@ -215,6 +215,7 @@ LLGLSLShader            gFSLensEffectsProgram;
 LLGLSLShader            gFSAvatarMatteProgram;
 // </FS:Trish>
 LLGLSLShader            gFSLocalTonemapLumProgram; // <FS:Trish/> Local tone mapping
+LLGLSLShader            gFSSkinSSSProgram; // <FS:Trish/>
 LLGLSLShader            gDeferredPostGammaCorrectProgram;
 LLGLSLShader            gLegacyPostGammaCorrectProgram;
 LLGLSLShader            gExposureProgram;
@@ -634,6 +635,7 @@ void LLViewerShaderMgr::finalizeShaderList()
     mShaderList.push_back(&gDeferredDiffuseAlphaMaskProgram);
     mShaderList.push_back(&gDeferredNonIndexedDiffuseAlphaMaskProgram);
     mShaderList.push_back(&gDeferredTreeProgram);
+    mShaderList.push_back(&gFSSkinSSSProgram); // <FS:Trish/> Skin SSS reads the sky's sun and ambient
 
     // make sure there are no redundancies
     llassert(no_redundant_shaders(mShaderList));
@@ -1135,6 +1137,14 @@ std::string LLViewerShaderMgr::loadBasicShaders()
         attribs["TERRAIN_PBR_DETAIL"] = llformat("%d", detail);
     }
 
+    // <FS:Trish> Skin SSS: avatar g-buffer writers mark their pixels, see LLShaderMgr::loadShaderFile
+    static LLCachedControl<bool> fs_skin_sss(gSavedSettings, "FSRenderSkinSSS", false);
+    if (fs_skin_sss)
+    {
+        attribs["FS_SKIN_SSS"] = "1";
+    }
+    // </FS:Trish>
+
     LLGLSLShader::sGlobalDefines = attribs;
     sRiggedLocalOrigin = attribs.count("RIGGED_LOCAL_ORIGIN") != 0; // <FS:Trish/>
 
@@ -1518,6 +1528,7 @@ bool LLViewerShaderMgr::loadShadersDeferred()
         gFSAvatarMatteProgram.unload();
         // </FS:Trish>
         gFSLocalTonemapLumProgram.unload(); // <FS:Trish/> Local tone mapping
+        gFSSkinSSSProgram.unload(); // <FS:Trish/>
         // <FS:Trish> WBOIT
         gFSWBOITCompositeProgram.unload();
         gFSAlphaWBOITShaders = false;
@@ -3122,6 +3133,26 @@ bool LLViewerShaderMgr::loadShadersDeferred()
                 LL_WARNS("ShaderLoading") << post.mName << " failed to build, that effect stays off" << LL_ENDL;
                 post.mShader->unload();
             }
+        }
+    }
+    // </FS:Trish>
+
+    // <FS:Trish> Skin SSS blur, built only with the avatar g-buffer marking (FS_SKIN_SSS) on.
+    // Optional: without it the effect stays off.
+    gFSSkinSSSProgram.unload();
+    if (success && LLGLSLShader::sGlobalDefines.count("FS_SKIN_SSS"))
+    {
+        gFSSkinSSSProgram.mName = "FS Skin SSS";
+        gFSSkinSSSProgram.mFeatures.isDeferred = true;
+        gFSSkinSSSProgram.mShaderFiles.clear();
+        gFSSkinSSSProgram.clearPermutations();
+        gFSSkinSSSProgram.mShaderFiles.push_back(make_pair("deferred/postDeferredNoTCV.glsl", GL_VERTEX_SHADER));
+        gFSSkinSSSProgram.mShaderFiles.push_back(make_pair("deferred/fsSkinSSSF.glsl", GL_FRAGMENT_SHADER));
+        gFSSkinSSSProgram.mShaderLevel = mShaderLevel[SHADER_DEFERRED];
+        if (!gFSSkinSSSProgram.createShader())
+        {
+            LL_WARNS("ShaderLoading") << "FS Skin SSS failed to build, that effect stays off" << LL_ENDL;
+            gFSSkinSSSProgram.unload();
         }
     }
     // </FS:Trish>
