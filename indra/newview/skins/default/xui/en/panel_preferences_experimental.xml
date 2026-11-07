@@ -1528,7 +1528,7 @@
              bottom="-1">
                 <panel
                  follows="left|top"
-                 height="568"
+                 height="596"
                  layout="topleft"
                  left="0"
                  name="experimental_rendering_settings"
@@ -1894,6 +1894,31 @@
                      name="shadow_far_cascade_resolution"
                      tool_tip="EXPERIMENTAL. Resolution of the two far sun shadow maps relative to the near ones (0.25 - 1). Far shadows cover a lot of ground per texel and blur anyway."
                      top="533"
+                     width="100" />
+                    <text
+                     follows="left|top"
+                     height="18"
+                     layout="topleft"
+                     left="35"
+                     name="shadow_far_cascade_min_caster_label"
+                     tool_tip="EXPERIMENTAL. Multiplies RenderShadowMinCasterTexels for the two far sun shadow maps, so small objects far away stop casting sooner (1 - 16). Needs RenderShadowMinCasterTexels above 0."
+                     top="563"
+                     width="285">
+                        Far sun shadows skip small objects (x)
+                    </text>
+                    <spinner
+                     control_name="FSRenderShadowFarCascadeMinCasterScale"
+                     decimal_digits="0"
+                     follows="left|top"
+                     height="20"
+                     increment="1"
+                     layout="topleft"
+                     left="330"
+                     max_val="16"
+                     min_val="1"
+                     name="shadow_far_cascade_min_caster"
+                     tool_tip="EXPERIMENTAL. Multiplies RenderShadowMinCasterTexels for the two far sun shadow maps, so small objects far away stop casting sooner (1 - 16). Needs RenderShadowMinCasterTexels above 0."
+                     top="561"
                      width="100" />
                 </panel>
             </scroll_container>
