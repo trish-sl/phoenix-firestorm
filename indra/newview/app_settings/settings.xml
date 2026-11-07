@@ -3790,6 +3790,17 @@
       <key>Backup</key>
       <integer>0</integer>
     </map>
+    <key>CopyColorDestination</key>
+    <map>
+      <key>Comment</key>
+      <string>Format the color picker's "Copy as..." menu copies the current color to the clipboard in, the last one picked: 0 none, 1 LSL vector, 2 hex, 3 RGB, 4 HSL, 5 CMYK</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>S32</string>
+      <key>Value</key>
+      <integer>0</integer>
+    </map>
     <key>BrowserJavascriptEnabled</key>
     <map>
       <key>Comment</key>
