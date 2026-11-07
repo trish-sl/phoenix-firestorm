@@ -208,6 +208,7 @@ LLGLSLShader            gFSSunRaysCompositeProgram;
 LLGLSLShader            gFSBloomPrefilterProgram;
 LLGLSLShader            gFSBloomDownProgram;
 LLGLSLShader            gFSBloomUpProgram;
+LLGLSLShader            gFSLensDirtProgram;
 LLGLSLShader            gFSLensEffectsProgram;
 LLGLSLShader            gFSAvatarMatteProgram;
 // </FS:Trish>
@@ -1356,6 +1357,7 @@ bool LLViewerShaderMgr::loadShadersDeferred()
         gFSBloomPrefilterProgram.unload();
         gFSBloomDownProgram.unload();
         gFSBloomUpProgram.unload();
+        gFSLensDirtProgram.unload();
         gFSLensEffectsProgram.unload();
         gFSAvatarMatteProgram.unload();
         // </FS:Trish>
@@ -2878,6 +2880,7 @@ bool LLViewerShaderMgr::loadShadersDeferred()
             { &gFSBloomPrefilterProgram,   "FS Bloom Prefilter",    "deferred/fsBloomPrefilterF.glsl",   false },
             { &gFSBloomDownProgram,        "FS Bloom Downsample",   "deferred/fsBloomDownF.glsl",        false },
             { &gFSBloomUpProgram,          "FS Bloom Upsample",     "deferred/fsBloomUpF.glsl",          false },
+            { &gFSLensDirtProgram,         "FS Lens Dirt",          "deferred/fsLensDirtF.glsl",         false },
             { &gFSLensEffectsProgram,      "FS Lens Effects",       "deferred/fsLensEffectsF.glsl",      false },
             { &gFSAvatarMatteProgram,      "FS Avatar Matte",       "deferred/fsAvatarMatteF.glsl",      false },
         };
