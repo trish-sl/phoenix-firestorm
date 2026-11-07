@@ -8753,6 +8753,32 @@ void LLPipeline::bindLocalTonemap(LLGLSLShader* shader, bool enabled)
 
 extern LLPointer<LLImageGL> gEXRImage;
 
+// <FS:Trish> Debanding dither (fsDebandF.glsl). Only a pass that writes display encoded colour
+// to an 8 bit target dithers: by default the post chain is 8 bit and that is the tone map (or
+// CAS, or the non HDR gamma correction), with RenderHighPrecisionPostProcess it is 16 bit float
+// and only the present writes 8 bit. Either way the image is dithered once.
+static bool fs_post_chain_8bit()
+{
+    static LLCachedControl<bool> high_precision(gSavedSettings, "RenderHighPrecisionPostProcess", false);
+    return !high_precision;
+}
+
+static bool fs_deband_enabled()
+{
+    static LLCachedControl<bool> deband(gSavedSettings, "FSRenderDeband", false);
+    return deband;
+}
+
+static void fs_set_deband(LLGLSLShader& shader, bool writes_8bit)
+{
+    static LLCachedControl<F32> strength(gSavedSettings, "FSRenderDebandStrength", 1.f);
+    static LLStaticHashedString s_deband("fs_deband");
+    // One step of the 8 bit output per unit of strength
+    const F32 amplitude = (fs_deband_enabled() && writes_8bit) ? llclamp((F32)strength, 0.f, 2.f) / 255.f : 0.f;
+    shader.uniform1f(s_deband, amplitude);
+}
+// </FS:Trish>
+
 void LLPipeline::tonemap(LLRenderTarget* src, LLRenderTarget* dst, bool gamma_correct)
 {
     LL_PROFILE_GPU_ZONE("tonemap");
@@ -8835,6 +8861,7 @@ void LLPipeline::tonemap(LLRenderTarget* src, LLRenderTarget* dst, bool gamma_co
             bindLocalTonemap(shader, local_tonemap);
         }
         // </FS:Trish>
+        fs_set_deband(*shader, gamma_correct && dst == &mPostPingMap && fs_post_chain_8bit() && !isAvatarOnlyRender()); // <FS:Trish/> Debanding dither, not under the avatars only matte
 
         mScreenTriangleVB->setBuffer();
         mScreenTriangleVB->drawArrays(LLRender::TRIANGLES, 0, 3);
@@ -8864,6 +8891,7 @@ void LLPipeline::gammaCorrect(LLRenderTarget* src, LLRenderTarget* dst)
         shader.bind();
         shader.bindTexture(LLShaderMgr::DEFERRED_DIFFUSE, src, false, LLTexUnit::TFO_POINT);
         shader.uniform2f(LLShaderMgr::DEFERRED_SCREEN_RES, (GLfloat)src->getWidth(), (GLfloat)src->getHeight());
+        fs_set_deband(shader, dst == &mPostPingMap && fs_post_chain_8bit()); // <FS:Trish/> Debanding dither
 
         mScreenTriangleVB->setBuffer();
         mScreenTriangleVB->drawArrays(LLRender::TRIANGLES, 0, 3);
@@ -9038,6 +9066,7 @@ void LLPipeline::applyCAS(LLRenderTarget* src, LLRenderTarget* dst)
 
         sharpen_shader->uniform2f(out_screen_res, (AF1)dst->getWidth(), (AF1)dst->getHeight());
     }
+    fs_set_deband(*sharpen_shader, dst == &mPostPingMap && fs_post_chain_8bit()); // <FS:Trish/> Debanding dither
 
     sharpen_shader->bindTexture(LLShaderMgr::DEFERRED_DIFFUSE, src, false, LLTexUnit::TFO_POINT);
 
@@ -10074,9 +10103,15 @@ void LLPipeline::renderFinalize()
     // <FS:Trish> Avatars only snapshot: no dither noise, the colour has to line up with the matte
     //gDeferredPostNoDoFNoiseProgram.bind(); // Add noise as part of final render to screen pass to avoid damaging other post effects
     //LLGLSLShader& present_shader = avatars_only ? gDeferredPostNoDoFProgram : gDeferredPostNoDoFNoiseProgram; // <FS:Trish/> Dynamic resolution
-    LLGLSLShader& present_shader = avatars_only ? gDeferredPostNoDoFProgram : FSDynamicResolution::presentShader(gDeferredPostNoDoFNoiseProgram, sourceBuffer); // <FS:Trish/> Dynamic resolution: sharpened upscale
+    //LLGLSLShader& present_shader = avatars_only ? gDeferredPostNoDoFProgram : FSDynamicResolution::presentShader(gDeferredPostNoDoFNoiseProgram, sourceBuffer); // <FS:Trish/> Dynamic resolution: sharpened upscale
+    // Debanding dither: an 8 bit post chain was dithered when it was written, so the present
+    // copies it unchanged; a 16 bit float one is dithered here, in place of the stock noise.
+    // The dynamic resolution upscale resamples, so it always dithers.
+    LLGLSLShader& present_noise = (fs_deband_enabled() && fs_post_chain_8bit()) ? gDeferredPostNoDoFProgram : gDeferredPostNoDoFNoiseProgram;
+    LLGLSLShader& present_shader = avatars_only ? gDeferredPostNoDoFProgram : FSDynamicResolution::presentShader(present_noise, sourceBuffer);
     present_shader.bind(); // Add noise as part of final render to screen pass to avoid damaging other post effects
     FSDynamicResolution::setupPresent(present_shader); // <FS:Trish/> Dynamic resolution
+    fs_set_deband(present_shader, true);
     // </FS:Trish>
 
     // Whatever is last in the above post processing chain should _always_ be rendered directly here.  If not, expect problems.
