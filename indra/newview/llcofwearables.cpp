@@ -744,7 +744,11 @@ LLPanelClothingListItem* LLCOFWearables::buildClothingListItem(LLViewerInventory
     // hint that rows in a multi-layer group can be dragged to reorder
     if (!(first && last))
     {
-        item_panel->setToolTip(LLTrans::getString("ReorderClothingTooltip"));
+        // <FS:Trish> Look the string up once, not for every clothing row
+        //item_panel->setToolTip(LLTrans::getString("ReorderClothingTooltip"));
+        static const std::string reorder_tooltip = LLTrans::getString("ReorderClothingTooltip");
+        item_panel->setToolTip(reorder_tooltip);
+        // </FS:Trish>
     }
 
     //setting callbacks

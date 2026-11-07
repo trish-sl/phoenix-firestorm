@@ -908,6 +908,38 @@ std::vector<std::string> LLDir::findSkinnedFilenames(const std::string& subdir,
         // the full pathname.
         walkSearchSkinDirs(subdir, subsubdirs, filename,
                            boost::bind(push_back, boost::ref(results), _2));
+
+        // <FS:Trish> When run from a working directory other than the executable's, the skins
+        // under the executable directory are searched as the most generic level (setSkinFolder),
+        // for files that only the build output has. The build output also holds a copy of the
+        // whole default skin, which can be older than the working directory's. Callers of
+        // ALL_SKINS layer the files with the first one as the base (strings.xml,
+        // notifications.xml), and a layer only updates entries its base already has, so an older
+        // copy hid every newer entry (e.g. "Missing String in strings.xml"). Leave out an
+        // executable directory file whenever the working directory skins have the same file.
+        if (results.size() > 1 && LLStringUtil::compareInsensitive(mExecutableDir, mWorkingDir) != 0)
+        {
+            const std::string exe_skins = add(mExecutableDir, "skins") + mDirDelimiter;
+            if (LLStringUtil::compareInsensitive(exe_skins, getSkinBaseDir() + mDirDelimiter) != 0)
+            {
+                std::vector<std::string> kept;
+                kept.reserve(results.size());
+                for (const std::string& path : results)
+                {
+                    if (path.compare(0, exe_skins.size(), exe_skins) == 0)
+                    {
+                        const std::string counterpart = add(getSkinBaseDir(), path.substr(exe_skins.size()));
+                        if (std::find(results.begin(), results.end(), counterpart) != results.end())
+                        {
+                            continue;
+                        }
+                    }
+                    kept.push_back(path);
+                }
+                results.swap(kept);
+            }
+        }
+        // </FS:Trish>
     }
     else                            // CURRENT_SKIN
     {
