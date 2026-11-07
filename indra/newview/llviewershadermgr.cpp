@@ -421,13 +421,25 @@ static void add_common_permutations(LLGLSLShader* shader)
 // <FS:Trish> Projector shadow slots past the first two (FSRenderSpotShadowCount above 2) are
 // sampled by the projector programs themselves, see fsSpotShadowExtraF.glsl. At the stock two the
 // programs are built exactly as before.
+// With PCSS (RenderShadowPCSS) the extra slots take the same contact hardening filter as the
+// first two: PCSS_SHADOW links the PCSS build of shadowUtil.glsl, and FS_SPOT_PCSS_FETCH mirrors
+// the GL 3.3 condition under which that build has PCSS_SHADOW_FETCH (loadBasicShaders).
 static void fs_add_spot_shadow_extra(LLGLSLShader& shader)
 {
     static LLCachedControl<S32> spot_shadow_count(gSavedSettings, "FSRenderSpotShadowCount", 2);
-    if (gSavedSettings.getS32("RenderShadowDetail") > 1 && spot_shadow_count > 2)
+    const bool spot_shadows = gSavedSettings.getS32("RenderShadowDetail") > 1;
+    if (spot_shadows && spot_shadow_count > 2)
     {
         shader.addPermutation("FS_SPOT_SHADOW_EXTRA", "1");
         shader.mShaderFiles.push_back(make_pair("deferred/fsSpotShadowExtraF.glsl", GL_FRAGMENT_SHADER));
+        if (use_pcss_shadows())
+        {
+            shader.addPermutation("PCSS_SHADOW", "1");
+            if (gGLManager.mGLVersion >= 3.29f)
+            {
+                shader.addPermutation("FS_SPOT_PCSS_FETCH", "1");
+            }
+        }
     }
 }
 // </FS:Trish>

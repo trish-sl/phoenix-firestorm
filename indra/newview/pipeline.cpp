@@ -13095,26 +13095,46 @@ void LLPipeline::fsRenderExtraSpotShadows(LLCamera& camera, const glm::mat4& sav
 // After binding a projector program: when it samples slots 2+ (FS_SPOT_SHADOW_EXTRA), give
 // fs_spot_shadow_map the first texture unit past the program's own, with a depth map bound so
 // the unit never holds a texture of the wrong kind for the draw's samplers.
+// With PCSS (FS_SPOT_PCSS_FETCH) fs_spot_shadow_depth takes the next unit: the same depth texture
+// as fs_spot_shadow_map, read through the depth fetch sampler object (compare mode off). A
+// sampler object belongs to the unit, not the texture, so it stays bound while
+// fsBindExtraSpotShadow rebinds the light's map on both units, and fsEndExtraSpotShadows takes it
+// off again; the texture's own compare state, which the hardware PCF on the other unit needs, is
+// never touched.
 void LLPipeline::fsBeginExtraSpotShadows(LLGLSLShader& shader)
 {
     static LLStaticHashedString s_spot_shadow_map("fs_spot_shadow_map");
+    static LLStaticHashedString s_spot_shadow_depth("fs_spot_shadow_depth");
 
     mFSSpotShadowUnit = -1;
-    if (fsSpotShadowCount() <= 2 || shader.getUniformLocation(s_spot_shadow_map) < 0 || !mSpotShadow[0].isComplete())
-    {
-        return;
-    }
+    mFSSpotDepthUnit = -1;
 
-    const S32 unit = shader.mActiveTextureChannels;
-    if (unit >= gGLManager.mNumTextureImageUnits || unit >= (S32)LL_NUM_TEXTURE_LAYERS)
-    {
-        LL_WARNS_ONCE("Shadow") << "No texture unit left for projector shadows past the first two" << LL_ENDL;
-        return;
-    }
+    S32 next = shader.mActiveTextureChannels;
+    const S32 limit = llmin(gGLManager.mNumTextureImageUnits, (S32)LL_NUM_TEXTURE_LAYERS);
 
-    shader.uniform1i(s_spot_shadow_map, unit);
-    gGL.getTexUnit(unit)->bind(&mSpotShadow[0], true);
-    mFSSpotShadowUnit = unit;
+    if (fsSpotShadowCount() > 2 && shader.getUniformLocation(s_spot_shadow_map) >= 0 && mSpotShadow[0].isComplete())
+    {
+        const U32 sampler = shader.getUniformLocation(s_spot_shadow_depth) >= 0 ? gGL.getDepthFetchSampler() : 0;
+        const S32 needed = sampler ? 2 : 1;
+        if (next + needed > limit)
+        {
+            LL_WARNS_ONCE("Shadow") << "No texture unit left for projector shadows past the first two" << LL_ENDL;
+        }
+        else
+        {
+            shader.uniform1i(s_spot_shadow_map, next);
+            gGL.getTexUnit(next)->bind(&mSpotShadow[0], true);
+            mFSSpotShadowUnit = next++;
+
+            if (sampler)
+            {
+                shader.uniform1i(s_spot_shadow_depth, next);
+                gGL.getTexUnit(next)->bind(&mSpotShadow[0], true);
+                gGL.getTexUnit(next)->bindSampler(sampler);
+                mFSSpotDepthUnit = next++;
+            }
+        }
+    }
 }
 
 // From setupSpotLight, for a light in slot 2+: its map and matrix. False leaves it unshadowed.
@@ -13128,6 +13148,10 @@ bool LLPipeline::fsBindExtraSpotShadow(LLGLSLShader& shader, U32 slot)
     }
 
     gGL.getTexUnit(mFSSpotShadowUnit)->bind(&mSpotShadow[slot], true);
+    if (mFSSpotDepthUnit >= 0)
+    {
+        gGL.getTexUnit(mFSSpotDepthUnit)->bind(&mSpotShadow[slot], true);
+    }
     shader.uniformMatrix4fv(s_spot_shadow_matrix, 1, GL_FALSE, glm::value_ptr(mFSSpotShadowMatrix[slot]));
     return true;
 }
@@ -13138,6 +13162,12 @@ void LLPipeline::fsEndExtraSpotShadows()
     {
         gGL.getTexUnit(mFSSpotShadowUnit)->unbind(LLTexUnit::TT_TEXTURE);
         mFSSpotShadowUnit = -1;
+    }
+    if (mFSSpotDepthUnit >= 0)
+    {
+        gGL.getTexUnit(mFSSpotDepthUnit)->bindSampler(0);
+        gGL.getTexUnit(mFSSpotDepthUnit)->unbind(LLTexUnit::TT_TEXTURE);
+        mFSSpotDepthUnit = -1;
     }
 }
 // </FS:Trish>

@@ -36,8 +36,24 @@ uniform float spot_shadow_reach;        // metres: projector shadows fade out to
 
 float pcfSpotShadow(sampler2DShadow shadowMap, vec4 stc, float bias_scale, vec2 pos_screen);
 
+// PCSS (RenderShadowPCSS): the program also gets PCSS_SHADOW, which links the PCSS build of
+// shadowUtil.glsl, and on GL 3.3 FS_SPOT_PCSS_FETCH, which matches that build's
+// PCSS_SHADOW_FETCH. The contact hardening filter then needs a plain depth read of the same map:
+// fs_spot_shadow_depth, bound to the same texture as fs_spot_shadow_map on a second extra unit
+// with the depth fetch sampler object (compare mode off), rebound per light like the map.
+#if defined(PCSS_SHADOW)
+uniform float spot_shadow_bias;
+uniform vec2 proj_shadow_res;
+float pcssPoissonPCF(sampler2DShadow shadowMap, mat4 m, vec4 stc, vec3 pos, vec3 norm, float z_bias, vec2 res);
+#if defined(FS_SPOT_PCSS_FETCH)
+uniform sampler2D fs_spot_shadow_depth;
+float pcssSpotContactShadow(sampler2DShadow shadowMap, sampler2D depthMap, mat4 m, vec4 stc, vec3 pos, vec3 norm, float bias_scale);
+#endif
+#endif
+
 // The same as sampleSpotShadow (shadowUtil.glsl) does for the first two: normal offset, the
-// distance fade over the last 20 % of spot_shadow_reach, then the five tap spot PCF.
+// distance fade over the last 20 % of spot_shadow_reach, then the five tap spot PCF, or with
+// PCSS the same filter the first two get in the sun light pass.
 float fsSampleSpotShadowExtra(vec3 pos, vec3 norm)
 {
     pos += norm * spot_shadow_offset;
@@ -50,6 +66,12 @@ float fsSampleSpotShadowExtra(vec3 pos, vec3 norm)
     }
 
     vec4 lpos = fs_spot_shadow_matrix * vec4(pos, 1.0);
+#if defined(PCSS_SHADOW) && defined(FS_SPOT_PCSS_FETCH)
+    float shadow = pcssSpotContactShadow(fs_spot_shadow_map, fs_spot_shadow_depth, fs_spot_shadow_matrix, lpos, pos, norm, 0.8);
+#elif defined(PCSS_SHADOW)
+    float shadow = pcssPoissonPCF(fs_spot_shadow_map, fs_spot_shadow_matrix, lpos, pos, norm, spot_shadow_bias * 0.8, proj_shadow_res);
+#else
     float shadow = pcfSpotShadow(fs_spot_shadow_map, lpos, 0.8, pos.xy);
+#endif
     return mix(1.0, shadow, fade);
 }
