@@ -672,7 +672,10 @@ bool LLRenderPass::uploadMatrixPalette(LLVOAvatar* avatar, const LLMeshSkinInfo*
 {
     LL_PROFILE_ZONE_SCOPED_CATEGORY_AVATAR;
 
-    if (!avatar)
+    // <FS:Trish> LL #6568: no skin info, nothing to upload
+    //if (!avatar)
+    if (!avatar || !skinInfo)
+    // </FS:Trish>
     {
         return false;
     }
@@ -704,7 +707,10 @@ bool LLRenderPass::uploadMatrixPalette(LLVOAvatar* avatar, const LLMeshSkinInfo*
     llassert(skinInfo);
     llassert(LLGLSLShader::sCurBoundShaderPtr);
 
-    if (!avatar)
+    // <FS:Trish> LL #6568: the assert is gone in release builds
+    //if (!avatar)
+    if (!avatar || !skinInfo)
+    // </FS:Trish>
     {
         return false;
     }
@@ -743,7 +749,10 @@ bool LLRenderPass::uploadMatrixPalette(LLVOAvatar* avatar, const LLMeshSkinInfo*
     llassert(skinInfo);
     llassert(LLGLSLShader::sCurBoundShaderPtr);
 
-    if (!avatar)
+    // <FS:Trish> LL #6568: the assert is gone in release builds
+    //if (!avatar)
+    if (!avatar || !skinInfo)
+    // </FS:Trish>
     {
         return false;
     }
