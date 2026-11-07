@@ -316,6 +316,11 @@ extern LLGLSLShader         gHUDPBRAlphaProgram;
 // GLTF shaders
 extern LLGLSLShader         gGLTFPBRMetallicRoughnessProgram;
 
+// <FS:Trish> Weighted blended order-independent transparency
+extern LLGLSLShader         gFSWBOITCompositeProgram;
+extern bool                 gFSAlphaWBOITShaders;   // the alpha shaders were built with FS_WBOIT
+// </FS:Trish>
+
 // Encodes detail level for dropping textures, in accordance with the GLTF spec where possible
 // 0 is highest detail, -1 drops emissive, etc
 // Dropping metallic roughness is off-spec - Reserve for potato machines as needed

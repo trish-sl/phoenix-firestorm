@@ -1049,6 +1049,12 @@ bool LLPipeline::allocateScreenBufferInternal(U32 resX, U32 resY)
     if (!mRT->screen.allocate(resX, resY, GL_RGBA16F)) return false;
 
     mRT->deferredScreen.shareDepthBuffer(mRT->screen);
+    // <FS:Trish> WBOIT target held the main depth buffer just replaced
+    if (mRT == &mMainRT)
+    {
+        releaseWBOITTarget();
+    }
+    // </FS:Trish>
 
     // <FS:Beq> restore setSphere
     // if (hdr || shadow_detail > 0 || ssao || RenderDepthOfField))
@@ -1544,6 +1550,7 @@ void LLPipeline::releaseScreenBuffers()
     mPreviewScreen.release(); // <FS:Beq/> dedicated preview target
 
     releaseFSPostTargets(); // <FS:Trish/>
+    releaseWBOITTarget(); // <FS:Trish/>
 }
 
 void LLPipeline::releaseSunShadowTarget(U32 index)
@@ -4750,6 +4757,101 @@ void LLPipeline::renderGeomPostDeferred(LLCamera& camera)
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
     }
 }
+
+// <FS:Trish> Weighted blended order-independent transparency (McGuire and Bavoil 2013), behind
+// FSRenderAlphaWBOIT. The alpha pools accumulate their source-over draws into mWBOITTarget and
+// composite the weighted average over the scene once per pool, so the water surface still goes
+// between the under and above water alpha.
+bool LLPipeline::canUseWBOIT()
+{
+    static LLCachedControl<bool> wboit(gSavedSettings, "FSRenderAlphaWBOIT", false);
+    if (!wboit || !gFSAlphaWBOITShaders || !gFSWBOITCompositeProgram.isComplete())
+    {
+        if (mWBOITTarget.isComplete() && !mWBOITTarget.isBoundInStack())
+        {
+            releaseWBOITTarget();
+        }
+        return false;
+    }
+
+    // Main camera only. Reflection probes, mirrors, impostors and avatars only snapshots keep
+    // sorted alpha, and HUDs never get it. Not in wireframe either: the composite would be drawn
+    // as lines.
+    return mRT == &mMainRT
+        && !gUseWireframe
+        && !gCubeSnapshot
+        && !sRenderingHUDs
+        && !sImpostorRender
+        && !sImpostorRenderAlphaDepthPass
+        && !sReflectionRender
+        && !sShadowRender
+        && !isAvatarOnlyRender()
+        && LLRenderTarget::getCurrentBoundTarget() == &mRT->screen;
+}
+
+bool LLPipeline::beginWBOIT()
+{
+    LL_PROFILE_GPU_ZONE("wboit begin");
+
+    const U32 width = mRT->screen.getWidth();
+    const U32 height = mRT->screen.getHeight();
+    if (!mRT->deferredScreen.getDepth())
+    {
+        return false;
+    }
+
+    if (!mWBOITTarget.isComplete() || mWBOITTarget.getWidth() != width || mWBOITTarget.getHeight() != height)
+    {
+        mWBOITTarget.release();
+        if (!mWBOITTarget.allocate(width, height, GL_RGBA16F) || !mWBOITTarget.addColorAttachment(GL_R16F))
+        {
+            LL_WARNS_ONCE("Rendering") << "Could not allocate the WBOIT targets, transparency stays sorted" << LL_ENDL;
+            mWBOITTarget.release();
+            return false;
+        }
+        // depth tested against the opaque scene and the rigged alpha, never written
+        mRT->deferredScreen.shareDepthBuffer(mWBOITTarget);
+    }
+
+    mWBOITTarget.bindTarget();
+    gGL.setColorMask(true, true);
+    static const GLfloat accum_clear[] = { 0.f, 0.f, 0.f, 1.f };   // nothing added, fully revealed
+    static const GLfloat weight_clear[] = { 0.f, 0.f, 0.f, 0.f };
+    glClearBufferfv(GL_COLOR, 0, accum_clear);
+    glClearBufferfv(GL_COLOR, 1, weight_clear);
+    return true;
+}
+
+void LLPipeline::endWBOIT()
+{
+    LL_PROFILE_GPU_ZONE("wboit composite");
+
+    mWBOITTarget.flush(); // back to mRT->screen
+
+    // colour = average * (1 - revealage) + scene * revealage; the screen's alpha is glow, which
+    // the transparent layers dim by their revealage just as the sorted blend does
+    LLGLDepthTest depth(GL_FALSE, GL_FALSE);
+    LLGLDisable cull(GL_CULL_FACE);
+    LLGLEnable blend(GL_BLEND);
+    gGL.setColorMask(true, true);
+    gGL.blendFunc(LLRender::BF_SOURCE_ALPHA, LLRender::BF_ONE_MINUS_SOURCE_ALPHA, LLRender::BF_ZERO, LLRender::BF_ONE_MINUS_SOURCE_ALPHA);
+
+    gFSWBOITCompositeProgram.bind();
+    gFSWBOITCompositeProgram.bindTexture(LLShaderMgr::DEFERRED_DIFFUSE, &mWBOITTarget, false, LLTexUnit::TFO_POINT, 0);
+    gFSWBOITCompositeProgram.bindTexture(LLShaderMgr::DEFERRED_SPECULAR, &mWBOITTarget, false, LLTexUnit::TFO_POINT, 1);
+    mScreenTriangleVB->setBuffer();
+    mScreenTriangleVB->drawArrays(LLRender::TRIANGLES, 0, 3);
+    gFSWBOITCompositeProgram.unbind();
+
+    gGL.setSceneBlendType(LLRender::BT_ALPHA);
+    gGL.setColorMask(true, false);
+}
+
+void LLPipeline::releaseWBOITTarget()
+{
+    mWBOITTarget.release();
+}
+// </FS:Trish>
 
 void LLPipeline::renderGeomShadow(LLCamera& camera)
 {

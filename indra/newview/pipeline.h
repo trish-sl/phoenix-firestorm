@@ -841,6 +841,16 @@ public:
     void presentAvatarOnlyAlpha();
     void releaseAvatarOnlyTargets();
 
+    // <FS:Trish> Weighted blended order-independent transparency (FSRenderAlphaWBOIT). One target,
+    // two colour attachments: RGBA16F rgb = sum(colour * alpha * weight), a = product(1 - alpha),
+    // and R16F sum(alpha * weight). Shares the main camera's depth buffer, never written.
+    LLRenderTarget          mWBOITTarget;
+    bool                    canUseWBOIT();              // this alpha pass may accumulate (main camera, setting on)
+    bool                    beginWBOIT();               // clear and bind mWBOITTarget, false if it can't be had
+    void                    endWBOIT();                 // unbind, composite over mRT->screen
+    void                    releaseWBOITTarget();
+    // </FS:Trish>
+
     // Shadow performance
     static bool             isBeyondAvatarShadowDistance(const LLVOAvatar* avatar);
     U32                     mShadowFrame = 0;               // main view shadow updates so far
