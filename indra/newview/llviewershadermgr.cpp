@@ -366,6 +366,26 @@ static void add_sun_shadow_extras(LLGLSLShader& shader)
 }
 // </FS:Trish>
 
+// <FS:Trish> Specular AA: the tunable roughness filter (fsSpecularAAF.glsl) for the G-buffer
+// writers. Strength and threshold are compiled in as constants, written as integer ratios so
+// the decimal separator of the user's locale cannot reach the GLSL. Call before
+// make_rigged_variant so the skinned copy gets the define and the file too.
+static void add_specular_aa(LLGLSLShader* shader)
+{
+    static LLCachedControl<bool> enabled(gSavedSettings, "FSRenderSpecularAA", false);
+    static LLCachedControl<F32> strength(gSavedSettings, "FSRenderSpecularAAStrength", 0.25f);
+    static LLCachedControl<F32> threshold(gSavedSettings, "FSRenderSpecularAAThreshold", 0.18f);
+
+    if (enabled)
+    {
+        shader->addPermutation("FS_SPECULAR_AA", "1");
+        shader->addPermutation("FS_SPECULAR_AA_VARIANCE", llformat("(%d.0/10000.0)", ll_round(llclamp((F32)strength, 0.f, 1.f) * 10000.f)));
+        shader->addPermutation("FS_SPECULAR_AA_THRESHOLD", llformat("(%d.0/10000.0)", ll_round(llclamp((F32)threshold, 0.f, 1.f) * 10000.f)));
+        shader->mShaderFiles.push_back(make_pair("deferred/fsSpecularAAF.glsl", GL_FRAGMENT_SHADER));
+    }
+}
+// </FS:Trish>
+
 static void add_common_permutations(LLGLSLShader* shader)
 {
     static LLCachedControl<bool> emissive(gSavedSettings, "RenderEnableEmissiveBuffer", false);
@@ -1605,6 +1625,7 @@ bool LLViewerShaderMgr::loadShadersDeferred()
         gDeferredBumpProgram.mShaderFiles.push_back(make_pair("deferred/bumpF.glsl", GL_FRAGMENT_SHADER));
         gDeferredBumpProgram.mShaderLevel = mShaderLevel[SHADER_DEFERRED];
         add_common_permutations(&gDeferredBumpProgram);
+        add_specular_aa(&gDeferredBumpProgram); // <FS:Trish/>
         success = make_rigged_variant(gDeferredBumpProgram, gDeferredSkinnedBumpProgram);
         success = success && gDeferredBumpProgram.createShader();
         llassert(success);
@@ -1671,6 +1692,7 @@ bool LLViewerShaderMgr::loadShadersDeferred()
             }
 
             add_common_permutations(&gDeferredMaterialProgram[i]);
+            add_specular_aa(&gDeferredMaterialProgram[i]); // <FS:Trish/>
 
             gDeferredMaterialProgram[i].mFeatures.hasSrgb = true;
             gDeferredMaterialProgram[i].mFeatures.calculatesAtmospherics = true;
@@ -1721,6 +1743,7 @@ bool LLViewerShaderMgr::loadShadersDeferred()
         gDeferredPBROpaqueProgram.clearPermutations();
 
         add_common_permutations(&gDeferredPBROpaqueProgram);
+        add_specular_aa(&gDeferredPBROpaqueProgram); // <FS:Trish/>
 
         success = make_rigged_variant(gDeferredPBROpaqueProgram, gDeferredSkinnedPBROpaqueProgram);
         if (success)
@@ -1832,6 +1855,7 @@ bool LLViewerShaderMgr::loadShadersDeferred()
         }
 
         shader->mShaderLevel = mShaderLevel[SHADER_DEFERRED];
+        add_specular_aa(shader); // <FS:Trish/>
         success = make_rigged_variant(*shader, gDeferredSkinnedPBRAlphaProgram);
         // <FS:Trish> WBOIT, after the rigged variant copied the defines: rigged alpha stays sorted
         if (use_wboit)
@@ -1915,6 +1939,7 @@ bool LLViewerShaderMgr::loadShadersDeferred()
             }
 
             add_common_permutations(shader);
+            add_specular_aa(shader); // <FS:Trish/>
 
             success = success && shader->createShader();
             llassert(success);
