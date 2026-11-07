@@ -486,6 +486,31 @@ ERlvCmdRet RlvHandler::processCommand(std::reference_wrapper<const RlvCommand> r
             RLV_DEBUGS << "\t-> blocked command" << RLV_ENDL;
             return RLV_RET_FAILED_DISABLED;
         }
+        // <FS:Trish> The profile commands from the i-doll fork are opt-in. Lifting a restriction always
+        // works, so turning the setting off never leaves one stuck.
+        static LLCachedControl<bool> profile_commands(gSavedSettings, "FSRLVaProfileCommands", false);
+        if (!profile_commands)
+        {
+            const ERlvParamType param_type = rlvCmdTmp.getParamType();
+            switch (rlvCmdTmp.getBehaviourType())
+            {
+                case RLV_BHVR_EDITPROFILE:
+                case RLV_BHVR_EDITPICKS:
+                case RLV_BHVR_EDITDISPLAYNAME:
+                case RLV_BHVR_EDITPFP:
+                case RLV_BHVR_SETPROFILEIMAGE:
+                case RLV_BHVR_BLOCKEDIMMSG:
+                    if (param_type == RLV_TYPE_ADD || param_type == RLV_TYPE_FORCE)
+                    {
+                        RLV_DEBUGS << "\t-> profile RLVa commands are off (FSRLVaProfileCommands)" << RLV_ENDL;
+                        return RLV_RET_FAILED_DISABLED;
+                    }
+                    break;
+                default:
+                    break;
+            }
+        }
+        // </FS:Trish>
     }
 
     // Using a stack for executing commands solves a few problems:
