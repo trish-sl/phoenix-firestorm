@@ -1687,6 +1687,10 @@ void LLShaderMgr::initAttribsAndUniforms()
     mReservedUniforms.push_back("border_thickness");
     mReservedUniforms.push_back("frame_rect");
     // </FS:Beq>
+    // <FS:Trish> Coloured shadows
+    mReservedUniforms.push_back("coloredShadowMap0");
+    mReservedUniforms.push_back("coloredShadowMap1");
+    // </FS:Trish>
 
     llassert(mReservedUniforms.size() == END_RESERVED_UNIFORMS);
 
