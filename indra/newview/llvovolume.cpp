@@ -3810,7 +3810,17 @@ void LLVOVolume::updateSpotLightPriority()
 
     if (mLightTexture.notNull())
     {
-        mLightTexture->addTextureStats(mSpotLightPriority);
+        // <FS:Trish> The half radius above ranks shadow slots; the projector's texture still covers the
+        // whole light, so size its stats like before or it loads about a mip lower
+        //mLightTexture->addTextureStats(mSpotLightPriority);
+        const F32 full_r = getLightRadius();
+        LLVector3 tex_pos = mDrawable->getPositionAgent();
+        LLVector3 tex_at(0, 0, -1);
+        tex_at *= getRenderRotation();
+        tex_pos += tex_at * full_r;
+        tex_pos -= LLViewerCamera::getInstance()->getAtAxis() * full_r;
+        mLightTexture->addTextureStats(gPipeline.calcPixelArea(tex_pos, LLVector3(full_r, full_r, full_r), *LLViewerCamera::getInstance()));
+        // </FS:Trish>
     }
 }
 
