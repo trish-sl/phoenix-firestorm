@@ -1647,6 +1647,10 @@ void LLGLManager::reloadExtensionsString()
 // <FS:Trish> Parallel shader compile
 #if LL_GL_FUNC_POINTER
 static PFNGLMAXSHADERCOMPILERTHREADSKHRPROC fs_glMaxShaderCompilerThreads = nullptr;
+// GL_NV_shading_rate_image (FSRenderVRS)
+PFNGLBINDSHADINGRATEIMAGENVPROC fs_glBindShadingRateImageNV = nullptr;
+PFNGLSHADINGRATEIMAGEPALETTENVPROC fs_glShadingRateImagePaletteNV = nullptr;
+PFNGLSHADINGRATEIMAGEBARRIERNVPROC fs_glShadingRateImageBarrierNV = nullptr;
 #endif
 
 void LLGLManager::fsSetMaxShaderCompilerThreads()
@@ -1708,6 +1712,22 @@ void LLGLManager::initExtensions()
     mHasParallelShaderCompile = fs_glMaxShaderCompilerThreads != nullptr;
 #endif
     LL_INFOS("RenderInit") << "Parallel shader compile available: " << mHasParallelShaderCompile << LL_ENDL;
+    // </FS:Trish>
+
+    // <FS:Trish> Variable rate shading (FSRenderVRS): NVIDIA Turing and newer
+#if LL_GL_FUNC_POINTER
+    fs_glBindShadingRateImageNV = nullptr;
+    fs_glShadingRateImagePaletteNV = nullptr;
+    fs_glShadingRateImageBarrierNV = nullptr;
+    if (mGLExtensions.contains("GL_NV_shading_rate_image"))
+    {
+        fs_glBindShadingRateImageNV = (PFNGLBINDSHADINGRATEIMAGENVPROC)LL_GET_PROC_ADDRESS("glBindShadingRateImageNV");
+        fs_glShadingRateImagePaletteNV = (PFNGLSHADINGRATEIMAGEPALETTENVPROC)LL_GET_PROC_ADDRESS("glShadingRateImagePaletteNV");
+        fs_glShadingRateImageBarrierNV = (PFNGLSHADINGRATEIMAGEBARRIERNVPROC)LL_GET_PROC_ADDRESS("glShadingRateImageBarrierNV");
+    }
+    mHasNVShadingRateImage = fs_glBindShadingRateImageNV && fs_glShadingRateImagePaletteNV && fs_glShadingRateImageBarrierNV;
+#endif
+    LL_INFOS("RenderInit") << "NV shading rate image available: " << mHasNVShadingRateImage << LL_ENDL;
     // </FS:Trish>
 
     mInited = true;

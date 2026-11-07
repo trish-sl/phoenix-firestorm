@@ -137,6 +137,7 @@
 #include "SMAASearchTex.h"
 #include "llerror.h"
 #include "fsdynamicresolution.h" // <FS:Trish/> Dynamic resolution
+#include "fsvrs.h" // <FS:Trish/> Variable rate shading
 
 #if LL_CLANG
 #pragma clang diagnostic push
@@ -1508,6 +1509,7 @@ void LLPipeline::releaseGLBuffers()
     }
 
     releaseLUTBuffers();
+    FSVRS::releaseGL(); // <FS:Trish/> Variable rate shading
 
     mWaterDis.release();
 
@@ -10004,6 +10006,8 @@ void LLPipeline::renderFinalize()
         renderDoF(sourceBuffer, targetBuffer);
         std::swap(sourceBuffer, targetBuffer);
     }
+
+    FSVRS::buildRateImage(sourceBuffer, &mRT->deferredScreen); // <FS:Trish/> Variable rate shading: next frame's rates
 
     // <FS:Trish> Avatars only snapshot: anti-aliasing would blend the edges with the black background
     // if (RenderFSAAType == 1)
