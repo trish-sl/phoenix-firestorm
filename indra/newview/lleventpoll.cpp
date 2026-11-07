@@ -178,6 +178,10 @@ namespace Details
         LL_DEBUGS("LLEventPollImpl") << "<" << counter << "> Event poll llcore retries set to "
             << llcore_retries << " for " << mSenderIp << LL_ENDL;
         // </FS:Beq>
+        // <FS:Trish> The server holds each poll until it times out when it has no events, which
+        // is handled below as "no events": don't let the HTTP layer log it as a failure
+        httpOpts->setExpectedTimeout(true);
+        // </FS:Trish>
         // <FS:Ansariel> Restore pre-coro behavior (60s timeout, no retries)
 #ifdef OPENSIM
         if (LLGridManager::instance().isInOpenSim())
@@ -265,6 +269,11 @@ namespace Details
                         // - Linden 499 special http status code
                         // - RFC - standard 502 - 504 http status codes
                         LL_DEBUGS("LLEventPollImpl") << "No events, from: " << mSenderIp <<" status: " << (S32)status.getStatus() << LL_ENDL;
+                        // <FS:Trish> Say once that these are expected, as the HTTP layer no longer warns about them
+                        LL_INFOS_ONCE("LLEventPollImpl") << "Event poll timed out with no events, which is expected and"
+                                                         << " re-issued at once; further ones are logged at debug level"
+                                                         << LL_ENDL;
+                        // </FS:Trish>
                         errorCount = 0;
                         continue;
                     }

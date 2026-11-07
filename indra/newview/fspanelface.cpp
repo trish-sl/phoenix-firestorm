@@ -3908,7 +3908,7 @@ void FSPanelFace::onSelectPbr()
 
 void FSPanelFace::onCommitPbr(const LLUICtrl* pbr_ctrl)
 {
-    LL_WARNS("FACEPANELM") << "committed pbr map " << pbr_ctrl->getName() << LL_ENDL;
+    LL_DEBUGS("FACEPANELM") << "committed pbr map " << pbr_ctrl->getName() << LL_ENDL;
 
     if (pbr_ctrl == mBaseTexturePBR)
     {

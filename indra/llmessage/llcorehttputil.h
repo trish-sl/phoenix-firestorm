@@ -277,6 +277,11 @@ public:
         return mReplyPump;
     }
 
+    // <FS:Trish> Log a transfer timeout at debug level: the request expects it
+    // (LLCore::HttpOptions::setExpectedTimeout, the event queue long poll)
+    void setExpectedTimeout(bool expected) { mExpectedTimeout = expected; }
+    // </FS:Trish>
+
 protected:
     /// this method may modify the status value
     virtual LLSD handleSuccess(LLCore::HttpResponse * response, LLCore::HttpStatus &status) const = 0;
@@ -287,6 +292,7 @@ private:
     void replyPost(LLCore::HttpResponse* response, LLCore::HttpStatus& status, LLSD& result);
 
     LLEventStream &mReplyPump;
+    bool mExpectedTimeout = false; // <FS:Trish/>
 };
 
 //=========================================================================

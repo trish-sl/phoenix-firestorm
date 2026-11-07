@@ -409,6 +409,16 @@ bool HttpPolicy::stageAfterCompletion(const HttpOpRequest::ptr_t &op)
                                 << " retries."
                                 << LL_ENDL;
         }
+        // <FS:Trish> A timeout the request expects (the event queue long poll) is not a failure
+        else if (op->mStatus == HttpStatus(HttpStatus::EXT_CURL_EASY, CURLE_OPERATION_TIMEDOUT) &&
+                 op->mReqOptions && op->mReqOptions->getExpectedTimeout())
+        {
+            LL_DEBUGS(LOG_CORE) << "HTTP request " << op->getHandle()
+                                << " timed out as expected after " << op->mPolicyRetries
+                                << " retries."
+                                << LL_ENDL;
+        }
+        // </FS:Trish>
         else
         {
             LL_WARNS(LOG_CORE) << "HTTP request " << op->getHandle()
