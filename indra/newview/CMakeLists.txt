@@ -199,6 +199,7 @@ set(viewer_SOURCE_FILES
     fsscriptlibrary.cpp
     fsscrolllistctrl.cpp
     fsslurlcommand.cpp
+    fsskinonce.cpp
     fsssrhiz.cpp
     fsvirtualtrackpad.cpp
     fsvrs.cpp
@@ -1087,6 +1088,7 @@ set(viewer_HEADER_FILES
     fsscrolllistctrl.h
     fsslurl.h
     fsslurlcommand.h
+    fsskinonce.h
     fsssrhiz.h
     fsvirtualtrackpad.h
     fsvrs.h

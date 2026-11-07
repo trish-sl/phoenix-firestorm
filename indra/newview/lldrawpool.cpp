@@ -53,6 +53,7 @@
 #include "llglcommonfunc.h"
 #include "llvoavatar.h"
 #include "llviewershadermgr.h"
+#include "fsskinonce.h" // <FS:Trish/>
 
 S32 LLDrawPool::sNumDrawPools = 0;
 
@@ -694,6 +695,7 @@ bool LLRenderPass::uploadMatrixPalette(LLVOAvatar* avatar, const LLMeshSkinInfo*
         (GLfloat*)&(mpc.mGLMp[0]));
     LLGLSLShader::sCurBoundShaderPtr->uniform1i(LLViewerShaderMgr::AVATAR_MATRIX_SIZE, count);
     LLGLSLShader::sCurBoundShaderPtr->uniform3fv(LLViewerShaderMgr::SKIN_ORIGIN, 1, mpc.mSkinOrigin.mV);
+    FSSkinOnce::noteSkin(avatar, skinInfo->mHash, mpc.mGLMp.data(), count, mpc.mFSBuildSerial); // <FS:Trish/>
 
     return true;
 }
@@ -735,6 +737,7 @@ bool LLRenderPass::uploadMatrixPalette(LLVOAvatar* avatar, const LLMeshSkinInfo*
             (GLfloat*)&(mpc.mGLMp[0]));
         LLGLSLShader::sCurBoundShaderPtr->uniform1i(LLViewerShaderMgr::AVATAR_MATRIX_SIZE, count);
         LLGLSLShader::sCurBoundShaderPtr->uniform3fv(LLViewerShaderMgr::SKIN_ORIGIN, 1, mpc.mSkinOrigin.mV);
+        FSSkinOnce::noteSkin(avatar, skinInfo->mHash, mpc.mGLMp.data(), count, mpc.mFSBuildSerial); // <FS:Trish/>
     }
 
     return !skipLastSkin;
@@ -778,6 +781,7 @@ bool LLRenderPass::uploadMatrixPalette(LLVOAvatar* avatar, const LLMeshSkinInfo*
             (GLfloat*)&(mpc.mGLMp[0]));
         LLGLSLShader::sCurBoundShaderPtr->uniform1i(LLViewerShaderMgr::AVATAR_MATRIX_SIZE, count);
         LLGLSLShader::sCurBoundShaderPtr->uniform3fv(LLViewerShaderMgr::SKIN_ORIGIN, 1, mpc.mSkinOrigin.mV);
+        FSSkinOnce::noteSkin(avatar, skinInfo->mHash, mpc.mGLMp.data(), count, mpc.mFSBuildSerial); // <FS:Trish/>
     }
 
     return !skipLastSkin;
