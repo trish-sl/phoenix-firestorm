@@ -3738,7 +3738,14 @@ void LLLiveLSLEditor::processScriptRunningReply(LLMessageSystem* msg, void**)
         // </FS:Trish>
     }
 
-    LLPanelObjectInventory::handleScriptRunningReply(object_id, item_id, running);
+    // <FS:Trish> Pass on the VM for the Content tab script summary
+    //LLPanelObjectInventory::handleScriptRunningReply(object_id, item_id, running);
+    bool reply_mono = false;
+    bool reply_luau_language = false;
+    msg->getBOOLFast(_PREHASH_Script, _PREHASH_Mono, reply_mono);
+    msg->getBOOLFast(_PREHASH_Script, _PREHASH_LuauLanguage, reply_luau_language);
+    LLPanelObjectInventory::handleScriptRunningReply(object_id, item_id, running, reply_luau_language ? 2 : (reply_mono ? 1 : 0));
+    // </FS:Trish>
 }
 
 void LLLiveLSLEditor::onCompileTargetChanged()

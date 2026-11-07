@@ -1702,7 +1702,10 @@ void LLPanelObjectInventory::setScriptRunningState(const LLUUID& item_id, bool r
     }
 }
 
-void LLPanelObjectInventory::handleScriptRunningReply(const LLUUID& object_id, const LLUUID& item_id, bool running)
+// <FS:Trish> Also remembers which VM the script runs on, for the Content tab summary
+//void LLPanelObjectInventory::handleScriptRunningReply(const LLUUID& object_id, const LLUUID& item_id, bool running)
+void LLPanelObjectInventory::handleScriptRunningReply(const LLUUID& object_id, const LLUUID& item_id, bool running, S32 vm)
+// </FS:Trish>
 {
     for (LLPanelObjectInventory* panel : sInstances)
     {
@@ -1712,8 +1715,57 @@ void LLPanelObjectInventory::handleScriptRunningReply(const LLUUID& object_id, c
         }
 
         panel->setScriptRunningState(item_id, running);
+        // <FS:Trish>
+        if (vm >= 0)
+        {
+            panel->mScriptVM[item_id] = vm;
+        }
+        // </FS:Trish>
     }
 }
+
+// <FS:Trish> Script counts for the Content tab
+LLPanelObjectInventory::ScriptSummary LLPanelObjectInventory::getScriptSummary() const
+{
+    ScriptSummary summary;
+    LLViewerObject* object = gObjectList.findObject(mTaskUUID);
+    if (!object || object->isInventoryPending())
+    {
+        return summary;
+    }
+
+    LLInventoryObject::object_list_t contents;
+    object->getInventoryContents(contents);
+    for (const LLPointer<LLInventoryObject>& obj : contents)
+    {
+        if (!obj || obj->getType() != LLAssetType::AT_LSL_TEXT)
+        {
+            continue;
+        }
+        const LLUUID& id = obj->getUUID();
+        ++summary.mTotal;
+
+        auto state = mScriptRunningState.find(id);
+        if (state != mScriptRunningState.end())
+        {
+            ++(state->second ? summary.mRunning : summary.mStopped);
+        }
+
+        auto vm = mScriptVM.find(id);
+        if (vm != mScriptVM.end())
+        {
+            switch (vm->second)
+            {
+                case 0: ++summary.mLSL2; break;
+                case 1: ++summary.mMono; break;
+                case 2: ++summary.mLua; break;
+                default: break;
+            }
+        }
+    }
+    return summary;
+}
+// </FS:Trish>
 
 void LLPanelObjectInventory::doToSelected(const LLSD& userdata)
 {

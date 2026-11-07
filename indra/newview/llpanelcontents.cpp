@@ -28,6 +28,7 @@
 
 // file include
 #include "llpanelcontents.h"
+#include "lltextbox.h" // <FS:Trish/> script summary
 
 // linden library includes
 #include "llerror.h"
@@ -104,6 +105,7 @@ bool LLPanelContents::postBuild()
     mFilterEditor->setCommitCallback([&](LLUICtrl*, const LLSD&) { onFilterEdit(); });
 
     mPanelInventoryObject = getChild<LLPanelObjectInventory>("contents_inventory");
+    mScriptSummary = findChild<LLTextBox>("contents_script_summary"); // <FS:Trish/>
 
     // update permission filter once UI is fully initialized
     mSavedFolderState.setApply(false);
@@ -291,6 +293,61 @@ void LLPanelContents::onFilterEdit()
     }
     mPanelInventoryObject->getFilter().setFilterSubString(filter_substring);
 }
+
+// <FS:Trish> Script counts under the contents list, refreshed while visible as running state replies arrive
+void LLPanelContents::draw()
+{
+    if (mScriptSummary && mScriptSummaryTimer.getElapsedTimeF32() > 0.5f)
+    {
+        mScriptSummaryTimer.reset();
+        updateScriptSummary();
+    }
+    LLPanel::draw();
+}
+
+void LLPanelContents::updateScriptSummary()
+{
+    if (!mScriptSummary || !mPanelInventoryObject)
+    {
+        return;
+    }
+    const LLPanelObjectInventory::ScriptSummary summary = mPanelInventoryObject->getScriptSummary();
+    if (summary.mTotal == 0)
+    {
+        mScriptSummary->setText(getString("script_summary_none"));
+        return;
+    }
+
+    LLStringUtil::format_map_t args;
+    args["[TOTAL]"] = llformat("%d", summary.mTotal);
+    args["[RUNNING]"] = llformat("%d", summary.mRunning);
+    args["[STOPPED]"] = llformat("%d", summary.mStopped);
+    std::string text = getString("script_summary", args);
+
+    std::string vms;
+    auto add_vm = [&vms](S32 count, const char* name)
+    {
+        if (count > 0)
+        {
+            vms += llformat("%s%s %d", vms.empty() ? "" : ", ", name, count);
+        }
+    };
+    add_vm(summary.mMono, "Mono");
+    add_vm(summary.mLSL2, "LSL");
+    add_vm(summary.mLua, "Lua");
+    if (!vms.empty())
+    {
+        text += " | " + vms;
+    }
+    const S32 pending = summary.mTotal - summary.mRunning - summary.mStopped;
+    if (pending > 0)
+    {
+        args["[PENDING]"] = llformat("%d", pending);
+        text += " " + getString("script_summary_pending", args);
+    }
+    mScriptSummary->setText(text);
+}
+// </FS:Trish>
 
 void LLPanelContents::refresh()
 {

@@ -85,7 +85,22 @@ public:
 
     bool getScriptRunningState(const LLUUID& item_id, bool& running) const;
     void requestScriptRunningInfo(const LLUUID& item_id);
-    static void handleScriptRunningReply(const LLUUID& object_id, const LLUUID& item_id, bool running);
+    // <FS:Trish> vm: -1 unknown, 0 LSL2, 1 Mono, 2 Lua (from the running state reply)
+    //static void handleScriptRunningReply(const LLUUID& object_id, const LLUUID& item_id, bool running);
+    static void handleScriptRunningReply(const LLUUID& object_id, const LLUUID& item_id, bool running, S32 vm = -1);
+    // Counts for the scripts in this object's contents; state and VM are filled in as replies arrive
+    struct ScriptSummary
+    {
+        S32 mTotal = 0;
+        S32 mRunning = 0;
+        S32 mStopped = 0;
+        S32 mMono = 0;
+        S32 mLSL2 = 0;
+        S32 mLua = 0;
+    };
+    ScriptSummary getScriptSummary() const;
+    const LLUUID& getTaskUUID() const { return mTaskUUID; }
+    // </FS:Trish>
 
     virtual void draw();
     virtual void deleteAllChildren();
@@ -125,6 +140,7 @@ protected:
 private:
     std::unordered_map<LLUUID, LLFolderViewItem*> mItemMap;
     void setScriptRunningState(const LLUUID& item_id, bool running);
+    std::map<LLUUID, S32> mScriptVM; // <FS:Trish/> -1 unknown, 0 LSL2, 1 Mono, 2 Lua
 
     static std::set<LLPanelObjectInventory*> sInstances;
 
