@@ -282,6 +282,15 @@ void HttpCoroHandler::onCompleted(LLCore::HttpHandle handle, LLCore::HttpRespons
                 << " url '" << response->getRequestURL() << "'"
                 << LL_ENDL;
         }
+        // <FS:Trish> A timeout the request expects (the event queue long poll) is not a failure
+        else if (mExpectedTimeout && status == LLCore::HttpStatus(LLCore::HttpStatus::EXT_CURL_EASY, CURLE_OPERATION_TIMEDOUT))
+        {
+            LL_DEBUGS("CoreHTTP")
+                << "Expected timeout [" << status.toTerseString() << "] for " << response->getRequestMethod()
+                << " url '" << response->getRequestURL() << "'"
+                << LL_ENDL;
+        }
+        // </FS:Trish>
         else
         {
             LL_WARNS("CoreHTTP")
@@ -747,6 +756,13 @@ LLSD HttpCoroutineAdapter::postAndSuspend_(LLCore::HttpRequest::ptr_t &request,
     HttpRequestPumper pumper(request);
 
     checkDefaultHeaders(headers);
+
+    // <FS:Trish> Pass on that a timeout is expected (the event queue long poll)
+    if (options && options->getExpectedTimeout())
+    {
+        handler->setExpectedTimeout(true);
+    }
+    // </FS:Trish>
 
     // The HTTPCoroHandler does not self delete, so retrieval of a the contained
     // pointer from the smart pointer is safe in this case.

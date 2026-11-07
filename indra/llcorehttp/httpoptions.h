@@ -184,6 +184,14 @@ public:
         return mLastModified;
     }
 
+    // <FS:Trish> A transfer timeout is an expected result of the request, as for a long poll
+    // that the server holds until it times out when there is nothing to send (the event
+    // queue): the timeout is then logged at debug level instead of as a warning.
+    // Default: false
+    void                setExpectedTimeout(bool expected) { mExpectedTimeout = expected; }
+    bool                getExpectedTimeout() const { return mExpectedTimeout; }
+    // </FS:Trish>
+
     /// Sets default behavior for verifying that the name in the
     /// security certificate matches the name of the host contacted.
     /// Defaults false if not set, but should be set according to
@@ -206,6 +214,7 @@ protected:
     int                 mDNSCacheTimeout;
     bool                mNoBody;
     time_t              mLastModified;
+    bool                mExpectedTimeout = false; // <FS:Trish/> see setExpectedTimeout
 
     static bool         sDefaultVerifyPeer;
 }; // end class HttpOptions
