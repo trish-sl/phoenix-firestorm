@@ -54,23 +54,59 @@ uniform mat4 inv_proj;
 uniform vec2 screen_res;
 uniform int sun_up_factor;
 
-float pcfShadow(sampler2DShadow shadowMap, vec3 norm, vec4 stc, float bias_mul, vec2 pos_screen, vec3 light_dir)
+// Receiver-plane depth bias of the sun PCF: the depth slope of the receiver in shadow texture space
+// (d depth / d uv), from two 5 cm tangent steps of the view space position pos (normal norm) through
+// the cascade's matrix m; c is pos projected and divided. Each tap's reference depth is lowered by
+// the slope times the tap's distance from the receiver point, so a slanted lit surface doesn't shadow
+// itself between the taps (acne on walls under a low sun). Replaces the altitude term of the bias
+// (RenderShadowBiasError), which only widened a constant bias with height and detached shadows from
+// their casters in skyboxes. From Vulkanstorm, by Anne Skydancer.
+#define PCF_RPDB_STEP 0.05      // metres
+#define PCF_RPDB_MAX  0.004     // cap per tap, shadow depth units
+vec2 pcfDepthGradient(mat4 m, vec3 pos, vec3 norm, vec3 c)
+{
+    if (dot(norm, norm) < 1.0e-8)
+    {
+        return vec2(0.0);
+    }
+    vec3 n = normalize(norm);
+    vec3 t1 = normalize(cross(n, abs(n.x) < 0.9 ? vec3(1.0, 0.0, 0.0) : vec3(0.0, 1.0, 0.0)));
+    vec3 t2 = cross(n, t1);
+    vec4 a = m * vec4(pos + t1 * PCF_RPDB_STEP, 1.0);
+    vec4 b = m * vec4(pos + t2 * PCF_RPDB_STEP, 1.0);
+    vec3 d1 = a.xyz / a.w - c;
+    vec3 d2 = b.xyz / b.w - c;
+    float det = d1.x * d2.y - d1.y * d2.x;
+    if (abs(det) < 1.0e-14)
+    {
+        return vec2(1.0e4);
+    }
+    return abs(vec2(d1.z * d2.y - d1.y * d2.z, d1.x * d2.z - d1.z * d2.x) / det);
+}
+
+float pcfShadow(sampler2DShadow shadowMap, vec3 norm, vec4 stc, float bias_mul, vec2 pos_screen, vec3 light_dir, mat4 m, vec3 pos)
 {
 #if defined(SUN_SHADOW)
     float offset = shadow_bias * bias_mul;
     stc.xyz /= stc.w;
-    stc.z += offset * 2.0;
     if (cube_snapshot != 0)
     {
-        return texture(shadowMap, stc.xyz);
+        return texture(shadowMap, stc.xyz + vec3(0.0, 0.0, offset * 2.0));
     }
+    vec2 grad = pcfDepthGradient(m, pos, norm, stc.xyz);
+    stc.z += offset * 2.0;
     // Each map's own size: the far cascades can be smaller than the near ones
     vec2 res = vec2(textureSize(shadowMap, 0));
+    vec2 texel = 1.0 / res;
+    float x0 = stc.x;
     stc.x = floor(stc.x*res.x + fract(pos_screen.y*res.y))/res.x; // add some chaotic jitter to X sample pos according to Y to disguise the snapping going on here
-    float cs = texture(shadowMap, stc.xyz);
+    // Per-tap receiver-plane bias: the snap's own shift plus the tap's offset and half a texel of
+    // bilinear footprint, in uv
+    vec2 snap = vec2(abs(stc.x - x0), 0.0) + 0.5 * texel;
+    float cs = texture(shadowMap, vec3(stc.xy, stc.z - min(dot(grad, snap), PCF_RPDB_MAX)));
     float shadow = cs * 4.0;
-    float a = texture(shadowMap, stc.xyz+vec3( 1.5/res.x,  0.5/res.y, 0.0));
-    float b = texture(shadowMap, stc.xyz+vec3(-1.5/res.x, -0.5/res.y, 0.0));
+    float a = texture(shadowMap, vec3(stc.xy + vec2( 1.5,  0.5) * texel, stc.z - min(dot(grad, snap + vec2(1.5, 0.5) * texel), PCF_RPDB_MAX)));
+    float b = texture(shadowMap, vec3(stc.xy + vec2(-1.5, -0.5) * texel, stc.z - min(dot(grad, snap + vec2(1.5, 0.5) * texel), PCF_RPDB_MAX)));
 #ifdef FS_SHADOW_FAST_PCF
     // Two opposite taps agree with the centre and it is fully lit or fully shadowed: the other
     // two taps would agree too, so skip them. Only shadow edges pay for all five.
@@ -80,8 +116,8 @@ float pcfShadow(sampler2DShadow shadowMap, vec3 norm, vec4 stc, float bias_mul, 
     }
 #endif
     shadow += a + b;
-    shadow += texture(shadowMap, stc.xyz+vec3( 0.5/res.x, -1.5/res.y, 0.0));
-    shadow += texture(shadowMap, stc.xyz+vec3(-0.5/res.x,  1.5/res.y, 0.0));
+    shadow += texture(shadowMap, vec3(stc.xy + vec2( 0.5, -1.5) * texel, stc.z - min(dot(grad, snap + vec2(0.5, 1.5) * texel), PCF_RPDB_MAX)));
+    shadow += texture(shadowMap, vec3(stc.xy + vec2(-0.5,  1.5) * texel, stc.z - min(dot(grad, snap + vec2(0.5, 1.5) * texel), PCF_RPDB_MAX)));
     return clamp(shadow * 0.125, 0.0, 1.0);
 #else
     return 1.0;
@@ -147,7 +183,7 @@ float sampleDirectionalShadow(vec3 pos, vec3 norm, vec2 pos_screen)
             float w = 1.0;
             w -= max(spos.z-far_split.z, 0.0)/transition_domain.z;
             //w = clamp(w, 0.0, 1.0);
-            float contrib = pcfShadow(shadowMap3, norm, lpos, 1.0, pos_screen, light_dir)*w;
+            float contrib = pcfShadow(shadowMap3, norm, lpos, 1.0, pos_screen, light_dir, shadow_matrix[3], spos.xyz)*w;
             //if (contrib > 0)
             {
                 shadow += contrib;
@@ -164,7 +200,7 @@ float sampleDirectionalShadow(vec3 pos, vec3 norm, vec2 pos_screen)
             w -= max(spos.z-far_split.y, 0.0)/transition_domain.y;
             w -= max(near_split.z-spos.z, 0.0)/transition_domain.z;
             //w = clamp(w, 0.0, 1.0);
-            float contrib = pcfShadow(shadowMap2, norm, lpos, 1.0, pos_screen, light_dir)*w;
+            float contrib = pcfShadow(shadowMap2, norm, lpos, 1.0, pos_screen, light_dir, shadow_matrix[2], spos.xyz)*w;
             //if (contrib > 0)
             {
                 shadow += contrib;
@@ -180,7 +216,7 @@ float sampleDirectionalShadow(vec3 pos, vec3 norm, vec2 pos_screen)
             w -= max(spos.z-far_split.x, 0.0)/transition_domain.x;
             w -= max(near_split.y-spos.z, 0.0)/transition_domain.y;
             //w = clamp(w, 0.0, 1.0);
-            float contrib = pcfShadow(shadowMap1, norm, lpos, 1.0, pos_screen, light_dir)*w;
+            float contrib = pcfShadow(shadowMap1, norm, lpos, 1.0, pos_screen, light_dir, shadow_matrix[1], spos.xyz)*w;
             //if (contrib > 0)
             {
                 shadow += contrib;
@@ -195,7 +231,7 @@ float sampleDirectionalShadow(vec3 pos, vec3 norm, vec2 pos_screen)
             float w = 1.0;
             w -= max(near_split.x-spos.z, 0.0)/transition_domain.x;
             //w = clamp(w, 0.0, 1.0);
-            float contrib = pcfShadow(shadowMap0, norm, lpos, 1.0, pos_screen, light_dir)*w;
+            float contrib = pcfShadow(shadowMap0, norm, lpos, 1.0, pos_screen, light_dir, shadow_matrix[0], spos.xyz)*w;
             //if (contrib > 0)
             {
                 shadow += contrib;
@@ -219,13 +255,9 @@ float sampleDirectionalShadow(vec3 pos, vec3 norm, vec2 pos_screen)
 float sampleSpotShadow(vec3 pos, vec3 norm, int index, vec2 pos_screen)
 {
 #if defined(SPOT_SHADOW)
-    float shadow = 0.0f;
     pos += norm * spot_shadow_offset;
 
     vec4 spos = vec4(pos,1.0);
-    if (spos.z > -shadow_clip.w)
-    {
-        vec4 lpos;
 
     // The projector shadow fades out with the distance from the camera to the pixel (Euclidean, so
     // it doesn't depend on which way the camera looks) over the last 20 % of spot_shadow_reach. It
@@ -239,11 +271,17 @@ float sampleSpotShadow(vec3 pos, vec3 norm, int index, vec2 pos_screen)
         return 1.0;
     }
 
-        shadow /= weight;
+    float shadow;
+    vec4 lpos;
+    if (index == 0)
+    {
+        lpos = shadow_matrix[4]*spos;
+        shadow = pcfSpotShadow(shadowMap4, lpos, 0.8, spos.xy);
     }
     else
     {
-        shadow = 1.0f;
+        lpos = shadow_matrix[5]*spos;
+        shadow = pcfSpotShadow(shadowMap5, lpos, 0.8, spos.xy);
     }
     return mix(1.0, shadow, fade);
 #else
