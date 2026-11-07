@@ -214,6 +214,7 @@ LLGLSLShader            gFSLensDirtProgram;
 LLGLSLShader            gFSLensEffectsProgram;
 LLGLSLShader            gFSAvatarMatteProgram;
 // </FS:Trish>
+LLGLSLShader            gFSLocalTonemapLumProgram; // <FS:Trish/> Local tone mapping
 LLGLSLShader            gDeferredPostGammaCorrectProgram;
 LLGLSLShader            gLegacyPostGammaCorrectProgram;
 LLGLSLShader            gExposureProgram;
@@ -1491,6 +1492,7 @@ bool LLViewerShaderMgr::loadShadersDeferred()
         gFSLensEffectsProgram.unload();
         gFSAvatarMatteProgram.unload();
         // </FS:Trish>
+        gFSLocalTonemapLumProgram.unload(); // <FS:Trish/> Local tone mapping
         // <FS:Trish> WBOIT
         gFSWBOITCompositeProgram.unload();
         gFSAlphaWBOITShaders = false;
@@ -3061,6 +3063,7 @@ bool LLViewerShaderMgr::loadShadersDeferred()
             { &gFSLensDirtProgram,         "FS Lens Dirt",          "deferred/fsLensDirtF.glsl",         false },
             { &gFSLensEffectsProgram,      "FS Lens Effects",       "deferred/fsLensEffectsF.glsl",      false },
             { &gFSAvatarMatteProgram,      "FS Avatar Matte",       "deferred/fsAvatarMatteF.glsl",      false },
+            { &gFSLocalTonemapLumProgram,  "FS Local Tonemap Base", "deferred/fsLocalTonemapLumF.glsl",  false },
         };
         for (const FSPostShader& post : fs_post_shaders)
         {

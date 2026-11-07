@@ -274,6 +274,7 @@ extern LLGLSLShader         gFSLensDirtProgram;
 extern LLGLSLShader         gFSLensEffectsProgram;
 extern LLGLSLShader         gFSAvatarMatteProgram;
 // </FS:Trish>
+extern LLGLSLShader         gFSLocalTonemapLumProgram; // <FS:Trish/> Local tone mapping
 extern LLGLSLShader         gExposureProgram;
 extern LLGLSLShader         gExposureProgramNoFade;
 extern LLGLSLShader         gLuminanceProgram;
