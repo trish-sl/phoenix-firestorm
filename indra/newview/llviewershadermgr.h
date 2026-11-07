@@ -279,6 +279,7 @@ extern LLGLSLShader         gFSLensDirtProgram;
 extern LLGLSLShader         gFSLensEffectsProgram;
 extern LLGLSLShader         gFSAvatarMatteProgram;
 extern LLGLSLShader         gFSDynResUpscaleProgram; // <FS:Trish/> Dynamic resolution
+extern LLGLSLShader         gFSNISUpscaleProgram; // <FS:Trish/> NVIDIA Image Scaling
 // </FS:Trish>
 extern LLGLSLShader         gFSLocalTonemapLumProgram; // <FS:Trish/> Local tone mapping
 extern LLGLSLShader         gFSSkinSSSProgram; // <FS:Trish/>
