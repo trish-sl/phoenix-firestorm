@@ -14084,6 +14084,19 @@ void LLPipeline::initDeferredVB()
 
 static constexpr F32 FS_AVATAR_ONLY_WHITE_LEVEL = 1.f;
 
+// Avatars and animesh past FSRenderAvatarShadowDistance from the camera cast no shadow
+//static
+bool LLPipeline::isBeyondAvatarShadowDistance(const LLVOAvatar* avatar)
+{
+    static LLCachedControl<F32> avatar_shadow_distance(gSavedSettings, "FSRenderAvatarShadowDistance", 0.f);
+    const F32 max_dist = avatar_shadow_distance;
+    if (max_dist <= 0.f || !avatar || avatar->isSelf())
+    {
+        return false;
+    }
+    return dist_vec_squared(avatar->getPositionAgent(), LLViewerCamera::getInstance()->getOrigin()) > max_dist * max_dist;
+}
+
 //static
 bool LLPipeline::isAvatarOnlyRender()
 {

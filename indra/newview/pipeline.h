@@ -835,6 +835,7 @@ public:
     void releaseAvatarOnlyTargets();
 
     // Shadow performance
+    static bool             isBeyondAvatarShadowDistance(const LLVOAvatar* avatar);
     U32                     mShadowFrame = 0;               // main view shadow updates so far
     bool                    mFarCascadeValid[4] = {};       // the map holds a render the throttle can reuse
     U32                     mFarCascadeTex[4] = {};         // ...in this depth texture

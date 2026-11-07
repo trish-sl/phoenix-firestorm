@@ -1528,7 +1528,7 @@
              bottom="-1">
                 <panel
                  follows="left|top"
-                 height="596"
+                 height="624"
                  layout="topleft"
                  left="0"
                  name="experimental_rendering_settings"
@@ -1919,6 +1919,31 @@
                      name="shadow_far_cascade_min_caster"
                      tool_tip="EXPERIMENTAL. Multiplies RenderShadowMinCasterTexels for the two far sun shadow maps, so small objects far away stop casting sooner (1 - 16). Needs RenderShadowMinCasterTexels above 0."
                      top="561"
+                     width="100" />
+                    <text
+                     follows="left|top"
+                     height="18"
+                     layout="topleft"
+                     left="35"
+                     name="avatar_shadow_distance_label"
+                     tool_tip="EXPERIMENTAL. Avatars and animesh further than this from the camera, with their attachments, cast no shadow. 0 for no limit. Your own avatar always casts."
+                     top="591"
+                     width="285">
+                        Avatar shadow distance (m, 0 = all)
+                    </text>
+                    <spinner
+                     control_name="FSRenderAvatarShadowDistance"
+                     decimal_digits="0"
+                     follows="left|top"
+                     height="20"
+                     increment="8"
+                     layout="topleft"
+                     left="330"
+                     max_val="256"
+                     min_val="0"
+                     name="avatar_shadow_distance"
+                     tool_tip="EXPERIMENTAL. Avatars and animesh further than this from the camera, with their attachments, cast no shadow. 0 for no limit. Your own avatar always casts."
+                     top="589"
                      width="100" />
                 </panel>
             </scroll_container>
