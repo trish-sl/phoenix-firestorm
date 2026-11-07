@@ -1973,6 +1973,7 @@ void LLShaderMgr::initAttribsAndUniforms()
     mReservedUniforms.push_back("coloredShadowMap0");
     mReservedUniforms.push_back("coloredShadowMap1");
     // </FS:Trish>
+    mReservedUniforms.push_back("ssrHiZMap"); // <FS:Trish/>
 
     llassert(mReservedUniforms.size() == END_RESERVED_UNIFORMS);
 

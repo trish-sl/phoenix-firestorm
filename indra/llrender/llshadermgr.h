@@ -377,6 +377,7 @@ public:
         FS_COLORED_SHADOW_MAP0,             // "coloredShadowMap0"
         FS_COLORED_SHADOW_MAP1,             // "coloredShadowMap1"
         // </FS:Trish>
+        FS_SSR_HIZ_MAP,                     // "ssrHiZMap" <FS:Trish/>
         END_RESERVED_UNIFORMS
     } eGLSLReservedUniforms;
     // clang-format on
