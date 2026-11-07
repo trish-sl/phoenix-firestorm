@@ -15744,4 +15744,32 @@ Do you want to paste selected no-copy objects as links?
   </notification>
   <!-- </FS:Trish> -->
 
+  <!-- <FS:Trish> Make root -->
+  <notification
+   icon="alertmodal.tga"
+   name="FSMakeRootConfirm"
+   type="alertmodal">
+Make the selected part the root of its linkset?
+
+The [COUNT] parts are unlinked and linked again with this part first. Link numbers change, so scripts that use link numbers may need adjusting, and the contents of the old root stay in that part.
+    <tag>confirm</tag>
+    <usetemplate
+     name="okcancelbuttons"
+     notext="Cancel"
+     yestext="Make root"/>
+  </notification>
+  <notification
+   icon="alertmodal.tga"
+   name="FSMakeRootFailed"
+   type="alertmodal">
+Couldn't make the part the root: [REASON]
+    <tag>fail</tag>
+  </notification>
+  <notification
+   icon="notifytip.tga"
+   name="FSMakeRootDone"
+   type="notifytip">
+The selected part is now the root of its [COUNT]-part linkset.
+  </notification>
+  <!-- </FS:Trish> -->
 </notifications>
