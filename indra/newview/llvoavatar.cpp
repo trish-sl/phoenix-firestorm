@@ -14109,7 +14109,10 @@ bool LLVOAvatar::isUsingServerBakes() const
     F32 expect_wt = mUseServerBakes ? 1.0f : 0.0f;
     if (!is_approx_equal(wt,expect_wt))
     {
-        LL_WARNS() << "wt " << wt << " differs from expected " << expect_wt << LL_ENDL;
+        // <FS:Trish> Log once per avatar instead of on every call
+        //LL_WARNS() << "wt " << wt << " differs from expected " << expect_wt << LL_ENDL;
+        LL_WARNS_ONCE() << "Avatar " << getID() << ": wt " << wt << " differs from expected " << expect_wt << LL_ENDL;
+        // </FS:Trish>
     }
 #endif
 
