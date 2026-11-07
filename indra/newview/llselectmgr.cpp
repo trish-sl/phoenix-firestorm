@@ -29,6 +29,7 @@
 // file include
 #define LLSELECTMGR_CPP
 #include "llselectmgr.h"
+#include "fsbuildhistory.h" // <FS:Trish/>
 #include "llmaterialmgr.h"
 
 // library includes
@@ -4909,6 +4910,22 @@ void LLSelectMgr::sendMultipleUpdate(U32 type)
         logNoOp,
         &type,
         send_type);
+
+    // <FS:Trish> Build undo history: record what was just sent, the same nodes sendListToRegions picked
+    if (FSBuildHistory::enabled())
+    {
+        std::vector<LLViewerObject*> sent;
+        for (LLObjectSelection::iterator iter = mSelectedObjects->begin(); iter != mSelectedObjects->end(); ++iter)
+        {
+            LLViewerObject* object = (*iter)->getObject();
+            if (object && (send_type != SEND_ONLY_ROOTS || object->isRootEdit()))
+            {
+                sent.push_back(object);
+            }
+        }
+        FSBuildHistory::instance().onUpdateSent(sent, type);
+    }
+    // </FS:Trish>
 }
 
 // static
@@ -5618,6 +5635,16 @@ void LLSelectMgr::saveSelectedObjectTransform(EActionType action_type)
         // nothing selected, so nothing to save
         return;
     }
+
+    // <FS:Trish> Build undo history: a drag starts from where the objects are now
+    if (action_type == SELECT_ACTION_TYPE_PICK)
+    {
+        for (LLObjectSelection::iterator iter = mSelectedObjects->begin(); iter != mSelectedObjects->end(); ++iter)
+        {
+            FSBuildHistory::instance().noteBaseline((*iter)->getObject());
+        }
+    }
+    // </FS:Trish>
 
     struct f : public LLSelectedNodeFunctor
     {
@@ -7117,6 +7144,7 @@ LLSelectNode::LLSelectNode(LLViewerObject* object, bool glow)
 {
     saveColors();
     saveShinyColors();
+    FSBuildHistory::instance().noteBaseline(object); // <FS:Trish/> build undo history
 }
 
 LLSelectNode::LLSelectNode(const LLSelectNode& nodep)
@@ -7983,6 +8011,12 @@ LLBBox LLSelectMgr::getBBoxOfSelection() const
 //-----------------------------------------------------------------------------
 bool LLSelectMgr::canUndo() const
 {
+    // <FS:Trish> Client side build history first
+    if (FSBuildHistory::enabled() && FSBuildHistory::instance().canUndo())
+    {
+        return true;
+    }
+    // </FS:Trish>
     // Can edit or can move
     return const_cast<LLSelectMgr*>(this)->mSelectedObjects->getFirstUndoEnabledObject() != NULL; // HACK: casting away constness - MG;
 }
@@ -7992,6 +8026,13 @@ bool LLSelectMgr::canUndo() const
 //-----------------------------------------------------------------------------
 void LLSelectMgr::undo()
 {
+    // <FS:Trish> Client side build history first; the simulator's own undo is the fallback
+    if (FSBuildHistory::enabled() && FSBuildHistory::instance().canUndo())
+    {
+        FSBuildHistory::instance().undo();
+        return;
+    }
+    // </FS:Trish>
     bool select_linked_set = !gSavedSettings.getBOOL("EditLinkedParts");
     LLUUID group_id(gAgent.getGroupID());
     sendListToRegions("Undo", packAgentAndSessionAndGroupID, packObjectID, logNoOp, &group_id, select_linked_set ? SEND_ONLY_ROOTS : SEND_CHILDREN_FIRST);
@@ -8002,6 +8043,12 @@ void LLSelectMgr::undo()
 //-----------------------------------------------------------------------------
 bool LLSelectMgr::canRedo() const
 {
+    // <FS:Trish>
+    if (FSBuildHistory::enabled() && FSBuildHistory::instance().canRedo())
+    {
+        return true;
+    }
+    // </FS:Trish>
     return const_cast<LLSelectMgr*>(this)->mSelectedObjects->getFirstEditableObject() != NULL; // HACK: casting away constness - MG
 }
 
@@ -8010,6 +8057,13 @@ bool LLSelectMgr::canRedo() const
 //-----------------------------------------------------------------------------
 void LLSelectMgr::redo()
 {
+    // <FS:Trish>
+    if (FSBuildHistory::enabled() && FSBuildHistory::instance().canRedo())
+    {
+        FSBuildHistory::instance().redo();
+        return;
+    }
+    // </FS:Trish>
     bool select_linked_set = !gSavedSettings.getBOOL("EditLinkedParts");
     LLUUID group_id(gAgent.getGroupID());
     sendListToRegions("Redo", packAgentAndSessionAndGroupID, packObjectID, logNoOp, &group_id, select_linked_set ? SEND_ONLY_ROOTS : SEND_CHILDREN_FIRST);

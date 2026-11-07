@@ -173,6 +173,7 @@ set(viewer_SOURCE_FILES
     fsnearbychatvoicemonitor.cpp
     fspanelblocklist.cpp
     fspanelcontactsets.cpp
+    fsbuildhistory.cpp
     fsmakeroot.cpp
     fspanelbuildinfo.cpp
     fspanelface.cpp
@@ -1055,6 +1056,7 @@ set(viewer_HEADER_FILES
     fsnearbychatvoicemonitor.h
     fspanelblocklist.h
     fspanelcontactsets.h
+    fsbuildhistory.h
     fsmakeroot.h
     fspanelbuildinfo.h
     fspanelface.h
