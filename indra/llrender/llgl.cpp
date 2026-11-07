@@ -1730,6 +1730,12 @@ void LLGLManager::initExtensions()
     LL_INFOS("RenderInit") << "NV shading rate image available: " << mHasNVShadingRateImage << LL_ENDL;
     // </FS:Trish>
 
+    // <FS:Trish> Representative fragment test for occlusion queries (FSPerfRepresentativeFragmentTest):
+    // NVIDIA Turing and newer. State only, no entry points.
+    mHasNVRepresentativeFragmentTest = mGLExtensions.contains("GL_NV_representative_fragment_test");
+    LL_INFOS("RenderInit") << "NV representative fragment test available: " << mHasNVRepresentativeFragmentTest << LL_ENDL;
+    // </FS:Trish>
+
     mInited = true;
 
 #if LL_GL_FUNC_POINTER
