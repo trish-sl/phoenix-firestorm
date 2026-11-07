@@ -134,6 +134,7 @@
 #include "SMAAAreaTex.h"
 #include "SMAASearchTex.h"
 #include "llerror.h"
+#include "fsdynamicresolution.h" // <FS:Trish/> Dynamic resolution
 
 #if LL_CLANG
 #pragma clang diagnostic push
@@ -847,7 +848,16 @@ void LLPipeline::resizeShadowTexture()
 {
     releaseSunShadowTargets();
     releaseSpotShadowTargets();
-    allocateShadowBuffer(mRT->screen.getWidth(), mRT->screen.getHeight()); // <FS:Beq> revert and correct previous shadowres fix that leads to FPS drop (FIRE-3200)
+    // <FS:Trish> Dynamic resolution keeps the shadow maps at the full resolution size
+    //allocateShadowBuffer(mRT->screen.getWidth(), mRT->screen.getHeight()); // <FS:Beq> revert and correct previous shadowres fix that leads to FPS drop (FIRE-3200)
+    U32 shadow_res_x = mRT->screen.getWidth();
+    U32 shadow_res_y = mRT->screen.getHeight();
+    if (mRT == &mMainRT)
+    {
+        FSDynamicResolution::shadowBaseSize(shadow_res_x, shadow_res_y);
+    }
+    allocateShadowBuffer(shadow_res_x, shadow_res_y); // <FS:Beq> revert and correct previous shadowres fix that leads to FPS drop (FIRE-3200)
+    // </FS:Trish>
     gResizeShadowTexture = false;
 }
 
@@ -1038,6 +1048,16 @@ bool LLPipeline::allocateScreenBufferInternal(U32 resX, U32 resY)
     // </FS:Trish>
 // [/SL:KB]
 
+    // <FS:Trish> Dynamic resolution scales the main view only. The shadow maps and the UI
+    // buffer keep the size before it.
+    const U32 full_res_x = resX;
+    const U32 full_res_y = resY;
+    if (mRT == &mMainRT && !gCubeSnapshot)
+    {
+        FSDynamicResolution::scaleMainTarget(resX, resY);
+    }
+    // </FS:Trish>
+
     S32 shadow_detail = RenderShadowDetail;
     bool ssao = RenderDeferredSSAO;
 
@@ -1080,7 +1100,8 @@ bool LLPipeline::allocateScreenBufferInternal(U32 resX, U32 resY)
     }
     // </FS:Trish>
 
-    allocateShadowBuffer(resX, resY);
+    //allocateShadowBuffer(resX, resY);
+    allocateShadowBuffer(full_res_x, full_res_y); // <FS:Trish/> Dynamic resolution
 
     if (!gCubeSnapshot) // hack to not re-allocate various targets for cube snapshots
     {
@@ -1090,7 +1111,8 @@ bool LLPipeline::allocateScreenBufferInternal(U32 resX, U32 resY)
         if (RenderUIBuffer)
         {
             LL_PROFILE_ZONE_NAMED_CATEGORY_DISPLAY("UIBuffer"); // <FS:Beq/> improve Tracy scoping 
-            if (!mUIScreen.allocate(resX, resY, GL_RGBA))
+            //if (!mUIScreen.allocate(resX, resY, GL_RGBA))
+            if (!mUIScreen.allocate(full_res_x, full_res_y, GL_RGBA)) // <FS:Trish/> Dynamic resolution: the UI stays at full size
             {
                 return false;
             }
@@ -10041,8 +10063,10 @@ void LLPipeline::renderFinalize()
 
     // <FS:Trish> Avatars only snapshot: no dither noise, the colour has to line up with the matte
     //gDeferredPostNoDoFNoiseProgram.bind(); // Add noise as part of final render to screen pass to avoid damaging other post effects
-    LLGLSLShader& present_shader = avatars_only ? gDeferredPostNoDoFProgram : gDeferredPostNoDoFNoiseProgram;
+    //LLGLSLShader& present_shader = avatars_only ? gDeferredPostNoDoFProgram : gDeferredPostNoDoFNoiseProgram; // <FS:Trish/> Dynamic resolution
+    LLGLSLShader& present_shader = avatars_only ? gDeferredPostNoDoFProgram : FSDynamicResolution::presentShader(gDeferredPostNoDoFNoiseProgram, sourceBuffer); // <FS:Trish/> Dynamic resolution: sharpened upscale
     present_shader.bind(); // Add noise as part of final render to screen pass to avoid damaging other post effects
+    FSDynamicResolution::setupPresent(present_shader); // <FS:Trish/> Dynamic resolution
     // </FS:Trish>
 
     // Whatever is last in the above post processing chain should _always_ be rendered directly here.  If not, expect problems.

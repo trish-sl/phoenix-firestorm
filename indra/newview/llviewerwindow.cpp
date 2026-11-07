@@ -235,6 +235,7 @@
 #include "llnetmap.h"
 #include "lggcontactsets.h"
 #include "fspanellogin.h"
+#include "fsdynamicresolution.h" // <FS:Trish/> Dynamic resolution
 
 #include "lltracerecording.h"
 
@@ -6334,6 +6335,8 @@ bool LLViewerWindow::rawSnapshot(LLImageRaw *raw, S32 image_width, S32 image_hei
         return false;
     }
 
+    FSDynamicResolution::SnapshotGuard dynamic_resolution_off; // <FS:Trish/> Snapshots render at full resolution
+
     // <FS:Trish> Avatars only snapshot. The UI and HUDs would land in the colour of every pass but
     // not in the matte, so they stay out.
     bool avatars_only = false;
@@ -6852,6 +6855,7 @@ bool LLViewerWindow::rawSnapshot(LLImageRaw *raw, S32 image_width, S32 image_hei
 bool LLViewerWindow::simpleSnapshot(LLImageRaw* raw, S32 image_width, S32 image_height, const int num_render_passes)
 {
     LL_PROFILE_ZONE_SCOPED_CATEGORY_APP;
+    FSDynamicResolution::SnapshotGuard dynamic_resolution_off; // <FS:Trish/> Snapshots render at full resolution
     gDisplaySwapBuffers = false;
 
     glClear(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT); // stencil buffer is deprecated | GL_STENCIL_BUFFER_BIT);
