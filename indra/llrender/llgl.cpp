@@ -1644,6 +1644,23 @@ void LLGLManager::reloadExtensionsString()
 #endif
 }
 
+// <FS:Trish> Parallel shader compile
+#if LL_GL_FUNC_POINTER
+static PFNGLMAXSHADERCOMPILERTHREADSKHRPROC fs_glMaxShaderCompilerThreads = nullptr;
+#endif
+
+void LLGLManager::fsSetMaxShaderCompilerThreads()
+{
+#if LL_GL_FUNC_POINTER
+    if (mHasParallelShaderCompile && fs_glMaxShaderCompilerThreads)
+    {
+        // 0xFFFFFFFF asks for the implementation's maximum
+        fs_glMaxShaderCompilerThreads(0xFFFFFFFFu);
+    }
+#endif
+}
+// </FS:Trish>
+
 void LLGLManager::initExtensions()
 {
     reloadExtensionsString();
@@ -1675,6 +1692,23 @@ void LLGLManager::initExtensions()
     glGetIntegerv(GL_MAX_ELEMENTS_VERTICES, (GLint*) &mGLMaxVertexRange);
     glGetIntegerv(GL_MAX_ELEMENTS_INDICES, (GLint*) &mGLMaxIndexRange);
     glGetIntegerv(GL_MAX_TEXTURE_SIZE, (GLint*) &mGLMaxTextureSize);
+
+    // <FS:Trish> Parallel shader compile (FSPerfParallelShaderCompile). Loaded outside the
+    // version-ordered loader below, which returns early on older contexts.
+#if LL_GL_FUNC_POINTER
+    fs_glMaxShaderCompilerThreads = nullptr;
+    if (mGLExtensions.contains("GL_KHR_parallel_shader_compile"))
+    {
+        fs_glMaxShaderCompilerThreads = (PFNGLMAXSHADERCOMPILERTHREADSKHRPROC)LL_GET_PROC_ADDRESS("glMaxShaderCompilerThreadsKHR");
+    }
+    if (!fs_glMaxShaderCompilerThreads && mGLExtensions.contains("GL_ARB_parallel_shader_compile"))
+    {
+        fs_glMaxShaderCompilerThreads = (PFNGLMAXSHADERCOMPILERTHREADSKHRPROC)LL_GET_PROC_ADDRESS("glMaxShaderCompilerThreadsARB");
+    }
+    mHasParallelShaderCompile = fs_glMaxShaderCompilerThreads != nullptr;
+#endif
+    LL_INFOS("RenderInit") << "Parallel shader compile available: " << mHasParallelShaderCompile << LL_ENDL;
+    // </FS:Trish>
 
     mInited = true;
 
