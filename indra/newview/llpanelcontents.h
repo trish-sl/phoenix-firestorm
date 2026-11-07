@@ -36,6 +36,7 @@
 #include "llscripteditorws.h"
 #include "v3math.h"
 #include <boost/signals2/connection.hpp>
+#include "llframetimer.h" // <FS:Trish/> script summary
 
 class LLButton;
 class LLPanelObjectInventory;
@@ -52,6 +53,7 @@ public:
 
     void            refresh();
     void            clearContents();
+    void            draw() override; // <FS:Trish/> script summary
 
 
     void            onNewScriptFlyoutCommit(LLUICtrl* ctrl);
@@ -95,6 +97,11 @@ public:
     LLSaveFolderState mSavedFolderState;
     LLPanelObjectInventory* mPanelInventoryObject;
     LLButton* mPublishButton { nullptr };
+    // <FS:Trish> Script summary line
+    class LLTextBox* mScriptSummary { nullptr };
+    LLFrameTimer mScriptSummaryTimer;
+    void updateScriptSummary();
+    // </FS:Trish>
 };
 
 #endif // LL_LLPANELCONTENTS_H

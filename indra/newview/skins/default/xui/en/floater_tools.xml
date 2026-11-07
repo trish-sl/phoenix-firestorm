@@ -3777,12 +3777,28 @@ Low ↔ Lwst
              border_visible="true"
              bevel_style="in"
              follows="left|top|right"
-             height="325"
+             height="309"
              layout="topleft"
              left="10"
              name="contents_inventory"
              top="70"
              width="275" />
+            <!-- <FS:Trish> Script summary -->
+            <string name="script_summary">Scripts: [TOTAL] - [RUNNING] running, [STOPPED] stopped</string>
+            <string name="script_summary_pending">([PENDING] checking)</string>
+            <string name="script_summary_none">No scripts</string>
+            <text
+             follows="left|top|right"
+             font="DejaVu"
+             font.size="LSmall"
+             height="14"
+             layout="topleft"
+             left="10"
+             name="contents_script_summary"
+             tool_tip="Scripts in this prim's contents: how many are running or stopped, and which engine they run on (Mono, LSL or Lua), as the region reports them."
+             top="382"
+             width="275" />
+            <!-- </FS:Trish> -->
 		</panel>
         <!-- <FS:Trish> Selection cost, memory, detail level, identity and bounds -->
         <panel
