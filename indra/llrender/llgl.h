@@ -104,6 +104,7 @@ public:
     bool mHasAnisotropic = false;
     bool mHasDSA = false;
     bool mHasParallelShaderCompile = false; // <FS:Trish/> GL_KHR/ARB_parallel_shader_compile
+    bool mHasNVShadingRateImage = false; // <FS:Trish/> GL_NV_shading_rate_image (FSRenderVRS)
 
     // Vendor-specific extensions
     bool mHasAMDAssociations = false;
@@ -430,5 +431,14 @@ extern bool gClothRipple;
 extern bool gHeadlessClient;
 extern bool gNonInteractive;
 extern bool gGLActive;
+
+// <FS:Trish> GL_NV_shading_rate_image entry points (FSRenderVRS), loaded by initExtensions().
+// Only valid while gGLManager.mHasNVShadingRateImage is true.
+#if LL_GL_FUNC_POINTER
+extern PFNGLBINDSHADINGRATEIMAGENVPROC fs_glBindShadingRateImageNV;
+extern PFNGLSHADINGRATEIMAGEPALETTENVPROC fs_glShadingRateImagePaletteNV;
+extern PFNGLSHADINGRATEIMAGEBARRIERNVPROC fs_glShadingRateImageBarrierNV;
+#endif
+// </FS:Trish>
 
 #endif // LL_LLGL_H
