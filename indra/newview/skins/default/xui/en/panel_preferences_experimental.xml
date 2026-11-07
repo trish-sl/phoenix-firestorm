@@ -924,7 +924,7 @@
              bottom="-1">
                 <panel
                  follows="left|top"
-                 height="2486"
+                 height="2572"
                  layout="topleft"
                  left="0"
                  name="experimental_effects_settings"
@@ -2672,7 +2672,7 @@
                      width="120">
                         <button.commit_callback
                          function="FSExperimental.ResetSection"
-                         parameter="FSRenderHeightFog,FSRenderHeightFogSkyColor,FSRenderHeightFogBaseAbsolute,FSRenderHeightFogSkyHaze,FSRenderHeightFogDensity,FSRenderHeightFogFalloff,FSRenderHeightFogBaseHeight,FSRenderHeightFogMaxOpacity,FSRenderHeightFogAnisotropy,FSRenderHeightFogTint" />
+                         parameter="FSRenderHeightFog,FSRenderHeightFogSkyColor,FSRenderHeightFogBaseAbsolute,FSRenderHeightFogSkyHaze,FSRenderHeightFogDensity,FSRenderHeightFogFalloff,FSRenderHeightFogBaseHeight,FSRenderHeightFogMaxOpacity,FSRenderHeightFogAnisotropy,FSRenderHeightFogTint,FSRenderHeightFogInteriors,FSRenderHeightFogInteriorRange,FSRenderHeightFogInteriorStrength" />
                     </button>
                     <check_box
                      control_name="FSRenderHeightFog"
@@ -2876,6 +2876,70 @@
                      tool_tip="EXPERIMENTAL. Colour multiplied into the fog. White leaves it the sky's colour; with sky colour off, this is the fog's colour."
                      top="2444"
                      width="44" />
+                    <check_box
+                     control_name="FSRenderHeightFogInteriors"
+                     enabled_control="FSRenderHeightFog"
+                     follows="left|top"
+                     height="20"
+                     label="Keep fog out of interiors"
+                     layout="topleft"
+                     left="35"
+                     name="fs_fsrenderheightfoginteriors"
+                     tool_tip="EXPERIMENTAL. Detects rooms and roofs around the camera with a few short rays per second, and keeps the height fog out of the room and out of the sun and sky light under a roof. Windows still show the fog outside."
+                     top="2476"
+                     width="455" />
+                    <text
+                     follows="left|top"
+                     height="18"
+                     layout="topleft"
+                     left="35"
+                     name="fs_fsrenderheightfoginteriorrange_label"
+                     tool_tip="EXPERIMENTAL. Length of the rays cast around the camera to find walls and ceilings. Rooms wider than this count as open air. Longer rays cost more CPU."
+                     top="2504"
+                     width="285">
+                        Interior detection range (m)
+                    </text>
+                    <spinner
+                     control_name="FSRenderHeightFogInteriorRange"
+                     decimal_digits="0"
+                     enabled_control="FSRenderHeightFogInteriors"
+                     follows="left|top"
+                     height="20"
+                     increment="1"
+                     layout="topleft"
+                     left="330"
+                     max_val="64"
+                     min_val="5"
+                     name="fs_fsrenderheightfoginteriorrange"
+                     tool_tip="EXPERIMENTAL. Length of the rays cast around the camera to find walls and ceilings. Rooms wider than this count as open air. Longer rays cost more CPU."
+                     top="2502"
+                     width="100" />
+                    <text
+                     follows="left|top"
+                     height="18"
+                     layout="topleft"
+                     left="35"
+                     name="fs_fsrenderheightfoginteriorstrength_label"
+                     tool_tip="EXPERIMENTAL. How strongly rooms and roofs hold back the fog and its sky and sun light. 0 is the plain fog."
+                     top="2532"
+                     width="285">
+                        Interior strength
+                    </text>
+                    <spinner
+                     control_name="FSRenderHeightFogInteriorStrength"
+                     decimal_digits="2"
+                     enabled_control="FSRenderHeightFogInteriors"
+                     follows="left|top"
+                     height="20"
+                     increment="0.05"
+                     layout="topleft"
+                     left="330"
+                     max_val="1"
+                     min_val="0"
+                     name="fs_fsrenderheightfoginteriorstrength"
+                     tool_tip="EXPERIMENTAL. How strongly rooms and roofs hold back the fog and its sky and sun light. 0 is the plain fog."
+                     top="2530"
+                     width="100" />
                 </panel>
             </scroll_container>
         </panel>
