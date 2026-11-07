@@ -3090,6 +3090,39 @@ void LLPipeline::clearRebuildDrawables()
     mShiftList.clear();
 }
 
+// <FS:Trish> Rebuild budget helpers (FSPerfRebuildTimeBudget)
+// A group whose rebuild can wait until it comes into view: not a HUD group, not in a spatial bridge
+// (avatars, attachments, selected or moving linksets, and every group whose draw infos point at a
+// drawable's own matrix) and not seen by any camera, shadow cameras included, this frame or the last.
+// postSort runs after this frame's world and shadow culls, so a group coming into view is rebuilt
+// before the world camera draws it.
+static bool fs_can_defer_group_rebuild(LLSpatialGroup* group)
+{
+    if (!group || group->isDead() || group->isHUDGroup())
+    {
+        return false;
+    }
+    LLSpatialPartition* part = group->getSpatialPartition();
+    if (!part || part->isBridge())
+    {
+        return false;
+    }
+    return !group->isAnyRecentlyVisible();
+}
+
+// Drawables that must be updated this frame even when the rebuild queue is over its time budget.
+static bool fs_is_priority_drawable_rebuild(LLDrawable* drawablep)
+{
+    LLViewerObject* vobj = drawablep->getVObj();
+    if (!vobj || vobj->isAvatar() || vobj->isSelected() || vobj->isHUDAttachment())
+    {
+        return true;
+    }
+    LLVOAvatar* avatar = vobj->getAvatar();
+    return avatar && avatar->isSelf();
+}
+// </FS:Trish>
+
 void LLPipeline::rebuildPriorityGroups()
 {
     LL_PROFILE_ZONE_SCOPED_CATEGORY_PIPELINE;
@@ -3100,12 +3133,24 @@ void LLPipeline::rebuildPriorityGroups()
 
     gMeshRepo.notifyLoadedMeshes();
 
+    // <FS:Trish> Keep groups that are out of view queued until they come into view
+    static LLCachedControl<bool> rebuild_budget(gSavedSettings, "FSPerfRebuildTimeBudget", false);
+    LLSpatialGroup::sg_vector_t deferred_groups;
+    // </FS:Trish>
+
     mGroupQ1Locked = true;
     // Iterate through all drawables on the priority build queue,
     for (LLSpatialGroup::sg_vector_t::iterator iter = mGroupQ1.begin();
          iter != mGroupQ1.end(); ++iter)
     {
         LLSpatialGroup* group = *iter;
+        // <FS:Trish> still IN_BUILD_Q1, so markRebuild won't queue it twice
+        if (rebuild_budget && fs_can_defer_group_rebuild(group))
+        {
+            deferred_groups.push_back(group);
+            continue;
+        }
+        // </FS:Trish>
         group->rebuildGeom();
         group->clearState(LLSpatialGroup::IN_BUILD_Q1);
     }
@@ -3115,6 +3160,7 @@ void LLPipeline::rebuildPriorityGroups()
     mGroupSaveQ1.swap(mGroupQ1);
     // </FS:Trish>
     mGroupQ1.clear();
+    mGroupQ1.swap(deferred_groups); // <FS:Trish/>
     mGroupQ1Locked = false;
 
 }
@@ -3136,6 +3182,12 @@ void LLPipeline::updateGeom(F32 max_dtime)
     // for now, only LLVOVolume does this to throttle LOD changes
     LLVOVolume::preUpdateGeom();
 
+    // <FS:Trish> Respect max_dtime: once over budget, leave the remaining non-priority drawables queued for the next frame
+    static LLCachedControl<bool> rebuild_budget(gSavedSettings, "FSPerfRebuildTimeBudget", false);
+    U32 num_updated = 0;
+    bool over_budget = false;
+    // </FS:Trish>
+
     // Iterate through all drawables on the priority build queue,
     // <FS:Trish> Compacted in place, indexed because updateDrawableGeom() can append to the queue
     //for (LLDrawable::drawable_list_t::iterator iter = mBuildQ1.begin();
@@ -3149,8 +3201,20 @@ void LLPipeline::updateGeom(F32 max_dtime)
         LLPointer<LLDrawable> drawablep = mBuildQ1[read_idx];
         bool keep = false;
     // </FS:Trish>
+        // <FS:Trish> Always update at least one drawable, then stop once the time budget is used up
+        if (rebuild_budget && drawablep && !drawablep->isDead() && num_updated > 0 && !over_budget)
+        {
+            over_budget = update_timer.getElapsedTimeF32() > max_dtime;
+        }
+        if (over_budget && drawablep && !drawablep->isDead() && !fs_is_priority_drawable_rebuild(drawablep))
+        {
+            keep = true;
+        }
+        else
+        // </FS:Trish>
         if (drawablep && !drawablep->isDead())
         {
+            ++num_updated; // <FS:Trish/>
             if (drawablep->isUnload())
             {
                 drawablep->unload();
