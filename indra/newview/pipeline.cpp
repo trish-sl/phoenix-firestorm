@@ -10505,22 +10505,36 @@ void LLPipeline::setupSpotLight(LLGLSLShader& shader, LLDrawable* drawablep)
         LLDrawable* potential = drawablep;
         //determine if this light is higher priority than one of the existing spot shadows
         F32 m_pri = volume->getSpotLightPriority();
+        // <FS:Trish> Worn lights rank below in-world ones, or a light rig near the camera takes every
+        // shadow slot from the scene. From the i-doll fork, by Amalthea Skydancer.
+        bool m_worn = volume->getRootEdit()->isAttachment();
+        // </FS:Trish>
 
         for (U32 i = 0; i < 2; i++)
         {
             F32 pri = 0.f;
+            bool worn = true; // <FS:Trish/> an empty slot loses to any light
 
             if (mTargetShadowSpotLight[i].notNull())
             {
-                pri = mTargetShadowSpotLight[i]->getVOVolume()->getSpotLightPriority();
+                // <FS:Trish>
+                //pri = mTargetShadowSpotLight[i]->getVOVolume()->getSpotLightPriority();
+                LLVOVolume* target = mTargetShadowSpotLight[i]->getVOVolume();
+                pri = target->getSpotLightPriority();
+                worn = target->getRootEdit()->isAttachment();
+                // </FS:Trish>
             }
 
-            if (m_pri > pri)
+            // <FS:Trish>
+            //if (m_pri > pri)
+            if ((!m_worn && worn) || (m_worn == worn && m_pri > pri))
+            // </FS:Trish>
             {
                 LLDrawable* temp = mTargetShadowSpotLight[i];
                 mTargetShadowSpotLight[i] = potential;
                 potential = temp;
                 m_pri = pri;
+                m_worn = worn; // <FS:Trish/>
             }
         }
     }
