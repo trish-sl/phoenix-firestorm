@@ -105,6 +105,7 @@ public:
     bool mHasDSA = false;
     bool mHasParallelShaderCompile = false; // <FS:Trish/> GL_KHR/ARB_parallel_shader_compile
     bool mHasNVShadingRateImage = false; // <FS:Trish/> GL_NV_shading_rate_image (FSRenderVRS)
+    bool mHasNVRepresentativeFragmentTest = false; // <FS:Trish/> GL_NV_representative_fragment_test (FSPerfRepresentativeFragmentTest)
 
     // Vendor-specific extensions
     bool mHasAMDAssociations = false;

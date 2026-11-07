@@ -5151,7 +5151,7 @@
              bottom="-1">
                 <panel
                  follows="left|top"
-                 height="834"
+                 height="860"
                  layout="topleft"
                  left="0"
                  name="experimental_performance_settings"
@@ -5249,7 +5249,7 @@
                      width="120">
                         <button.commit_callback
                          function="FSExperimental.ResetSection"
-                         parameter="FSPerfAlphaResortOnly,FSPerfRebuildTimeBudget,FSPerfShadowPointCloudFromCull" />
+                         parameter="FSPerfAlphaResortOnly,FSPerfRebuildTimeBudget,FSPerfShadowPointCloudFromCull,FSPerfRepresentativeFragmentTest" />
                     </button>
                     <check_box
                      control_name="FSPerfAlphaResortOnly"
@@ -5284,6 +5284,17 @@
                      tool_tip="EXPERIMENTAL. Work out the shadow map bounds from the objects the camera already found visible, instead of searching the scene again for every shadow cascade."
                      top="200"
                      width="475" />
+                    <check_box
+                     control_name="FSPerfRepresentativeFragmentTest"
+                     follows="left|top"
+                     height="20"
+                     label="Faster occlusion queries (NVIDIA)"
+                     layout="topleft"
+                     left="15"
+                     name="fs_fsperfrepresentativefragmenttest"
+                     tool_tip="EXPERIMENTAL. Lets NVIDIA Turing and newer graphics cards stop drawing an occlusion test box as soon as one pixel of it is found visible, which makes the hidden-object checks cheaper. Visibility results stay the same. Has no effect on other graphics cards."
+                     top="230"
+                     width="475" />
                     <text
                      follows="left|top"
                      font="SansSerifBold"
@@ -5291,7 +5302,7 @@
                      layout="topleft"
                      left="15"
                      name="perf_heading_lightingandreflections"
-                     top="230"
+                     top="256"
                      width="340">
                         Lighting and reflections
                     </text>
@@ -5303,7 +5314,7 @@
                      left="370"
                      name="reset_perf_heading_lightingandreflections"
                      tool_tip="Set every option in &quot;Lighting and reflections&quot; back to its default value."
-                     top="229"
+                     top="255"
                      width="120">
                         <button.commit_callback
                          function="FSExperimental.ResetSection"
@@ -5318,7 +5329,7 @@
                      left="15"
                      name="perf_lightrescanthrottle"
                      tool_tip="EXPERIMENTAL. Rescan the scene for the nearest local lights 10 times a second, or when the camera moves, instead of every frame."
-                     top="253"
+                     top="279"
                      width="475" />
                     <check_box
                      control_name="FSPerfHeroProbeSkipHiddenFaces"
@@ -5329,7 +5340,7 @@
                      left="15"
                      name="perf_heroprobeskiphiddenfaces"
                      tool_tip="EXPERIMENTAL. Do not render the sides of a mirror's reflection cube that face away from the mirror surface."
-                     top="275"
+                     top="301"
                      width="475" />
                     <check_box
                      control_name="FSPerfProbeUniformCache"
@@ -5340,7 +5351,7 @@
                      left="15"
                      name="perf_probeuniformcache"
                      tool_tip="EXPERIMENTAL. Do not update the mirror (hero) probe data a second time in each render pass; the reflection probe update already includes it."
-                     top="297"
+                     top="323"
                      width="475" />
                     <check_box
                      control_name="FSPerfBatchedLocalLights"
@@ -5351,7 +5362,7 @@
                      left="15"
                      name="fs_fsperfbatchedlocallights"
                      tool_tip="EXPERIMENTAL. Draws point lights in a few instanced calls instead of one call per light, cutting CPU time where hundreds of lights are visible (clubs, cities). Lighting should look the same. Spotlights and projectors are unchanged. Rebuilds shaders when changed."
-                     top="327"
+                     top="353"
                      width="475" />
                     <text
                      follows="left|top"
@@ -5360,7 +5371,7 @@
                      layout="topleft"
                      left="15"
                      name="perf_heading_other"
-                     top="353"
+                     top="379"
                      width="340">
                         Other
                     </text>
@@ -5372,7 +5383,7 @@
                      left="370"
                      name="reset_perf_heading_other"
                      tool_tip="Set every option in &quot;Other&quot; back to its default value."
-                     top="352"
+                     top="378"
                      width="120">
                         <button.commit_callback
                          function="FSExperimental.ResetSection"
@@ -5387,7 +5398,7 @@
                      left="15"
                      name="perf_audiothrottlechecks"
                      tool_tip="EXPERIMENTAL. Re-check whether each sound source is muted or allowed by parcel rules 4 times a second, or right away when the mute list, parcel or your position changes, instead of every frame."
-                     top="376"
+                     top="402"
                      width="475" />
                     <check_box
                      control_name="FSPerfInventoryIdleThrottle"
@@ -5398,7 +5409,7 @@
                      left="15"
                      name="perf_inventoryidlethrottle"
                      tool_tip="EXPERIMENTAL. Inventory panels that are not on screen update their folder views twice a second instead of every frame."
-                     top="398"
+                     top="424"
                      width="475" />
                     <text
                      follows="left|top"
@@ -5407,7 +5418,7 @@
                      layout="topleft"
                      left="15"
                      name="fs_heading_shadows"
-                     top="432"
+                     top="458"
                      width="340">
                         Shadows
                     </text>
@@ -5419,7 +5430,7 @@
                      left="370"
                      name="reset_fs_heading_shadows"
                      tool_tip="Set every option in &quot;Shadows&quot; back to its default value."
-                     top="431"
+                     top="457"
                      width="120">
                         <button.commit_callback
                          function="FSExperimental.ResetSection"
@@ -5435,7 +5446,7 @@
                      left="15"
                      name="fs_fsperfshadowmergedbatches"
                      tool_tip="EXPERIMENTAL. Sends the opaque shadow casters of each shadow pass as fewer, larger draw calls. Shadows look the same; saves CPU time in scenes with many objects."
-                     top="458"
+                     top="484"
                      width="475" />
                     <check_box
                      control_name="FSPerfShadowStaticCache"
@@ -5447,7 +5458,7 @@
                      left="15"
                      name="fs_fsperfshadowstaticcache"
                      tool_tip="EXPERIMENTAL. Keeps the shadows of buildings and terrain in the two far sun shadow maps between frames and only redraws moving things into them. Needs 'Snap sun shadows to texels' (FSRenderShadowTexelSnap). Uses one extra depth buffer per far shadow map."
-                     top="484"
+                     top="510"
                      width="475" />
                     <text
                      follows="left|top"
@@ -5456,7 +5467,7 @@
                      left="35"
                      name="fs_fsperfshadowstaticcachesunangle_label"
                      tool_tip="EXPERIMENTAL. With the static far shadow cache, the far shadows follow the sun in steps of this many degrees, 0 to 2. Larger steps redraw the cache less often under a moving sun."
-                     top="512"
+                     top="538"
                      width="285">
                         Far shadow sun step (degrees)
                     </text>
@@ -5473,7 +5484,7 @@
                      min_val="0"
                      name="fs_fsperfshadowstaticcachesunangle"
                      tool_tip="EXPERIMENTAL. With the static far shadow cache, the far shadows follow the sun in steps of this many degrees, 0 to 2. Larger steps redraw the cache less often under a moving sun."
-                     top="510"
+                     top="536"
                      width="100" />
                     <text
                      follows="left|top"
@@ -5482,7 +5493,7 @@
                      layout="topleft"
                      left="15"
                      name="fs_heading_shaders"
-                     top="552"
+                     top="578"
                      width="340">
                         Shaders
                     </text>
@@ -5494,7 +5505,7 @@
                      left="370"
                      name="reset_fs_heading_shaders"
                      tool_tip="Set every option in &quot;Shaders&quot; back to its default value."
-                     top="551"
+                     top="577"
                      width="120">
                         <button.commit_callback
                          function="FSExperimental.ResetSection"
@@ -5509,7 +5520,7 @@
                      left="15"
                      name="fs_fsperfparallelshadercompile"
                      tool_tip="EXPERIMENTAL. Shorter pauses when graphics settings change and shaders are rebuilt, because the graphics driver compiles them on several threads at once. Needs a driver that supports parallel shader compile (current NVIDIA and AMD drivers, Mesa). Without that support nothing changes. Applies from the next shader rebuild."
-                     top="578"
+                     top="604"
                      width="475" />
                     <text
                      follows="left|top"
@@ -5518,7 +5529,7 @@
                      layout="topleft"
                      left="15"
                      name="fs_heading_textures"
-                     top="618"
+                     top="644"
                      width="340">
                         Textures
                     </text>
@@ -5530,7 +5541,7 @@
                      left="370"
                      name="reset_fs_heading_textures"
                      tool_tip="Set every option in &quot;Textures&quot; back to its default value."
-                     top="617"
+                     top="643"
                      width="120">
                         <button.commit_callback
                          function="FSExperimental.ResetSection"
@@ -5545,7 +5556,7 @@
                      left="15"
                      name="fs_fsperftextureuploadpbo"
                      tool_tip="EXPERIMENTAL. Copies newly loaded textures to the graphics card asynchronously, which can reduce stutter when many textures arrive at once. Only has an effect when textures are not already created on a background thread (usually AMD and Intel graphics). Needs OpenGL 4.4."
-                     top="644"
+                     top="670"
                      width="475" />
                     <text
                      follows="left|top"
@@ -5554,7 +5565,7 @@
                      left="35"
                      name="fs_fsperftextureuploadbudgetmb_label"
                      tool_tip="EXPERIMENTAL. Spreads bursts of newly loaded textures over several frames so they don't all land in one frame, uploading the most important ones first. Lower is smoother but textures appear more slowly. 0 = no limit. 16 is a good start."
-                     top="672"
+                     top="698"
                      width="285">
                         Texture upload budget per frame (MB)
                     </text>
@@ -5570,7 +5581,7 @@
                      min_val="0"
                      name="fs_fsperftextureuploadbudgetmb"
                      tool_tip="EXPERIMENTAL. Spreads bursts of newly loaded textures over several frames so they don't all land in one frame, uploading the most important ones first. Lower is smoother but textures appear more slowly. 0 = no limit. 16 is a good start."
-                     top="670"
+                     top="696"
                      width="100" />
                     <text
                      follows="left|top"
@@ -5579,7 +5590,7 @@
                      layout="topleft"
                      left="15"
                      name="fs_heading_variable_rate_shading"
-                     top="712"
+                     top="738"
                      width="340">
                         Variable rate shading
                     </text>
@@ -5591,7 +5602,7 @@
                      left="370"
                      name="reset_fs_heading_variable_rate_shading"
                      tool_tip="Set every option in &quot;Variable rate shading&quot; back to its default value."
-                     top="711"
+                     top="737"
                      width="120">
                         <button.commit_callback
                          function="FSExperimental.ResetSection"
@@ -5606,7 +5617,7 @@
                      left="15"
                      name="fs_fsrendervrs"
                      tool_tip="EXPERIMENTAL. NVIDIA RTX / GTX 16xx (Turing) or newer only; does nothing on other graphics cards. Shades low-detail parts of the scene (flat or low-contrast surfaces, the sky, areas blurred by depth of field) at a coarser rate to save GPU time in the opaque geometry pass. Edges and fine detail stay at full rate. Snapshots are always rendered at full rate."
-                     top="738"
+                     top="764"
                      width="475" />
                     <text
                      follows="left|top"
@@ -5615,7 +5626,7 @@
                      left="35"
                      name="fs_fsrendervrsquality_label"
                      tool_tip="EXPERIMENTAL. NVIDIA RTX / Turing or newer only. Higher keeps more of the scene at full shading rate (better quality, smaller saving); lower saves more but can soften textures on low-contrast surfaces."
-                     top="766"
+                     top="792"
                      width="285">
                         Quality
                     </text>
@@ -5632,7 +5643,7 @@
                      min_val="0.0"
                      name="fs_fsrendervrsquality"
                      tool_tip="EXPERIMENTAL. NVIDIA RTX / Turing or newer only. Higher keeps more of the scene at full shading rate (better quality, smaller saving); lower saves more but can soften textures on low-contrast surfaces."
-                     top="764"
+                     top="790"
                      width="100" />
                     <text
                      follows="left|top"
@@ -5641,7 +5652,7 @@
                      left="35"
                      name="fs_fsrendervrsperiphery_label"
                      tool_tip="EXPERIMENTAL. NVIDIA RTX / Turing or newer only. 0 treats the whole screen alike; higher values shade the edges and corners of the screen more coarsely than the centre. Strong edges always stay sharp."
-                     top="794"
+                     top="820"
                      width="285">
                         Coarser at screen edges
                     </text>
@@ -5658,7 +5669,7 @@
                      min_val="0.0"
                      name="fs_fsrendervrsperiphery"
                      tool_tip="EXPERIMENTAL. NVIDIA RTX / Turing or newer only. 0 treats the whole screen alike; higher values shade the edges and corners of the screen more coarsely than the centre. Strong edges always stay sharp."
-                     top="792"
+                     top="818"
                      width="100" />
                 </panel>
             </scroll_container>

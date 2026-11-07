@@ -138,6 +138,7 @@
 #include "llerror.h"
 #include "fsdynamicresolution.h" // <FS:Trish/> Dynamic resolution
 #include "fsvrs.h" // <FS:Trish/> Variable rate shading
+#include "fsrepresentativefragment.h" // <FS:Trish/> Representative fragment test for occlusion queries
 
 #if LL_CLANG
 #pragma clang diagnostic push
@@ -2985,6 +2986,7 @@ void LLPipeline::doOcclusion(LLCamera& camera)
         gGL.setColorMask(false, false);
         LLGLDepthTest depth(GL_TRUE, GL_FALSE);
         LLGLDisable cull(GL_CULL_FACE);
+        FSRepresentativeFragmentScope representative_fragment; // <FS:Trish/> query-only draws from here
 
         gOcclusionCubeProgram.bind();
 
@@ -3013,6 +3015,7 @@ void LLPipeline::doOcclusion(LLCamera& camera)
         LLGLDepthTest depth(GL_TRUE, GL_FALSE);
 
         LLGLDisable cull(GL_CULL_FACE);
+        FSRepresentativeFragmentScope representative_fragment; // <FS:Trish/> query-only draws from here
 
         gOcclusionCubeProgram.bind();
 
