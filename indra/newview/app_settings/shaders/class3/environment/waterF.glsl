@@ -113,6 +113,10 @@ void sampleReflectionProbesLegacy(inout vec3 ambenv, inout vec3 glossenv, inout 
 
 vec3 getPositionWithNDC(vec3 ndc);
 
+#ifdef FS_WATER_FOAM
+float fsWaterFoam(vec2 screen_tc, vec3 pos, vec3 up, vec2 view_offset);
+#endif
+
 void generateWaveNormals(out vec3 wave1, out vec3 wave2, out vec3 wave3)
 {
     // Generate all of our wave normals.
@@ -339,6 +343,17 @@ void main()
     fade *= 60;
     fade = min(1, fade);
     color = mix(fb.rgb, color, fade);
+
+#ifdef FS_WATER_FOAM
+    // Shoreline foam on top of everything else (fsWaterFoamF.glsl): rough and white, so it
+    // takes diffuse sun and sky light and hides the refraction and reflection beneath it
+    float foam = fsWaterFoam(distort, pos.xyz, up, view.xy) * water_mask;
+    if (foam > 0.0)
+    {
+        vec3 foam_light = sunlit_linear * shadow * max(dot(up, normalize(light_dir)), 0.0) + amblit;
+        color = mix(color, foam_light * 0.85, foam);
+    }
+#endif
 
     float spec = min(max(max(punctual.r, punctual.g), punctual.b), 0);
 
