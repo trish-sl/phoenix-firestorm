@@ -9955,6 +9955,7 @@ void LLPipeline::renderFinalize()
         //bool apply_cas = cas_sharpness != 0.0f && gCASProgram.isComplete() && gCASLegacyGammaProgram.isComplete();
         //tonemap(&mRT->screen, apply_cas ? &mRT->deferredLight : &mPostPingMap, !apply_cas);
         bool apply_cas = !avatars_only && cas_sharpness != 0.0f && gCASProgram.isComplete() && gCASLegacyGammaProgram.isComplete();
+        apply_cas = apply_cas && !FSDynamicResolution::upscalerReplacesCAS(&mRT->screen); // <FS:Trish/> NIS present sharpens instead
         tonemap(tonemap_src, apply_cas ? &mRT->deferredLight : &mPostPingMap, !apply_cas);
         // </FS:Trish>
 
