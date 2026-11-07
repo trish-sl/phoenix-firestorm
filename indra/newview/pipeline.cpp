@@ -10307,6 +10307,15 @@ void LLPipeline::bindDeferredShader(LLGLSLShader& shader, LLRenderTarget* light_
     {
         shader.uniform4fv(LLShaderMgr::DEFERRED_SHADOW_CLIP, 1, mSunClipPlanes.mV);
     }
+    // <FS:Trish> Smooth shadow fade length (fsShadowFadeF.glsl), a uniform so that changing it
+    // does not rebuild the shaders. Every program built with the fade gets shadow_clip here, and
+    // programs built without it have no such uniform, which makes this a no-op for them.
+    {
+        static LLCachedControl<F32> fade_length(gSavedSettings, "FSRenderShadowFadeLength", 0.2f);
+        static const LLStaticHashedString sShadowFadeLength("fs_shadow_fade_length");
+        shader.uniform1f(sShadowFadeLength, llclamp((F32)fade_length, 0.02f, 0.5f));
+    }
+    // </FS:Trish>
     shader.uniform1f(LLShaderMgr::DEFERRED_SUN_WASH, RenderDeferredSunWash);
     shader.uniform1f(LLShaderMgr::DEFERRED_SHADOW_NOISE, RenderShadowNoise);
     shader.uniform1f(LLShaderMgr::DEFERRED_BLUR_SIZE, RenderShadowBlurSize);

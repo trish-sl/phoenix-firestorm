@@ -1069,12 +1069,12 @@ std::string LLViewerShaderMgr::loadBasicShaders()
         // </FS:Trish>
 
         // <FS:Trish> Smooth sun shadow fade at the far end of the range and dithered cascade
-        // transitions (fsShadowFadeF.glsl); the value is the fade's share of the range
+        // transitions (fsShadowFadeF.glsl). The fade's share of the range (FSRenderShadowFadeLength)
+        // is the uniform fs_shadow_fade_length, so changing it does not rebuild the shaders.
         static LLCachedControl<bool> smooth_fade(gSavedSettings, "FSRenderShadowSmoothFade", false);
-        static LLCachedControl<F32> fade_length(gSavedSettings, "FSRenderShadowFadeLength", 0.2f);
         if (smooth_fade)
         {
-            attribs["FS_SHADOW_EDGE_FADE"] = llformat("%.3f", llclamp((F32)fade_length, 0.02f, 0.5f));
+            attribs["FS_SHADOW_EDGE_FADE"] = "1";
         }
         // </FS:Trish>
 
