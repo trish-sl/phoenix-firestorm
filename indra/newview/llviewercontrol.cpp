@@ -1601,7 +1601,7 @@ void settings_setup_listeners()
     {
         if (!newvalue.asBoolean())
         {
-            LLNotifications::instance().setIgnored("FSPasteNoCopyAsLink", false);
+            LLNotifications::instance().setIgnored("FSPasteNoCopyAsLinkPrompt", false);
         }
     });
     // </FS:Trish>
