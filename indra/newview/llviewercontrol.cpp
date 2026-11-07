@@ -1381,8 +1381,6 @@ void settings_setup_listeners()
     setting_setup_signal_listener(gSavedSettings, "RenderDeferredSSAO", handleSetShaderChanged);
     setting_setup_signal_listener(gSavedSettings, "RenderShadowPCSS", handleSetShaderChanged); // <Vulkanstorm/> PCSS
     setting_setup_signal_listener(gSavedSettings, "FSRenderSpecularAA", handleSetShaderChanged); // <FS:Trish/>
-    setting_setup_signal_listener(gSavedSettings, "FSRenderSpecularAAStrength", handleSetShaderChanged); // <FS:Trish/>
-    setting_setup_signal_listener(gSavedSettings, "FSRenderSpecularAAThreshold", handleSetShaderChanged); // <FS:Trish/>
     setting_setup_signal_listener(gSavedSettings, "FSRenderGTAO", handleSetShaderChanged); // <FS:Trish/>
     setting_setup_signal_listener(gSavedSettings, "FSRenderGTAOSlices", handleSetShaderChanged); // <FS:Trish/>
     setting_setup_signal_listener(gSavedSettings, "RenderPerformanceTest", handleRenderPerfTestChanged);
