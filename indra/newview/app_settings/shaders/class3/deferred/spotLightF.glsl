@@ -82,6 +82,9 @@ vec4 getPosition(vec2 pos_screen);
 #if defined(FS_SPOT_SHADOW_EXTRA)
 float fsSampleSpotShadowExtra(vec3 pos, vec3 norm);
 #endif
+#if defined(FS_SPOT_COLORED_SHADOW)
+vec3 fsSpotColoredTransmittance(vec3 pos, vec3 norm); // fsSpotColoredShadowF.glsl: light through translucent casters
+#endif
 
 const float M_PI = 3.14159265;
 
@@ -298,6 +301,11 @@ void main()
             }
         }
     }
+
+#if defined(FS_SPOT_COLORED_SHADOW)
+    // Every term above is scaled by shadow: tint them all by the translucent casters too
+    final_color *= fsSpotColoredTransmittance(pos, n);
+#endif
 
     //not sure why, but this line prevents MATBUG-194
     final_color = max(final_color, vec3(0.0));

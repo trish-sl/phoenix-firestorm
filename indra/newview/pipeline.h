@@ -959,6 +959,24 @@ public:
     S32                     mFSSpotDepthUnit = -1;                          // ...of fs_spot_shadow_depth (PCSS), -1 when unused
     // </FS:Trish>
 
+    // <FS:Trish> Coloured projector shadows (FSRenderColoredShadows and
+    // FSRenderColoredShadowsProjectors). Every shadow slot gets an RGBA8 colour map sharing the
+    // slot's shadow depth, drawn during its shadow pass like the sun cascades' maps, and sampled
+    // by the projector's own draw through one extra texture unit. Allocated only while on.
+    LLRenderTarget          mFSSpotColoredTarget[FS_MAX_SPOT_SHADOWS];
+    U32                     mFSSpotColoredDepth[FS_MAX_SPOT_SHADOWS] = {};      // shadow depth texture shared into it
+    const LLDrawable*       mFSSpotColoredLight[FS_MAX_SPOT_SHADOWS] = {};      // light it was drawn for, identity only
+    bool                    mFSSpotColoredDrawn[FS_MAX_SPOT_SHADOWS] = {};      // holds translucent casters of that light's last shadow
+    S32                     mFSSpotColoredSlot = -1;                            // slot whose casters renderShadow draws, -1 for none
+    S32                     mFSSpotColoredUnit = -1;                            // texture unit of fs_spot_colored_map, -1 when unused
+    bool                    fsSpotColoredShadowsOn() const;
+    void                    fsBeginSpotColoredShadow(U32 slot, const LLDrawable* light);   // before binding the slot's shadow target
+    void                    fsEndSpotColoredShadow();
+    void                    fsBindSpotColoredShadow(LLGLSLShader& shader, S32 slot);    // setupSpotLight, -1 for an unshadowed light
+    void                    fsReleaseSpotColoredTargets();
+    bool                    drawColoredShadowCasters(LLRenderTarget& target);          // shared by sun cascades and projectors
+    // </FS:Trish>
+
     // exposure map for getting average color in scene
     LLRenderTarget          mLuminanceMap;
     LLRenderTarget          mExposureMap;
