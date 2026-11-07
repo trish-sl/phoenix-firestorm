@@ -560,7 +560,8 @@ void LLPipeline::init()
     // Enable features
     LLViewerShaderMgr::instance()->setShaders();
 
-    for (U32 i = 0; i < 2; ++i)
+    //for (U32 i = 0; i < 2; ++i)
+    for (U32 i = 0; i < FS_MAX_SPOT_SHADOWS; ++i) // <FS:Trish/>
     {
         mSpotLightFade[i] = 1.f;
     }
@@ -1580,7 +1581,8 @@ void LLPipeline::releaseSpotShadowTargets()
 {
     if (!gCubeSnapshot) // hack to avoid freeing spot shadows during ReflectionMapManager init
     {
-        for (U32 i = 0; i < 2; i++)
+        //for (U32 i = 0; i < 2; i++)
+        for (U32 i = 0; i < FS_MAX_SPOT_SHADOWS; i++) // <FS:Trish/> slots 2+ are allocated on demand
         {
             mSpotShadow[i].release();
         }
@@ -2165,7 +2167,8 @@ void LLPipeline::unlinkDrawable(LLDrawable *drawable)
         }
     }
 
-    for (U32 i = 0; i < 2; ++i)
+    //for (U32 i = 0; i < 2; ++i)
+    for (U32 i = 0; i < FS_MAX_SPOT_SHADOWS; ++i) // <FS:Trish/>
     {
         if (mShadowSpotLight[i] == drawablep)
         {
@@ -10700,7 +10703,8 @@ void LLPipeline::renderDeferredLighting()
 
             if (!gCubeSnapshot)
             {
-                for (U32 i = 0; i < 2; i++)
+                //for (U32 i = 0; i < 2; i++)
+                for (U32 i = 0; i < FS_MAX_SPOT_SHADOWS; i++) // <FS:Trish/>
                 {
                     mTargetShadowSpotLight[i] = NULL;
                 }
@@ -10833,6 +10837,7 @@ void LLPipeline::renderDeferredLighting()
                 LL_PROFILE_GPU_ZONE("projectors");
                 LLGLDepthTest depth(GL_TRUE, GL_FALSE);
                 bindDeferredShader(gDeferredSpotLightProgram);
+                fsBeginExtraSpotShadows(gDeferredSpotLightProgram); // <FS:Trish/>
 
                 mCubeVB->setBuffer();
 
@@ -10867,6 +10872,7 @@ void LLPipeline::renderDeferredLighting()
                     mCubeVB->drawRange(LLRender::TRIANGLE_FAN, 0, 7, 8, get_box_fan_indices(camera, center));
                 }
                 gDeferredSpotLightProgram.disableTexture(LLShaderMgr::DEFERRED_PROJECTION);
+                fsEndExtraSpotShadows(); // <FS:Trish/>
                 unbindDeferredShader(gDeferredSpotLightProgram);
             }
 
@@ -10910,6 +10916,7 @@ void LLPipeline::renderDeferredLighting()
                 }
 
                 bindDeferredShader(gDeferredMultiSpotLightProgram);
+                fsBeginExtraSpotShadows(gDeferredMultiSpotLightProgram); // <FS:Trish/>
 
                 gDeferredMultiSpotLightProgram.enableTexture(LLShaderMgr::DEFERRED_PROJECTION);
 
@@ -10943,6 +10950,7 @@ void LLPipeline::renderDeferredLighting()
                 }
 
                 gDeferredMultiSpotLightProgram.disableTexture(LLShaderMgr::DEFERRED_PROJECTION);
+                fsEndExtraSpotShadows(); // <FS:Trish/>
                 unbindDeferredShader(gDeferredMultiSpotLightProgram);
             }
         }
@@ -11250,13 +11258,25 @@ void LLPipeline::setupSpotLight(LLGLSLShader& shader, LLDrawable* drawablep)
     shader.uniform1f(LLShaderMgr::PROJECTOR_AMBIANCE, params.mV[2]);
     S32 s_idx = -1;
 
-    for (U32 i = 0; i < 2; i++)
+    // <FS:Trish> Up to six projector shadows. Slots past the first two bind their own map, or
+    // light unshadowed when it can't be bound.
+    //for (U32 i = 0; i < 2; i++)
+    const U32 fs_spot_count = fsSpotShadowCount();
+    for (U32 i = 0; i < fs_spot_count; i++)
+    // </FS:Trish>
     {
         if (mShadowSpotLight[i] == drawablep)
         {
             s_idx = i;
         }
     }
+
+    // <FS:Trish>
+    if (s_idx >= 2 && !fsBindExtraSpotShadow(shader, (U32)s_idx))
+    {
+        s_idx = -1;
+    }
+    // </FS:Trish>
 
     shader.uniform1i(LLShaderMgr::PROJECTOR_SHADOW_INDEX, s_idx);
 
@@ -11282,7 +11302,8 @@ void LLPipeline::setupSpotLight(LLGLSLShader& shader, LLDrawable* drawablep)
         bool m_worn = volume->getRootEdit()->isAttachment();
         // </FS:Trish>
 
-        for (U32 i = 0; i < 2; i++)
+        //for (U32 i = 0; i < 2; i++)
+        for (U32 i = 0; i < fs_spot_count; i++) // <FS:Trish/>
         {
             F32 pri = 0.f;
             bool worn = true; // <FS:Trish/> an empty slot loses to any light
@@ -12563,6 +12584,308 @@ LLRenderTarget* LLPipeline::getSpotShadowTarget(U32 i)
     llassert(i < 2);
     return &mSpotShadow[i];
 }
+
+// <FS:Trish> More than two projector shadows (FSRenderSpotShadowCount, 2 to 6, 2 is stock).
+// Slots 0 and 1 are the stock ones: shadow maps 4 and 5, rendered in generateSunShadow and sampled
+// once per pixel by the sun light pass into lightMap.b and .a, which spotLightF reads back. That
+// pass has no channels left, so slots 2+ take another route: their maps are rendered here, and
+// each projector's own draw in the deferred light pass samples its map (fsSpotShadowExtraF.glsl)
+// through one extra texture unit, rebound between draws. The count is then bound neither by the
+// light map's channels nor by texture units, only by the cost of rendering the maps.
+
+U32 LLPipeline::fsSpotShadowCount() const
+{
+    static LLCachedControl<S32> spot_shadow_count(gSavedSettings, "FSRenderSpotShadowCount", 2);
+    if (RenderShadowDetail < 2)
+    {
+        return 2;
+    }
+    return (U32)llclamp((S32)spot_shadow_count, 2, (S32)FS_MAX_SPOT_SHADOWS);
+}
+
+// Slot assignment for any count, used above two. A slot keeps its light while that is still one
+// of the wanted lights (mTargetShadowSpotLight, ranked by setupSpotLight) and fades its shadow in;
+// otherwise it fades the shadow out and, once gone, takes the best ranked wanted light that no
+// other slot holds. The stock loop makes the same choice for two slots.
+void LLPipeline::fsUpdateSpotShadowSlots(F32 fade_amt, U32 count)
+{
+    count = llmin(count, FS_MAX_SPOT_SHADOWS);
+    for (U32 i = 0; i < count; i++)
+    {
+        bool wanted = false;
+        if (mShadowSpotLight[i].notNull())
+        {
+            for (U32 t = 0; t < count; t++)
+            {
+                if (mShadowSpotLight[i] == mTargetShadowSpotLight[t])
+                {
+                    wanted = true;
+                    break;
+                }
+            }
+        }
+
+        if (wanted)
+        {
+            mSpotLightFade[i] = llmin(mSpotLightFade[i] + fade_amt, 1.f);
+            continue;
+        }
+
+        mSpotLightFade[i] = llmax(mSpotLightFade[i] - fade_amt, 0.f);
+        if (mSpotLightFade[i] == 0.f || mShadowSpotLight[i].isNull())
+        {
+            LLDrawable* pick = nullptr;
+            for (U32 t = 0; t < count && !pick; t++)
+            {
+                LLDrawable* candidate = mTargetShadowSpotLight[t];
+                if (!candidate)
+                {
+                    continue;
+                }
+                bool taken = false;
+                for (U32 j = 0; j < count; j++)
+                {
+                    if (j != i && mShadowSpotLight[j] == candidate)
+                    {
+                        taken = true;
+                        break;
+                    }
+                }
+                if (!taken)
+                {
+                    pick = candidate;
+                }
+            }
+            mShadowSpotLight[i] = pick;
+        }
+    }
+}
+
+// The map of slot 2+, the size and format of the stock ones. Allocated when first needed, so the
+// stock count costs no memory; outside reflection probe updates only, like the stock maps.
+bool LLPipeline::fsEnsureExtraSpotShadowTarget(U32 slot)
+{
+    if (slot < 2 || slot >= FS_MAX_SPOT_SHADOWS || !mSpotShadow[0].isComplete())
+    {
+        return false;
+    }
+
+    LLRenderTarget& target = mSpotShadow[slot];
+    const U32 width = mSpotShadow[0].getWidth();
+    const U32 height = mSpotShadow[0].getHeight();
+    if (target.isComplete() && target.getWidth() == width && target.getHeight() == height)
+    {
+        return true;
+    }
+    if (gCubeSnapshot)
+    {
+        return false;
+    }
+
+    target.release();
+    if (!target.allocate(width, height, 0, true))
+    {
+        target.release();
+        return false;
+    }
+
+    // filtering and compare mode as allocateShadowBuffer sets them for the stock maps
+    gGL.getTexUnit(0)->bind(&target, true);
+    gGL.getTexUnit(0)->setTextureFilteringOption(LLTexUnit::TFO_ANISOTROPIC);
+    gGL.getTexUnit(0)->setTextureAddressMode(LLTexUnit::TAM_CLAMP);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
+    gGL.getTexUnit(0)->unbind(LLTexUnit::TT_TEXTURE);
+    return true;
+}
+
+// Called from generateSunShadow after the stock two: the matrices and maps of slots 2 and up, the
+// same way as the stock loop, with the same re-render throttle (FSRenderSpotShadowUpdateInterval).
+// Slots past the current count are emptied and their maps freed.
+void LLPipeline::fsRenderExtraSpotShadows(LLCamera& camera, const glm::mat4& saved_view, const glm::mat4& saved_proj, const glm::mat4& inv_view)
+{
+    const U32 count = fsSpotShadowCount();
+    for (U32 i = count; i < FS_MAX_SPOT_SHADOWS; i++)
+    {
+        mShadowSpotLight[i] = NULL;
+        mSpotShadowState[i].mValid = false;
+        if (i >= 2 && !gCubeSnapshot && mSpotShadow[i].isComplete())
+        {
+            mSpotShadow[i].release();
+        }
+    }
+
+    static LLCullResult result[FS_MAX_SPOT_SHADOWS];
+    static LLCachedControl<U32> spot_update_interval(gSavedSettings, "FSRenderSpotShadowUpdateInterval", 1);
+
+    for (U32 i = 2; i < count; i++)
+    {
+        set_current_modelview(saved_view);
+        set_current_projection(saved_proj);
+
+        if (mShadowSpotLight[i].isNull())
+        {
+            continue;
+        }
+
+        LLVOVolume* volume = mShadowSpotLight[i]->getVOVolume();
+        if (!volume)
+        {
+            mShadowSpotLight[i] = NULL;
+            continue;
+        }
+        if (!fsEnsureExtraSpotShadowTarget(i))
+        {
+            if (!gCubeSnapshot) // a probe update can't allocate, but leaves the main view's slots alone
+            {
+                mShadowSpotLight[i] = NULL;
+            }
+            continue;
+        }
+
+        LLDrawable* drawable = mShadowSpotLight[i];
+
+        // the projector's frustum, as the stock loop builds it
+        LLVector3 params = volume->getSpotLightParams();
+        F32 fov = params.mV[0];
+
+        LLVector3 center = drawable->getPositionAgent();
+        LLQuaternion quat = volume->getRenderRotation();
+
+        LLVector3 scale = volume->getScale();
+        LLVector3 at_axis(0, 0, -scale.mV[2] * 0.5f);
+        at_axis *= quat;
+
+        LLVector3 np = center + at_axis;
+        at_axis.normVec();
+
+        F32 dist = (scale.mV[1] * 0.5f) / tanf(fov * 0.5f);
+        LLVector3 origin = np - at_axis * dist;
+
+        LLMatrix4 mat(quat, LLVector4(origin, 1.f));
+        glm::mat4 view = glm::inverse(glm::make_mat4((F32*)mat.mMatrix));
+
+        F32 near_clip = dist + 0.01f;
+        F32 width = scale.mV[VX];
+        F32 height = scale.mV[VY];
+        F32 far_clip = dist + volume->getLightRadius() * 1.5f;
+        glm::mat4 proj = glm::perspective(fov, width / height, near_clip, far_clip);
+
+        const glm::mat4 trans(0.5f, 0.0f, 0.0f, 0.0f,
+                              0.0f, 0.5f, 0.0f, 0.0f,
+                              0.0f, 0.0f, 0.5f, 0.0f,
+                              0.5f, 0.5f, 0.5f, 1.0f);
+
+        set_current_modelview(view);
+        set_current_projection(proj);
+
+        mFSSpotShadowMatrix[i] = trans * proj * view * inv_view;
+
+        set_last_modelview(mFSSpotShadowModelview[i]);
+        set_last_projection(mFSSpotShadowProjection[i]);
+
+        mFSSpotShadowModelview[i] = view;
+        mFSSpotShadowProjection[i] = proj;
+
+        // While the light and its settings are unchanged, re-render its shadow only every N frames
+        SpotShadowState& spot_state = mSpotShadowState[i];
+        const U32 spot_interval = llclamp((U32)spot_update_interval, 1U, 16U);
+        const F32 light_radius = volume->getLightRadius();
+        const bool spot_unchanged = spot_state.mValid &&
+                                    spot_state.mLight == drawable &&
+                                    spot_state.mTex == mSpotShadow[i].getDepth() &&
+                                    spot_state.mCenter == center &&
+                                    spot_state.mRotation == quat &&
+                                    spot_state.mScale == scale &&
+                                    spot_state.mParams == params &&
+                                    spot_state.mRadius == light_radius;
+        const bool spot_skip = spot_interval > 1 && spot_unchanged && (mShadowFrame - spot_state.mFrame) < spot_interval;
+        if (gCubeSnapshot || spot_skip)
+        {
+            continue;
+        }
+
+        spot_state.mValid = true;
+        spot_state.mLight = drawable;
+        spot_state.mTex = mSpotShadow[i].getDepth();
+        spot_state.mCenter = center;
+        spot_state.mRotation = quat;
+        spot_state.mScale = scale;
+        spot_state.mParams = params;
+        spot_state.mRadius = light_radius;
+        spot_state.mFrame = mShadowFrame;
+
+        LLCamera shadow_cam = camera;
+        shadow_cam.setFar(far_clip);
+        shadow_cam.setOrigin(origin);
+
+        LLViewerCamera::updateFrustumPlanes(shadow_cam, false, false, true);
+
+        mSpotShadow[i].bindTarget();
+        mSpotShadow[i].getViewport(gGLViewport);
+        mSpotShadow[i].clear();
+
+        // There are two spot shadow camera IDs. Shadow passes run with occlusion culling off, so
+        // the IDs only stamp which groups were seen this frame and the slots can share them.
+        LLViewerCamera::sCurCameraID = (LLViewerCamera::eCameraID)(LLViewerCamera::CAMERA_SPOT_SHADOW0 + (i & 1));
+
+        RenderSpotLight = drawable;
+        renderShadow(view, proj, shadow_cam, result[i], false);
+        RenderSpotLight = nullptr;
+
+        mSpotShadow[i].flush();
+    }
+}
+
+// After binding a projector program: when it samples slots 2+ (FS_SPOT_SHADOW_EXTRA), give
+// fs_spot_shadow_map the first texture unit past the program's own, with a depth map bound so
+// the unit never holds a texture of the wrong kind for the draw's samplers.
+void LLPipeline::fsBeginExtraSpotShadows(LLGLSLShader& shader)
+{
+    static LLStaticHashedString s_spot_shadow_map("fs_spot_shadow_map");
+
+    mFSSpotShadowUnit = -1;
+    if (fsSpotShadowCount() <= 2 || shader.getUniformLocation(s_spot_shadow_map) < 0 || !mSpotShadow[0].isComplete())
+    {
+        return;
+    }
+
+    const S32 unit = shader.mActiveTextureChannels;
+    if (unit >= gGLManager.mNumTextureImageUnits || unit >= (S32)LL_NUM_TEXTURE_LAYERS)
+    {
+        LL_WARNS_ONCE("Shadow") << "No texture unit left for projector shadows past the first two" << LL_ENDL;
+        return;
+    }
+
+    shader.uniform1i(s_spot_shadow_map, unit);
+    gGL.getTexUnit(unit)->bind(&mSpotShadow[0], true);
+    mFSSpotShadowUnit = unit;
+}
+
+// From setupSpotLight, for a light in slot 2+: its map and matrix. False leaves it unshadowed.
+bool LLPipeline::fsBindExtraSpotShadow(LLGLSLShader& shader, U32 slot)
+{
+    static LLStaticHashedString s_spot_shadow_matrix("fs_spot_shadow_matrix");
+
+    if (mFSSpotShadowUnit < 0 || slot < 2 || slot >= FS_MAX_SPOT_SHADOWS || !mSpotShadow[slot].isComplete())
+    {
+        return false;
+    }
+
+    gGL.getTexUnit(mFSSpotShadowUnit)->bind(&mSpotShadow[slot], true);
+    shader.uniformMatrix4fv(s_spot_shadow_matrix, 1, GL_FALSE, glm::value_ptr(mFSSpotShadowMatrix[slot]));
+    return true;
+}
+
+void LLPipeline::fsEndExtraSpotShadows()
+{
+    if (mFSSpotShadowUnit >= 0)
+    {
+        gGL.getTexUnit(mFSSpotShadowUnit)->unbind(LLTexUnit::TT_TEXTURE);
+        mFSSpotShadowUnit = -1;
+    }
+}
+// </FS:Trish>
 
 static LLTrace::BlockTimerStatHandle FTM_GEN_SUN_SHADOW("Gen Sun Shadow");
 static LLTrace::BlockTimerStatHandle FTM_GEN_SUN_SHADOW_SPOT_RENDER("Spot Shadow Render");
@@ -14330,6 +14653,15 @@ void LLPipeline::generateSunShadow(LLCamera& camera)
             // should never happen
             llassert(mTargetShadowSpotLight[0] != mTargetShadowSpotLight[1] || mTargetShadowSpotLight[0].isNull());
 
+            // <FS:Trish> More than two projector shadows take a slot assignment that handles any
+            // count; the stock two keep the loop below
+            const U32 fs_spot_count = fsSpotShadowCount();
+            if (fs_spot_count > 2)
+            {
+                fsUpdateSpotShadowSlots(fade_amt, fs_spot_count);
+            }
+            else
+            // </FS:Trish>
             //update shadow targets
             for (U32 i = 0; i < 2; i++)
             { //for each current shadow
@@ -14491,10 +14823,18 @@ void LLPipeline::generateSunShadow(LLCamera& camera)
                 mSpotShadow[i].flush();
             }
         }
+
+        fsRenderExtraSpotShadows(camera, saved_view, saved_proj, inv_view); // <FS:Trish/> slots 2+
     }
     else
     { //no spotlight shadows
         mShadowSpotLight[0] = mShadowSpotLight[1] = NULL;
+        // <FS:Trish>
+        for (U32 i = 2; i < FS_MAX_SPOT_SHADOWS; i++)
+        {
+            mShadowSpotLight[i] = NULL;
+        }
+        // </FS:Trish>
     }
 
 
