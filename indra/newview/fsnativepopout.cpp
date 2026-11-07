@@ -63,6 +63,29 @@ std::map<LLHandle<LLFloater>, RECT> sDesktopPositions;
 // recreate it every frame; clear the suppression when the user opens it again.
 std::set<std::string> sNativeClosed;
 
+// update() runs every frame. Resolve the opt-in toggles once instead of a
+// by-name control lookup per spec per frame. Settings pointers come from SPECS.
+bool settingEnabled(const char* setting)
+{
+    static const std::vector<std::unique_ptr<LLCachedControl<bool>>> controls = []
+    {
+        std::vector<std::unique_ptr<LLCachedControl<bool>>> result;
+        for (const auto& spec : SPECS)
+        {
+            result.push_back(spec.setting ? std::make_unique<LLCachedControl<bool>>(gSavedSettings, spec.setting, false) : nullptr);
+        }
+        return result;
+    }();
+    for (size_t i = 0; i < SPECS.size(); ++i)
+    {
+        if (SPECS[i].setting == setting && controls[i])
+        {
+            return *controls[i];
+        }
+    }
+    return gSavedSettings.getBOOL(setting);
+}
+
 MASK modifiers()
 {
     MASK mask = MASK_NONE;
@@ -1128,7 +1151,7 @@ void FSNativePopout::update(bool fullscreen, const LLVector2& display_scale)
     for (auto it = sWindows.begin(); it != sWindows.end();)
     {
         const char* setting = (*it)->setting();
-        const bool keep = (!setting || gSavedSettings.getBOOL(setting)) && (*it)->update();
+        const bool keep = (!setting || settingEnabled(setting)) && (*it)->update();
         // Preferences may have reset graphics inside the dispatched callback.
         if (sResetPending)
         {
@@ -1171,9 +1194,10 @@ void FSNativePopout::update(bool fullscreen, const LLVector2& display_scale)
     for (const auto& spec : SPECS)
     {
         if (!spec.setting) continue;
-        if (!gSavedSettings.getBOOL(spec.setting))
+        if (!settingEnabled(spec.setting))
         {
-            sNativeClosed.erase(spec.setting);
+            // Avoid building a std::string key every frame when nothing is suppressed.
+            if (!sNativeClosed.empty()) sNativeClosed.erase(spec.setting);
             continue;
         }
         const bool hosted = std::any_of(sWindows.begin(), sWindows.end(),
