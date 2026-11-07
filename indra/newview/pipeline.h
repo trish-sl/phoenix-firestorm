@@ -810,6 +810,7 @@ public:
         LLRenderTarget          waterDis;
         LLRenderTarget          waterExclusion;
         // </FS:Trish>
+        LLRenderTarget          fsGTAOHalf; // <FS:Trish/> Half-resolution GTAO, allocated on use (main pack only)
 
         //sun shadow map
         LLRenderTarget          shadow[4];

@@ -282,6 +282,7 @@ extern LLGLSLShader         gFSDynResUpscaleProgram; // <FS:Trish/> Dynamic reso
 // </FS:Trish>
 extern LLGLSLShader         gFSLocalTonemapLumProgram; // <FS:Trish/> Local tone mapping
 extern LLGLSLShader         gFSSkinSSSProgram; // <FS:Trish/>
+extern LLGLSLShader         gFSGTAOHalfProgram; // <FS:Trish/> Half-resolution GTAO
 extern LLGLSLShader         gExposureProgram;
 extern LLGLSLShader         gExposureProgramNoFade;
 extern LLGLSLShader         gLuminanceProgram;
