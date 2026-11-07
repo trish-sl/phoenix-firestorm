@@ -374,6 +374,20 @@ static void add_common_permutations(LLGLSLShader* shader)
     }
 }
 
+// <FS:Trish> Projector shadow slots past the first two (FSRenderSpotShadowCount above 2) are
+// sampled by the projector programs themselves, see fsSpotShadowExtraF.glsl. At the stock two the
+// programs are built exactly as before.
+static void fs_add_spot_shadow_extra(LLGLSLShader& shader)
+{
+    static LLCachedControl<S32> spot_shadow_count(gSavedSettings, "FSRenderSpotShadowCount", 2);
+    if (gSavedSettings.getS32("RenderShadowDetail") > 1 && spot_shadow_count > 2)
+    {
+        shader.addPermutation("FS_SPOT_SHADOW_EXTRA", "1");
+        shader.mShaderFiles.push_back(make_pair("deferred/fsSpotShadowExtraF.glsl", GL_FRAGMENT_SHADER));
+    }
+}
+// </FS:Trish>
+
 
 static bool make_gltf_variant(LLGLSLShader& shader, LLGLSLShader& variant, bool alpha_blend, bool rigged, bool unlit, bool multi_uv, bool use_sun_shadow)
 {
@@ -2015,6 +2029,7 @@ bool LLViewerShaderMgr::loadShadersDeferred()
         gDeferredSpotLightProgram.mShaderLevel = mShaderLevel[SHADER_DEFERRED];
 
         add_common_permutations(&gDeferredSpotLightProgram);
+        fs_add_spot_shadow_extra(gDeferredSpotLightProgram); // <FS:Trish/>
 
         success = gDeferredSpotLightProgram.createShader();
         llassert(success);
@@ -2036,6 +2051,7 @@ bool LLViewerShaderMgr::loadShadersDeferred()
         gDeferredMultiSpotLightProgram.mShaderLevel = mShaderLevel[SHADER_DEFERRED];
 
         add_common_permutations(&gDeferredMultiSpotLightProgram);
+        fs_add_spot_shadow_extra(gDeferredMultiSpotLightProgram); // <FS:Trish/>
 
         success = gDeferredMultiSpotLightProgram.createShader();
         llassert(success);

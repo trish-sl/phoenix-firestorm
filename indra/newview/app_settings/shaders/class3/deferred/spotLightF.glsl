@@ -79,6 +79,10 @@ vec4 texture2DLodSpecular(vec2 tc, float lod);
 
 vec4 getPosition(vec2 pos_screen);
 
+#if defined(FS_SPOT_SHADOW_EXTRA)
+float fsSampleSpotShadowExtra(vec3 pos, vec3 norm);
+#endif
+
 const float M_PI = 3.14159265;
 
 void pbrPunctual(vec3 diffuseColor, vec3 specularColor,
@@ -127,6 +131,14 @@ void main()
     GBufferInfo gb = getGBuffer(tc);
 
     vec3 n = gb.normal;
+
+#if defined(FS_SPOT_SHADOW_EXTRA)
+    // Shadow slots past the first two aren't in lightMap: sample this light's own map
+    if (proj_shadow_idx >= 2)
+    {
+        shadow = clamp(fsSampleSpotShadowExtra(pos, n) + shadow_fade, 0.0, 1.0);
+    }
+#endif
 
     float dist_atten = calcLegacyDistanceAttenuation(dist, falloff);
     if (dist_atten <= 0.0)

@@ -27152,6 +27152,17 @@ Change of this parameter will affect the layout of buttons in notification toast
       <key>Value</key>
       <real>0.2</real>
     </map>
+    <key>FSRenderSpotShadowCount</key>
+    <map>
+      <key>Comment</key>
+      <string>Number of projectors that cast shadows, 2 to 6. 2 is the stock viewer. Each extra one renders its own shadow map (the size of the stock ones, see RenderSpotShadowMaxResolution) and is sampled in that projector's own lighting draw. Needs shadows from sun/moon and projectors (RenderShadowDetail 2). Changing it rebuilds the projector shaders.</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>S32</string>
+      <key>Value</key>
+      <integer>2</integer>
+    </map>
     <key>FSRLVaProfileCommands</key>
     <map>
       <key>Comment</key>

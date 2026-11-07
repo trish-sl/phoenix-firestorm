@@ -827,7 +827,11 @@ public:
     // currently used render target pack
     RenderTargetPack* mRT;
 
-    LLRenderTarget          mSpotShadow[2];
+    // <FS:Trish> Up to six projector shadows (FSRenderSpotShadowCount, 2 is stock)
+    //LLRenderTarget          mSpotShadow[2];
+    static constexpr U32    FS_MAX_SPOT_SHADOWS = 6;
+    LLRenderTarget          mSpotShadow[FS_MAX_SPOT_SHADOWS];
+    // </FS:Trish>
 
     LLRenderTarget          mPbrBrdfLut;
     LLRenderTarget          mWaterExclusionMask;
@@ -927,7 +931,23 @@ public:
         U32                 mTex = 0;
         U32                 mFrame = 0;
         bool                mValid = false;
-    } mSpotShadowState[2];
+    } mSpotShadowState[FS_MAX_SPOT_SHADOWS];
+    // </FS:Trish>
+
+    // <FS:Trish> Projector shadow slots past the first two. Slots 0 and 1 keep the stock path
+    // (shadow maps 4 and 5, sampled in the sun light pass); the others live here and are sampled
+    // by each projector's own draw (fsSpotShadowExtraF.glsl).
+    glm::mat4               mFSSpotShadowMatrix[FS_MAX_SPOT_SHADOWS];       // camera view space to the map, slots 2+
+    glm::mat4               mFSSpotShadowModelview[FS_MAX_SPOT_SHADOWS];
+    glm::mat4               mFSSpotShadowProjection[FS_MAX_SPOT_SHADOWS];
+    U32                     fsSpotShadowCount() const;                      // shadowed projectors wanted, 2 to FS_MAX_SPOT_SHADOWS
+    void                    fsUpdateSpotShadowSlots(F32 fade_amt, U32 count);
+    void                    fsRenderExtraSpotShadows(LLCamera& camera, const glm::mat4& saved_view, const glm::mat4& saved_proj, const glm::mat4& inv_view);
+    bool                    fsEnsureExtraSpotShadowTarget(U32 slot);
+    void                    fsBeginExtraSpotShadows(LLGLSLShader& shader);  // after binding a projector program
+    bool                    fsBindExtraSpotShadow(LLGLSLShader& shader, U32 slot);
+    void                    fsEndExtraSpotShadows();
+    S32                     mFSSpotShadowUnit = -1;                         // texture unit of fs_spot_shadow_map, -1 when unused
     // </FS:Trish>
 
     // exposure map for getting average color in scene
@@ -980,9 +1000,14 @@ public:
     glm::mat4               mShadowProjection[6];
     glm::mat4               mReflectionModelView;
 
-    LLPointer<LLDrawable>   mShadowSpotLight[2];
-    F32                     mSpotLightFade[2];
-    LLPointer<LLDrawable>   mTargetShadowSpotLight[2];
+    // <FS:Trish> Up to six projector shadows
+    //LLPointer<LLDrawable>   mShadowSpotLight[2];
+    //F32                     mSpotLightFade[2];
+    //LLPointer<LLDrawable>   mTargetShadowSpotLight[2];
+    LLPointer<LLDrawable>   mShadowSpotLight[FS_MAX_SPOT_SHADOWS];
+    F32                     mSpotLightFade[FS_MAX_SPOT_SHADOWS];
+    LLPointer<LLDrawable>   mTargetShadowSpotLight[FS_MAX_SPOT_SHADOWS];
+    // </FS:Trish>
 
     LLVector4               mSunClipPlanes;
     LLVector4               mSunOrthoClipPlanes;
