@@ -187,6 +187,7 @@ set(viewer_SOURCE_FILES
     fsparallelcull.cpp
     fsparallelgeometry.cpp
     fsparcelderender.cpp
+    fsparallelavatar.cpp
     fsparticipantlist.cpp
     fspointlightbatch.cpp
     fspose.cpp
@@ -1079,6 +1080,7 @@ set(viewer_HEADER_FILES
     fsparallelcull.h
     fsparallelgeometry.h
     fsparcelderender.h
+    fsparallelavatar.h
     fsparticipantlist.h
     fspointlightbatch.h
     fspose.h
