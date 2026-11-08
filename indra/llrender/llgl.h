@@ -107,6 +107,7 @@ public:
     bool mHasNVShadingRateImage = false; // <FS:Trish/> GL_NV_shading_rate_image (FSRenderVRS)
     bool mHasNVRepresentativeFragmentTest = false; // <FS:Trish/> GL_NV_representative_fragment_test (FSPerfRepresentativeFragmentTest)
     S32 mFSVertexViewportIndex = 0; // <FS:Trish/> gl_ViewportIndex from the vertex shader (FSPerfShadowSinglePass): 0 none, 1 ARB, 2 NV, 3 AMD
+    bool mFSHasGPUDrivenDraws = false; // <FS:Trish/> multi-draw indirect, vertex shader storage blocks (FSPerfGPUDrivenDraws)
 
     // Vendor-specific extensions
     bool mHasAMDAssociations = false;
