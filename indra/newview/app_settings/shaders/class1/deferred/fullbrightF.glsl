@@ -25,6 +25,19 @@
 
 /*[EXTRA_CODE_HERE]*/
 
+#ifdef FS_GDD_LEGACY
+#extension GL_ARB_bindless_texture : require
+// FSPerfGPUDrivenLegacy (diffuseV.glsl, fullbrightV.glsl): the texture the stock diffuseLookup would pick,
+// as a bindless handle, and the batch's minimum_alpha
+flat in uvec2 fs_gdd_diffuse;
+flat in float fs_gdd_minimum_alpha;
+#define HAS_DIFFUSE_LOOKUP
+vec4 diffuseLookup(vec2 texcoord)
+{
+    return texture(sampler2D(fs_gdd_diffuse), texcoord);
+}
+#endif
+
 #ifdef FS_WBOIT
 // Weighted blended order-independent transparency (FSRenderAlphaWBOIT, see fsWBOITCompositeF).
 // Same block in class2 alphaF, class1 fullbrightF, class3 materialF and class2 pbralphaF.
@@ -56,7 +69,11 @@ vec3 srgb_to_linear(vec3 cs);
 vec3 linear_to_srgb(vec3 cl);
 
 #ifdef HAS_ALPHA_MASK
+#ifdef FS_GDD_LEGACY
+#define minimum_alpha fs_gdd_minimum_alpha
+#else
 uniform float minimum_alpha;
+#endif
 #endif
 
 #ifdef IS_ALPHA
