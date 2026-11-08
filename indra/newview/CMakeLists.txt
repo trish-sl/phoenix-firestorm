@@ -187,6 +187,7 @@ set(viewer_SOURCE_FILES
     fspanelradar.cpp
     fsparallelcull.cpp
     fsparallelgeometry.cpp
+    fsparalleltexture.cpp
     fsparcelderender.cpp
     fsparallelavatar.cpp
     fsparticipantlist.cpp
@@ -1081,6 +1082,7 @@ set(viewer_HEADER_FILES
     fspanelradar.h
     fsparallelcull.h
     fsparallelgeometry.h
+    fsparalleltexture.h
     fsparcelderender.h
     fsparallelavatar.h
     fsparticipantlist.h
