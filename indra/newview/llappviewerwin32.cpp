@@ -665,7 +665,10 @@ void ll_nvapi_init(NvDRSSessionHandle hSession)
     }
 
     NvAPI_UnicodeString profile_name;
-    std::string app_name = LLTrans::getString("APP_NAME");
+    // <FS:Trish> Keep the NVIDIA profile name Firestorm; the translated APP_NAME is now only a display name
+    //std::string app_name = LLTrans::getString("APP_NAME");
+    std::string app_name = APP_NAME;
+    // </FS:Trish>
     std::wstring w_app_name = ll_convert<std::wstring>(app_name);
     wsprintf(reinterpret_cast<wchar_t*>(profile_name), L"%s", w_app_name.c_str());
     NvDRSProfileHandle hProfile = 0;

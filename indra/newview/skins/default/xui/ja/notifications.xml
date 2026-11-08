@@ -5732,8 +5732,8 @@ Firestorm Viewer、Phoenix Firestorm Viewer Project Inc.、またはそのチー
 		Windlightsの一括インポートが完了しました。
 	</notification>
 	<notification name="FSAOScriptedNotification">
-		Firestormアニメーションオーバーライド：[AO_MESSAGE]
-		<usetemplate ignoretext="スクリプトオブジェクトがFirestormアニメーションオーバーライダーにアクセスしたときに警告" name="notifyignore"/>
+		[APP_NAME]アニメーションオーバーライド：[AO_MESSAGE]
+		<usetemplate ignoretext="スクリプトオブジェクトがTrishStormアニメーションオーバーライダーにアクセスしたときに警告" name="notifyignore"/>
 	</notification>
 	<notification name="WarnForceLoginURL">
 		ログインスプラッシュスクリーンのＵＲＬはテスト目的で上書きされます。

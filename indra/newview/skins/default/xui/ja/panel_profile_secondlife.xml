@@ -16,7 +16,7 @@
 	<string name="BadgeLinden" value="Linden Lab社員"/>
 	<string name="BadgePremiumLifetime" value="生涯プレミアム会員"/>
 	<string name="BadgePremiumPlusLifetime" value="生涯プレミアム・プラス会員"/>
-	<string name="BadgeTeam" value="[APP_NAME]メンバー"/>
+	<string name="BadgeTeam" value="Firestormメンバー"/>
 	<string name="payment_update_link_url">https://accounts.secondlife.com/billing_information/?lang=ja-JP</string>
 	<string name="partner_edit_link_url">https://www.secondlife.com/my/partners.php?lang=ja-JP</string>
 	<string name="my_account_link_url" value="https://secondlife.com/my/account/?lang=ja-JP"/>

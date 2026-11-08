@@ -6220,8 +6220,8 @@ Gostaria de salvá-las primeiro?
 		<usetemplate name="okcancelbuttons" notext="Não" yestext="Sim"/>
 	</notification>
 	<notification name="FSAOScriptedNotification">
-		Firestorm Animation Overrider: [AO_MESSAGE]
-		<usetemplate ignoretext="Avisar quando o Firestorm Animation Overrider for acessado por um objeto com script" name="notifyignore"/>
+		[APP_NAME] Animation Overrider: [AO_MESSAGE]
+		<usetemplate ignoretext="Avisar quando o TrishStorm Animation Overrider for acessado por um objeto com script" name="notifyignore"/>
 	</notification>
 	<notification name="OmniFilterNewRuleSet">
 		Digite um nome para o novo conjunto de regras:

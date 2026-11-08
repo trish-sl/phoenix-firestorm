@@ -5615,8 +5615,8 @@ Pamiętaj, że nie można wybrać "otoczenia współdzielonego" i "bazowanego na
 		Zakończył się zbiorowy import Windlightów.
 	</notification>
 	<notification name="FSAOScriptedNotification">
-		Animator Firestorma: [AO_MESSAGE]
-		<usetemplate ignoretext="Ostrzegaj mnie, gdy Animator Firestorma jest proszony o dostęp przez oskryptowany obiekt" name="notifyignore" />
+		Animator [APP_NAME]a: [AO_MESSAGE]
+		<usetemplate ignoretext="Ostrzegaj mnie, gdy Animator TrishStorma jest proszony o dostęp przez oskryptowany obiekt" name="notifyignore" />
 	</notification>
 	<notification name="WarnForceLoginURL">
 		Wygląda na to, że adres URL ekranu logowania jest zastępowany w celach testowych.

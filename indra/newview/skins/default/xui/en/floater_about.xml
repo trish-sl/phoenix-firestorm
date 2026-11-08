@@ -25,12 +25,24 @@
       name="support_panel">
       <text
         follows="top|left|right"
+        font="SansSerifBold"
+        height="44"
+        layout="topleft"
+        left="11"
+        name="fork_notice"
+        top="16"
+        width="478"
+        wrap="true">
+TrishStorm is a development fork of Firestorm. It is not an official Firestorm release, and Firestorm support cannot help with it.
+      </text>
+      <text
+        follows="top|left|right"
         font="SansSerif"
         height="30"
         layout="topleft"
         left="11"
         name="support_intro"
-        top="16"
+        top_pad="4"
         width="434"
         wrap="true">
 For the latest information about Firestorm, visit 
@@ -40,7 +52,7 @@ https://www.firestormviewer.org
         parse_urls="true"
         follows="top|left"
         font="SansSerif"
-        height="468"
+        height="420"
         bg_readonly_color="Transparent"
         left="5"
         max_length="65536"

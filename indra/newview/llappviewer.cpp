@@ -2741,7 +2741,10 @@ void errorCallback(LLError::ELevel level, const std::string &error_string)
 
         if (error_display_string.find("MissingString(") != std::string::npos)
         {
-            error_display_string = "We are sorry, but Firestorm has crashed and needs to be closed. If you see this issue happening repeatedly, please contact our support team and submit the following message:\n\n[ERROR_DETAILS]";
+            // <FS:Trish> Name the viewer as TrishStorm
+            //error_display_string = "We are sorry, but Firestorm has crashed and needs to be closed. If you see this issue happening repeatedly, please contact our support team and submit the following message:\n\n[ERROR_DETAILS]";
+            error_display_string = "We are sorry, but TrishStorm has crashed and needs to be closed. If you see this issue happening repeatedly, please contact our support team and submit the following message:\n\n[ERROR_DETAILS]";
+            // </FS:Trish>
             LLStringUtil::format(error_display_string, map);
         }
         if (caption.find("MissingString(") != std::string::npos)
@@ -3716,6 +3719,12 @@ bool LLAppViewer::initConfiguration()
     // Set the name of the window
     //
     gWindowTitle = LLVersionInfo::getInstance()->getChannelAndVersion();    // <FS:CR>
+    // <FS:Trish> Show the viewer's display name in the title bar; the channel itself keeps its Firestorm prefix
+    if (LLStringUtil::startsWith(gWindowTitle, APP_NAME))
+    {
+        gWindowTitle.replace(0, APP_NAME.size(), LLTrans::getString("APP_NAME"));
+    }
+    // </FS:Trish>
 #if LL_DEBUG
     gWindowTitle += std::string(" [DEBUG]");
 #endif

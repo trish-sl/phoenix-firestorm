@@ -2139,6 +2139,7 @@ if (WINDOWS)
         res/lltoolzoomout.cur
         res/firestorm_icon.BMP
         res/firestorm_icon.ico
+        res/trishstorm_icon.ico # <FS:Trish/> TrishStorm window icon (viewerRes.rc)
         res-sdl/firestorm_icon.BMP
         res/ll_icon_small.ico
         res/resource.h

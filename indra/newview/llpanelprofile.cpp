@@ -1538,7 +1538,10 @@ void LLPanelProfileSecondLife::fillAccountStatus(const LLAvatarData* avatar_data
         std::string text;
         if (flags & (FSData::DEVELOPER | FSData::SUPPORT | FSData::QA | FSData::GATEWAY))
         {
-            args["[FIRESTORM]"] = LLTrans::getString("APP_NAME");
+            // <FS:Trish> These flags mark Firestorm team members, so name the project, not this viewer
+            //args["[FIRESTORM]"] = LLTrans::getString("APP_NAME");
+            args["[FIRESTORM]"] = "Firestorm";
+            // </FS:Trish>
         }
 
         if (flags & FSData::DEVELOPER)

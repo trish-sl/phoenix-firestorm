@@ -5758,7 +5758,7 @@ Veuillez noter que "Utiliser l'environnement partagé" et "Basé sur le cycle jo
 		L'importation par lot des réglages Windlights est terminée.
 	</notification>
 	<notification name="FSAOScriptedNotification">
-		Superviseur d'animation Firestorm : [AO_MESSAGE]
+		Superviseur d'animation [APP_NAME] : [AO_MESSAGE]
 	</notification>
 	<notification name="WarnForceLoginURL">
 		L'URL de l'écran d'accueil de connexion est remplacée à des fins de test.
