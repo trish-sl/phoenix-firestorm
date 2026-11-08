@@ -27,6 +27,7 @@
 #include "llviewerprecompiledheaders.h"
 
 #include "llappviewer.h"
+#include "fsrenderthread.h" // <FS:Trish/> FSRenderThread
 #include "fsnativepopout.h"
 
 // Viewer includes
@@ -1603,6 +1604,7 @@ bool LLAppViewer::frame()
 
 bool LLAppViewer::doFrame()
 {
+    FSRenderThread::frameStart(); // <FS:Trish/> FSRenderThread: start, check setting, stats
     resumeMainloopTimeout("Main:doFrameStart");
 #ifdef LL_DISCORD
     {
@@ -2040,6 +2042,7 @@ void LLAppViewer::flushLFSIO()
 
 bool LLAppViewer::cleanup()
 {
+    FSRenderThread::shutdown(); // <FS:Trish/> FSRenderThread: GL back to the main thread before any teardown
     // <FS> Return experimental pop-outs before saving floater/tab settings.
     FSNativePopout::shutdown();
 
