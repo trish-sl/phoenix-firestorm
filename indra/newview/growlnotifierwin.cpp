@@ -84,8 +84,12 @@ void GrowlNotifierWin::registerApplication(const std::string& application, const
         strcpy(string, it->c_str());
         arr[i] = string;
     }
+    // <FS:Trish> TrishStorm icon; the Firestorm icon is kept as it is
+    //mGrowlImpl = new Growl (GROWL_TCP, NULL, application.c_str(), (const char **const)arr, static_cast<int>(notificationTypes.size()),
+    //    std::string(gDirUtilp->getDefaultSkinDir() + gDirUtilp->getDirDelimiter() + "textures" + gDirUtilp->getDirDelimiter() + "firestorm_icon.png").c_str());
     mGrowlImpl = new Growl (GROWL_TCP, NULL, application.c_str(), (const char **const)arr, static_cast<int>(notificationTypes.size()),
-        std::string(gDirUtilp->getDefaultSkinDir() + gDirUtilp->getDirDelimiter() + "textures" + gDirUtilp->getDirDelimiter() + "firestorm_icon.png").c_str());
+        std::string(gDirUtilp->getDefaultSkinDir() + gDirUtilp->getDirDelimiter() + "textures" + gDirUtilp->getDirDelimiter() + "trishstorm_icon.png").c_str());
+    // </FS:Trish>
 
     for (i = 0; i < (S32)notificationTypes.size(); ++i)
     {

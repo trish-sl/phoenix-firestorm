@@ -22,7 +22,7 @@
 	<string name="BadgePremiumPlusLifetime"
 		value="Premium Plus vitalício" />
 	<string name="BadgeTeam"
-		value="Membro do [APP_NAME]" />
+		value="Membro do Firestorm" />
 	<string name="payment_update_link_url">
 		http://www.secondlife.com/account/billing.php?lang=pt
 	</string>

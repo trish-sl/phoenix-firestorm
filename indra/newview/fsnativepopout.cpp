@@ -30,6 +30,7 @@
 #include "llrendertarget.h"
 #include "llstartup.h"
 #include "lltexteditor.h"
+#include "lltrans.h" // <FS:Trish/>
 #include "llui.h"
 #include "lluictrlfactory.h"
 #include "llviewercontrol.h"
@@ -260,7 +261,7 @@ bool NativePopout::open()
     mOriginalRect = floater->getRect();
     mDisplayScale = sDisplayScale;
     mTitle = floater->getTitle();
-    const std::wstring title = ll_convert<std::wstring>(mTitle + " - Firestorm [Ctrl+Shift+F12 to return]");
+    const std::wstring title = ll_convert<std::wstring>(mTitle + " - " + LLTrans::getString("APP_NAME") + " [Ctrl+Shift+F12 to return]"); // <FS:Trish/> Name the viewer as TrishStorm
     if (gFocusMgr.childHasKeyboardFocus(floater))
     {
         if (auto* control = dynamic_cast<LLUICtrl*>(gFocusMgr.getKeyboardFocus()))
@@ -478,7 +479,7 @@ bool NativePopout::update()
     if (mTitle != floater->getTitle())
     {
         mTitle = floater->getTitle();
-        const std::wstring title = ll_convert<std::wstring>(mTitle + " - Firestorm [Ctrl+Shift+F12 to return]");
+        const std::wstring title = ll_convert<std::wstring>(mTitle + " - " + LLTrans::getString("APP_NAME") + " [Ctrl+Shift+F12 to return]"); // <FS:Trish/> Name the viewer as TrishStorm
         SetWindowTextW(mWindow, title.c_str());
     }
     // Keep the satellite above the viewer even after the main window is

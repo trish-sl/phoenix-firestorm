@@ -3749,7 +3749,7 @@ Al ocultar el botón Hablar se desactiva la función de voz.
 		</form>
 	</notification>
 	<notification name="ModeChange">
-		Cambiar entre los diferentes modos requiere que cierres y reinicies Firestorm.
+		Cambiar entre los diferentes modos requiere que cierres y reinicies [APP_NAME].
 		<usetemplate name="okcancelbuttons" yestext="Cerrar" notext="No cerrar"/>
 	</notification>
 	<notification label="" name="NoClassifieds">

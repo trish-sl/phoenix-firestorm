@@ -5353,8 +5353,8 @@ Tieni presente che non è possibile selezionare "Ambiente condiviso" o "Basato s
 		L'importazione in blocco delle Windlight è terminata.
 	</notification>
 	<notification name="FSAOScriptedNotification">
-		Firestorm Animation Overrider (AO): [AO_MESSAGE]
-		<usetemplate ignoretext="Avvisami quando un oggetto scriptato richiede l'accesso all'AO di Firestorm" name="notifyignore" />
+		[APP_NAME] Animation Overrider (AO): [AO_MESSAGE]
+		<usetemplate ignoretext="Avvisami quando un oggetto scriptato richiede l'accesso all'AO di TrishStorm" name="notifyignore" />
 	</notification>
 	<notification name="WarnForceLoginURL">
 		L'URL della schermata iniziale è stato sovrascritto a scopo di test.

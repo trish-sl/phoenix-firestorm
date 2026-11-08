@@ -1,36 +1,45 @@
-<img align="left" width="100" height="100" src="doc/firestorm_256.png" alt="Logo of Firestorm viewer"/>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="doc/trishstorm_mark_dark.png">
+  <img align="left" width="100" height="100" src="doc/trishstorm_mark_light.png" alt="TrishStorm logo">
+</picture>
 
-**[Firestorm](https://www.firestormviewer.org) is a free client for 3D virtual worlds such as Second Life and various OpenSim worlds where users can create, connect and chat with others from around the world.**
+**TrishStorm is a personal development fork of the [Firestorm](https://github.com/FirestormViewer/phoenix-firestorm) viewer for Second Life.**
 
-This repository contains the official source code for the Firestorm viewer.
+<br clear="left">
 
-## Open Source
+> [!WARNING]
+> **TrishStorm is not a released viewer, and there are no downloads.** It is a dev test viewer. Branches here can contain experimental, unfinished or broken code, and history is frequently rewritten. Do not use it as your daily viewer, and please don't ask the Firestorm support team for help with it.
 
-Firestorm is a third party viewer derived from the official [Second Life](https://github.com/secondlife/viewer) client. The client codebase has been open source since 2007 and is available under the LGPL license.
+## What this fork is for
 
-## Download
+TrishStorm is where I (TrishAce) develop and test fixes and improvements before upstreaming to the official [Second Life viewer](https://github.com/secondlife/viewer) and to [Firestorm](https://github.com/FirestormViewer/phoenix-firestorm), where they fit. Work here includes:
 
-Pre-built versions of the viewer releases for Windows, Mac and Linux can be downloaded from the [official website](https://www.firestormviewer.org/choose-your-platform/).
+- bug fixes for issues found in the upstream viewers;
+- rendering and performance work: shadows, lighting, post effects, culling, and moving work off the main thread;
+- other experiments that need testing in-world before they are proposed upstream.
 
-## Build Instructions
+Most new features are behind settings and are off by default. Changes that are ready are offered back as pull requests to the upstream projects, following their own contribution rules. Anything that isn't reeady for upstream stays here as an experiment. No-submitted code is often left in a "dirty" state during testing, there's no guarantee that the code you are looking at is proper or functional.
 
-Build instructions for each operating system can be found using the links below and in the official [wiki](https://wiki.firestormviewer.org).
+## Relationship to Firestorm and Second Life
+
+TrishStorm is based on Firestorm and aims to stay relatively on par with it, it is a third party viewer derived from the official Second Life viewer. All credit for those projects goes to The Phoenix Firestorm Project, Inc., Linden Lab, and their contributors. TrishStorm is not affiliated with or endorsed by either of them.
+
+The code is available under the LGPL, like the projects it derives from. See [LICENSE](LICENSE) and the license headers in each file.
+
+Use of this code in-world follows the Second Life [Third Party Viewer Policy](https://secondlife.com/corporate/third-party-viewers) and the [Second Life Code of Conduct](https://github.com/secondlife/viewer?tab=coc-ov-file).
+
+## Building
+
+The build process is the same as Firestorm's:
 
 - [Windows](doc/building_windows.md)
 - [Mac](doc/building_macos.md)
 - [Linux](doc/building_linux.md)
 
 > [!NOTE]
-> We do not provide support for compiling the viewer or issues resulting from using a self-compiled viewer. However, there is a self-compilers group within Second Life that can be joined to ask questions related to compiling the viewer: [Firestorm Self Compilers](https://tinyurl.com/firestorm-self-compilers)
+> Self-compiled builds of this fork are unsupported. For Firestorm itself, use the official builds from the [Firestorm website](https://www.firestormviewer.org/choose-your-platform/).
 
-## Contribute
+## Upstream projects
 
-Help make Firestorm better! You can get involved with improvements by filing bugs and suggesting enhancements via [JIRA](https://jira.firestormviewer.org) or [creating pull requests](CONTRIBUTING.md).
-
-## Community Respect
-
-This section is guided by the [TPV Policy](https://secondlife.com/corporate/third-party-viewers) and the [Second Life Code of Conduct](https://github.com/secondlife/viewer?tab=coc-ov-file).
-
-Firestorm code is made available during ongoing development, with the **master** branch representing the current nightly build. Developers and self-compilers are encouraged to work on their own forks and contribute back via pull requests, as detailed in the [contributing guide](CONTRIBUTING.md).
-
-If you intend to use our code for your own viewer beyond personal use, please only use code from official release branches (for example, `Firestorm_7.1.13`), rather than from pre-release/preview or nightly builds.
+- **Firestorm:** [source](https://github.com/FirestormViewer/phoenix-firestorm), [bug tracker](https://jira.firestormviewer.org), [contributing guide](CONTRIBUTING.md)
+- **Second Life viewer:** [source](https://github.com/secondlife/viewer)

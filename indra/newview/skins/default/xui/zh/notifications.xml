@@ -5864,8 +5864,8 @@ gzip級別6壓縮的測試結果，對[FILE]檔案大小[SIZE] KB：
 		大氣彩現設定批次匯入完成。
 	</notification>
 	<notification name="FSAOScriptedNotification">
-		Firestorm 動畫覆蓋器：[AO_MESSAGE]
-		<usetemplate ignoretext="當Firestorm動畫覆蓋器被指令碼物件訪問時提醒我" name="notifyignore"/>
+		[APP_NAME] 動畫覆蓋器：[AO_MESSAGE]
+		<usetemplate ignoretext="當TrishStorm動畫覆蓋器被指令碼物件訪問時提醒我" name="notifyignore"/>
 	</notification>
 	<notification name="WarnForceLoginURL">
 		登錄螢幕首頁的 URL 被覆蓋用於測試目的。

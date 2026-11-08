@@ -15119,9 +15119,9 @@ Bulk import of Windlights has finished.
    <unique combine = "cancel_old">
      <context>FSAOScriptedNotification</context>
    </unique>
-Firestorm Animation Overrider: [AO_MESSAGE]
+[APP_NAME] Animation Overrider: [AO_MESSAGE]
    <usetemplate
-    ignoretext="Warn me when the Firestorm Animation Overrider gets accessed by a scripted object"
+    ignoretext="Warn me when the TrishStorm Animation Overrider gets accessed by a scripted object"
     name="notifyignore"/>
   </notification>
   <notification
