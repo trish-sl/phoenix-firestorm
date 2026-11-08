@@ -924,7 +924,7 @@
              bottom="-1">
                 <panel
                  follows="left|top"
-                 height="2572"
+                 height="2738"
                  layout="topleft"
                  left="0"
                  name="experimental_effects_settings"
@@ -953,7 +953,7 @@
                      width="120">
                         <button.commit_callback
                          function="FSExperimental.ResetSection"
-                         parameter="FSRenderSunRays,FSRenderSunRaysStrength,FSRenderSunRaysDensity,FSRenderSunRaysAnisotropy,FSRenderSunRaysDistance,FSRenderSunRaysSteps,FSRenderSunRaysResolution,FSRenderSunRaysHeightFalloff,FSRenderSunRaysSkyColor,FSRenderSunRaysTint,FSRenderSunRaysSkyHaze,FSRenderSunRaysMoon" />
+                         parameter="FSRenderSunRays,FSRenderSunRaysStrength,FSRenderSunRaysDensity,FSRenderSunRaysAnisotropy,FSRenderSunRaysDistance,FSRenderSunRaysSteps,FSRenderSunRaysResolution,FSRenderSunRaysHeightFalloff,FSRenderSunRaysSkyColor,FSRenderSunRaysTint,FSRenderSunRaysSkyHaze,FSRenderSunRaysMoon,FSRenderDustMotes,FSRenderDustMotesDensity,FSRenderDustMotesSize,FSRenderDustMotesBrightness,FSRenderDustMotesRange,FSRenderDustMotesTurbulence" />
                     </button>
                     <check_box
                      control_name="FSRenderSunRays"
@@ -1247,6 +1247,147 @@
                      tool_tip="EXPERIMENTAL. While the sun is down, draw much fainter rays from the moon, scaled by its brightness in the sky settings."
                      top="372"
                      width="455" />
+                    <check_box
+                     control_name="FSRenderDustMotes"
+                     follows="left|top"
+                     height="20"
+                     label="Dust motes in light shafts"
+                     layout="topleft"
+                     left="15"
+                     name="fs_fsrenderdustmotes"
+                     tool_tip="EXPERIMENTAL. Tiny sparkling specks of dust drifting in sunbeams and projector cones, like dust in the sun through a window. Only visible where the sun rays or the volumetric projector light (further down) are on and lighting the air."
+                     top="402"
+                     width="475" />
+                    <text
+                     follows="left|top"
+                     height="18"
+                     layout="topleft"
+                     left="35"
+                     name="fs_fsrenderdustmotesdensity_label"
+                     tool_tip="EXPERIMENTAL. Dust motes per cubic metre of air."
+                     top="430"
+                     width="285">
+                        Dust density
+                    </text>
+                    <spinner
+                     control_name="FSRenderDustMotesDensity"
+                     decimal_digits="1"
+                     enabled_control="FSRenderDustMotes"
+                     follows="left|top"
+                     height="20"
+                     increment="0.1"
+                     layout="topleft"
+                     left="330"
+                     max_val="8.0"
+                     min_val="0.1"
+                     name="fs_fsrenderdustmotesdensity"
+                     tool_tip="EXPERIMENTAL. Dust motes per cubic metre of air."
+                     top="428"
+                     width="100" />
+                    <text
+                     follows="left|top"
+                     height="18"
+                     layout="topleft"
+                     left="35"
+                     name="fs_fsrenderdustmotessize_label"
+                     tool_tip="EXPERIMENTAL. How big a dust mote looks on screen, in pixels. Motes right in front of the camera grow to at most twice this."
+                     top="458"
+                     width="285">
+                        Dust mote size (pixels)
+                    </text>
+                    <spinner
+                     control_name="FSRenderDustMotesSize"
+                     decimal_digits="2"
+                     enabled_control="FSRenderDustMotes"
+                     follows="left|top"
+                     height="20"
+                     increment="0.25"
+                     layout="topleft"
+                     left="330"
+                     max_val="4.0"
+                     min_val="0.5"
+                     name="fs_fsrenderdustmotessize"
+                     tool_tip="EXPERIMENTAL. How big a dust mote looks on screen, in pixels. Motes right in front of the camera grow to at most twice this."
+                     top="456"
+                     width="100" />
+                    <text
+                     follows="left|top"
+                     height="18"
+                     layout="topleft"
+                     left="35"
+                     name="fs_fsrenderdustmotesbrightness_label"
+                     tool_tip="EXPERIMENTAL. How brightly dust motes glint. They are brightest when you look toward the light."
+                     top="486"
+                     width="285">
+                        Dust brightness
+                    </text>
+                    <spinner
+                     control_name="FSRenderDustMotesBrightness"
+                     decimal_digits="1"
+                     enabled_control="FSRenderDustMotes"
+                     follows="left|top"
+                     height="20"
+                     increment="0.1"
+                     layout="topleft"
+                     left="330"
+                     max_val="10.0"
+                     min_val="0.0"
+                     name="fs_fsrenderdustmotesbrightness"
+                     tool_tip="EXPERIMENTAL. How brightly dust motes glint. They are brightest when you look toward the light."
+                     top="484"
+                     width="100" />
+                    <text
+                     follows="left|top"
+                     height="18"
+                     layout="topleft"
+                     left="35"
+                     name="fs_fsrenderdustmotesrange_label"
+                     tool_tip="EXPERIMENTAL. How far from the camera dust motes are drawn, in metres. They fade out toward this distance."
+                     top="514"
+                     width="285">
+                        Dust range (m)
+                    </text>
+                    <spinner
+                     control_name="FSRenderDustMotesRange"
+                     decimal_digits="0"
+                     enabled_control="FSRenderDustMotes"
+                     follows="left|top"
+                     height="20"
+                     increment="1.0"
+                     layout="topleft"
+                     left="330"
+                     max_val="30.0"
+                     min_val="2.0"
+                     name="fs_fsrenderdustmotesrange"
+                     tool_tip="EXPERIMENTAL. How far from the camera dust motes are drawn, in metres. They fade out toward this distance."
+                     top="512"
+                     width="100" />
+                    <text
+                     follows="left|top"
+                     height="18"
+                     layout="topleft"
+                     left="35"
+                     name="fs_fsrenderdustmotesturbulence_label"
+                     tool_tip="EXPERIMENTAL. How much the dust motes wobble and swirl as they drift. 0 drifts smoothly in straight lines, 2 is restless air."
+                     top="546"
+                     width="285">
+                        Dust turbulence
+                    </text>
+                    <spinner
+                     control_name="FSRenderDustMotesTurbulence"
+                     decimal_digits="1"
+                     enabled_control="FSRenderDustMotes"
+                     follows="left|top"
+                     height="20"
+                     increment="0.1"
+                     layout="topleft"
+                     left="330"
+                     max_val="2.0"
+                     min_val="0.0"
+                     name="fs_fsrenderdustmotesturbulence"
+                     tool_tip="EXPERIMENTAL. How much the dust motes wobble and swirl as they drift. 0 drifts smoothly in straight lines, 2 is restless air."
+                     top="544"
+                     width="100" />
                     <text
                      follows="left|top"
                      font="SansSerifBold"
@@ -1254,7 +1395,7 @@
                      layout="topleft"
                      left="15"
                      name="bloom_heading"
-                     top="408"
+                     top="574"
                      width="340">
                         Bloom
                     </text>
@@ -1266,7 +1407,7 @@
                      left="370"
                      name="reset_bloom_heading"
                      tool_tip="Set every option in &quot;Bloom&quot; back to its default value."
-                     top="407"
+                     top="573"
                      width="120">
                         <button.commit_callback
                          function="FSExperimental.ResetSection"
@@ -1281,7 +1422,7 @@
                      left="15"
                      name="bloom"
                      tool_tip="EXPERIMENTAL. Bright parts of the image glow onto their surroundings: sun on water, lamps, emissive surfaces. Works from the full brightness range of the scene, separately from the classic glow."
-                     top="434"
+                     top="600"
                      width="475" />
                     <text
                      follows="left|top"
@@ -1290,7 +1431,7 @@
                      left="35"
                      name="bloom_strength_label"
                      tool_tip="EXPERIMENTAL. How much bloom is added."
-                     top="464"
+                     top="630"
                      width="285">
                         Strength
                     </text>
@@ -1307,7 +1448,7 @@
                      min_val="0"
                      name="bloom_strength"
                      tool_tip="EXPERIMENTAL. How much bloom is added."
-                     top="462"
+                     top="628"
                      width="100" />
                     <text
                      follows="left|top"
@@ -1316,7 +1457,7 @@
                      left="35"
                      name="bloom_threshold_label"
                      tool_tip="EXPERIMENTAL. Brightness above which light blooms. 1 is full white on screen, lower values let more of the image bloom."
-                     top="492"
+                     top="658"
                      width="285">
                         Threshold
                     </text>
@@ -1333,7 +1474,7 @@
                      min_val="0"
                      name="bloom_threshold"
                      tool_tip="EXPERIMENTAL. Brightness above which light blooms. 1 is full white on screen, lower values let more of the image bloom."
-                     top="490"
+                     top="656"
                      width="100" />
                     <text
                      follows="left|top"
@@ -1342,7 +1483,7 @@
                      left="35"
                      name="bloom_knee_label"
                      tool_tip="EXPERIMENTAL. How gradually bloom fades in below the threshold."
-                     top="520"
+                     top="686"
                      width="285">
                         Softness
                     </text>
@@ -1359,7 +1500,7 @@
                      min_val="0"
                      name="bloom_knee"
                      tool_tip="EXPERIMENTAL. How gradually bloom fades in below the threshold."
-                     top="518"
+                     top="684"
                      width="100" />
                     <text
                      follows="left|top"
@@ -1368,7 +1509,7 @@
                      left="35"
                      name="bloom_levels_label"
                      tool_tip="EXPERIMENTAL. Blur levels, each twice as wide as the last. More gives a wider, softer bloom."
-                     top="548"
+                     top="714"
                      width="285">
                         Size (levels)
                     </text>
@@ -1385,7 +1526,7 @@
                      min_val="1"
                      name="bloom_levels"
                      tool_tip="EXPERIMENTAL. Blur levels, each twice as wide as the last. More gives a wider, softer bloom."
-                     top="546"
+                     top="712"
                      width="100" />
                     <text
                      follows="left|top"
@@ -1394,7 +1535,7 @@
                      layout="topleft"
                      left="15"
                      name="color_grade_heading"
-                     top="582"
+                     top="748"
                      width="340">
                         Colour grading
                     </text>
@@ -1406,7 +1547,7 @@
                      left="370"
                      name="reset_color_grade_heading"
                      tool_tip="Set every option in &quot;Colour grading&quot; back to its default value."
-                     top="581"
+                     top="747"
                      width="120">
                         <button.commit_callback
                          function="FSExperimental.ResetSection"
@@ -1421,7 +1562,7 @@
                      left="15"
                      name="color_grade"
                      tool_tip="EXPERIMENTAL. Adjust the colour of the finished image, after tone mapping, like a photo editor."
-                     top="608"
+                     top="774"
                      width="475" />
                     <text
                      follows="left|top"
@@ -1430,7 +1571,7 @@
                      left="35"
                      name="color_grade_temperature_label"
                      tool_tip="EXPERIMENTAL. 6500 is neutral. Lower values warm the image toward orange, higher values cool it toward blue."
-                     top="638"
+                     top="804"
                      width="285">
                         White balance (Kelvin)
                     </text>
@@ -1447,7 +1588,7 @@
                      min_val="2000"
                      name="color_grade_temperature"
                      tool_tip="EXPERIMENTAL. 6500 is neutral. Lower values warm the image toward orange, higher values cool it toward blue."
-                     top="636"
+                     top="802"
                      width="100" />
                     <text
                      follows="left|top"
@@ -1456,7 +1597,7 @@
                      left="35"
                      name="color_grade_tint_label"
                      tool_tip="EXPERIMENTAL. Positive values shift the image toward green, negative toward magenta."
-                     top="666"
+                     top="832"
                      width="285">
                         Tint
                     </text>
@@ -1473,7 +1614,7 @@
                      min_val="-1"
                      name="color_grade_tint"
                      tool_tip="EXPERIMENTAL. Positive values shift the image toward green, negative toward magenta."
-                     top="664"
+                     top="830"
                      width="100" />
                     <text
                      follows="left|top"
@@ -1482,7 +1623,7 @@
                      left="35"
                      name="color_grade_lift_label"
                      tool_tip="EXPERIMENTAL. Raises the blacks (positive, faded look) or crushes them (negative), without moving white."
-                     top="694"
+                     top="860"
                      width="285">
                         Lift (blacks)
                     </text>
@@ -1499,7 +1640,7 @@
                      min_val="-0.5"
                      name="color_grade_lift"
                      tool_tip="EXPERIMENTAL. Raises the blacks (positive, faded look) or crushes them (negative), without moving white."
-                     top="692"
+                     top="858"
                      width="100" />
                     <text
                      follows="left|top"
@@ -1508,7 +1649,7 @@
                      left="35"
                      name="color_grade_gamma_label"
                      tool_tip="EXPERIMENTAL. Brightens (above 1) or darkens (below 1) the midtones, leaving black and white in place."
-                     top="722"
+                     top="888"
                      width="285">
                         Gamma (midtones)
                     </text>
@@ -1525,7 +1666,7 @@
                      min_val="0.25"
                      name="color_grade_gamma"
                      tool_tip="EXPERIMENTAL. Brightens (above 1) or darkens (below 1) the midtones, leaving black and white in place."
-                     top="720"
+                     top="886"
                      width="100" />
                     <text
                      follows="left|top"
@@ -1534,7 +1675,7 @@
                      left="35"
                      name="color_grade_gain_label"
                      tool_tip="EXPERIMENTAL. Scales the image toward white."
-                     top="750"
+                     top="916"
                      width="285">
                         Gain (highlights)
                     </text>
@@ -1551,7 +1692,7 @@
                      min_val="0"
                      name="color_grade_gain"
                      tool_tip="EXPERIMENTAL. Scales the image toward white."
-                     top="748"
+                     top="914"
                      width="100" />
                     <text
                      follows="left|top"
@@ -1560,7 +1701,7 @@
                      left="35"
                      name="color_grade_contrast_label"
                      tool_tip="EXPERIMENTAL. Contrast around mid grey."
-                     top="778"
+                     top="944"
                      width="285">
                         Contrast
                     </text>
@@ -1577,7 +1718,7 @@
                      min_val="0"
                      name="color_grade_contrast"
                      tool_tip="EXPERIMENTAL. Contrast around mid grey."
-                     top="776"
+                     top="942"
                      width="100" />
                     <text
                      follows="left|top"
@@ -1586,7 +1727,7 @@
                      left="35"
                      name="color_grade_saturation_label"
                      tool_tip="EXPERIMENTAL. 0 is black and white."
-                     top="806"
+                     top="972"
                      width="285">
                         Saturation
                     </text>
@@ -1603,7 +1744,7 @@
                      min_val="0"
                      name="color_grade_saturation"
                      tool_tip="EXPERIMENTAL. 0 is black and white."
-                     top="804"
+                     top="970"
                      width="100" />
                     <text
                      follows="left|top"
@@ -1612,7 +1753,7 @@
                      left="35"
                      name="color_grade_vibrance_label"
                      tool_tip="EXPERIMENTAL. Saturates muted colours more than ones that are already strong, which keeps skin from going orange. Negative values mute them."
-                     top="834"
+                     top="1000"
                      width="285">
                         Vibrance
                     </text>
@@ -1629,7 +1770,7 @@
                      min_val="-1"
                      name="color_grade_vibrance"
                      tool_tip="EXPERIMENTAL. Saturates muted colours more than ones that are already strong, which keeps skin from going orange. Negative values mute them."
-                     top="832"
+                     top="998"
                      width="100" />
                     <text
                      follows="left|top"
@@ -1638,7 +1779,7 @@
                      left="35"
                      name="color_grade_shadow_tint_label"
                      tool_tip="EXPERIMENTAL. Colour the shadows are tinted toward. White leaves them alone."
-                     top="862"
+                     top="1028"
                      width="285">
                         Shadow tint
                     </text>
@@ -1654,7 +1795,7 @@
                      left="330"
                      name="color_grade_shadow_tint"
                      tool_tip="EXPERIMENTAL. Colour the shadows are tinted toward. White leaves them alone."
-                     top="860"
+                     top="1026"
                      width="44" />
                     <text
                      follows="left|top"
@@ -1663,7 +1804,7 @@
                      left="35"
                      name="color_grade_highlight_tint_label"
                      tool_tip="EXPERIMENTAL. Colour the highlights are tinted toward. White leaves them alone."
-                     top="890"
+                     top="1056"
                      width="285">
                         Highlight tint
                     </text>
@@ -1679,7 +1820,7 @@
                      left="330"
                      name="color_grade_highlight_tint"
                      tool_tip="EXPERIMENTAL. Colour the highlights are tinted toward. White leaves them alone."
-                     top="888"
+                     top="1054"
                      width="44" />
                     <text
                      follows="left|top"
@@ -1688,7 +1829,7 @@
                      left="35"
                      name="color_grade_split_balance_label"
                      tool_tip="EXPERIMENTAL. Moves the line between the shadow and highlight tints. Positive gives the highlight tint more of the image."
-                     top="918"
+                     top="1084"
                      width="285">
                         Shadow/highlight balance
                     </text>
@@ -1705,7 +1846,7 @@
                      min_val="-1"
                      name="color_grade_split_balance"
                      tool_tip="EXPERIMENTAL. Moves the line between the shadow and highlight tints. Positive gives the highlight tint more of the image."
-                     top="916"
+                     top="1082"
                      width="100" />
                     <text
                      follows="left|top"
@@ -1714,7 +1855,7 @@
                      left="35"
                      name="color_grade_lut_label"
                      tool_tip="EXPERIMENTAL. A .cube file, as exported by most grading tools, or a PNG strip (size*size by size pixels, green increasing downward). A full path, or just the file name of one in the luts folder inside your user settings folder. Leave empty for none."
-                     top="946"
+                     top="1112"
                      width="285">
                         Lookup table file
                     </text>
@@ -1728,7 +1869,7 @@
                      max_length_bytes="1024"
                      name="color_grade_lut"
                      tool_tip="EXPERIMENTAL. A .cube file, as exported by most grading tools, or a PNG strip (size*size by size pixels, green increasing downward). A full path, or just the file name of one in the luts folder inside your user settings folder. Leave empty for none."
-                     top="944"
+                     top="1110"
                      width="160" />
                     <text
                      follows="left|top"
@@ -1737,7 +1878,7 @@
                      left="35"
                      name="color_grade_lut_strength_label"
                      tool_tip="EXPERIMENTAL. How much of the lookup table is applied."
-                     top="974"
+                     top="1140"
                      width="285">
                         Lookup table strength
                     </text>
@@ -1754,7 +1895,7 @@
                      min_val="0"
                      name="color_grade_lut_strength"
                      tool_tip="EXPERIMENTAL. How much of the lookup table is applied."
-                     top="972"
+                     top="1138"
                      width="100" />
                     <text
                      follows="left|top"
@@ -1763,7 +1904,7 @@
                      layout="topleft"
                      left="15"
                      name="lens_heading"
-                     top="1008"
+                     top="1174"
                      width="340">
                         Lens effects
                     </text>
@@ -1775,7 +1916,7 @@
                      left="370"
                      name="reset_lens_heading"
                      tool_tip="Set every option in &quot;Lens effects&quot; back to its default value."
-                     top="1007"
+                     top="1173"
                      width="120">
                         <button.commit_callback
                          function="FSExperimental.ResetSection"
@@ -1788,7 +1929,7 @@
                      left="35"
                      name="chromatic_aberration_label"
                      tool_tip="EXPERIMENTAL. Red and blue fringes that grow toward the edges of the frame, as with a real lens. The value is the fringe width at the corners. 0 is off."
-                     top="1036"
+                     top="1202"
                      width="285">
                         Chromatic aberration (pixels)
                     </text>
@@ -1804,7 +1945,7 @@
                      min_val="0"
                      name="chromatic_aberration"
                      tool_tip="EXPERIMENTAL. Red and blue fringes that grow toward the edges of the frame, as with a real lens. The value is the fringe width at the corners. 0 is off."
-                     top="1034"
+                     top="1200"
                      width="100" />
                     <check_box
                      control_name="FSRenderChromaticAberrationDoFOnly"
@@ -1815,7 +1956,7 @@
                      left="15"
                      name="chromatic_aberration_dof"
                      tool_tip="EXPERIMENTAL. Limit chromatic aberration to out of focus areas, scaled by how blurred they are. Needs depth of field on."
-                     top="1062"
+                     top="1228"
                      width="475" />
                     <text
                      follows="left|top"
@@ -1824,7 +1965,7 @@
                      left="35"
                      name="lens_flare_label"
                      tool_tip="EXPERIMENTAL. Flare, glare and ghosts when the sun or moon is in view and not hidden behind anything. 0 is off."
-                     top="1092"
+                     top="1258"
                      width="285">
                         Lens flare
                     </text>
@@ -1840,7 +1981,7 @@
                      min_val="0"
                      name="lens_flare"
                      tool_tip="EXPERIMENTAL. Flare, glare and ghosts when the sun or moon is in view and not hidden behind anything. 0 is off."
-                     top="1090"
+                     top="1256"
                      width="100" />
                     <text
                      follows="left|top"
@@ -1849,7 +1990,7 @@
                      left="35"
                      name="film_grain_label"
                      tool_tip="EXPERIMENTAL. Film grain, strongest in the midtones. 0 is off."
-                     top="1120"
+                     top="1286"
                      width="285">
                         Film grain
                     </text>
@@ -1865,7 +2006,7 @@
                      min_val="0"
                      name="film_grain"
                      tool_tip="EXPERIMENTAL. Film grain, strongest in the midtones. 0 is off."
-                     top="1118"
+                     top="1284"
                      width="100" />
                     <text
                      follows="left|top"
@@ -1874,7 +2015,7 @@
                      left="35"
                      name="film_grain_size_label"
                      tool_tip="EXPERIMENTAL. Size of the grain."
-                     top="1148"
+                     top="1314"
                      width="285">
                         Film grain size (pixels)
                     </text>
@@ -1890,7 +2031,7 @@
                      min_val="1"
                      name="film_grain_size"
                      tool_tip="EXPERIMENTAL. Size of the grain."
-                     top="1146"
+                     top="1312"
                      width="100" />
                     <text
                      follows="left|top"
@@ -1899,7 +2040,7 @@
                      layout="topleft"
                      left="15"
                      name="fs_heading_volumetric_projector_light"
-                     top="1182"
+                     top="1348"
                      width="340">
                         Volumetric projector light
                     </text>
@@ -1911,7 +2052,7 @@
                      left="370"
                      name="reset_fs_heading_volumetric_projector_light"
                      tool_tip="Set every option in &quot;Volumetric projector light&quot; back to its default value."
-                     top="1181"
+                     top="1347"
                      width="120">
                         <button.commit_callback
                          function="FSExperimental.ResetSection"
@@ -1926,7 +2067,7 @@
                      left="15"
                      name="fs_fsrenderspotvolumetric"
                      tool_tip="EXPERIMENTAL. Light cones in the air from projectors and spotlights, for clubs and lamps. Shadowed projectors cast shafts through their shadows; textured projectors (gobos) colour their cones."
-                     top="1208"
+                     top="1374"
                      width="475" />
                     <text
                      follows="left|top"
@@ -1935,7 +2076,7 @@
                      left="35"
                      name="fs_fsrenderspotvolumetricstrength_label"
                      tool_tip="EXPERIMENTAL. Brightness of the light cones."
-                     top="1236"
+                     top="1402"
                      width="285">
                         Strength
                     </text>
@@ -1952,7 +2093,7 @@
                      min_val="0.0"
                      name="fs_fsrenderspotvolumetricstrength"
                      tool_tip="EXPERIMENTAL. Brightness of the light cones."
-                     top="1234"
+                     top="1400"
                      width="100" />
                     <text
                      follows="left|top"
@@ -1961,7 +2102,7 @@
                      left="35"
                      name="fs_fsrenderspotvolumetricdensity_label"
                      tool_tip="EXPERIMENTAL. How thick the air is. Low values are a light haze, high values a smoky room."
-                     top="1264"
+                     top="1430"
                      width="285">
                         Haze density
                     </text>
@@ -1978,7 +2119,7 @@
                      min_val="0.0"
                      name="fs_fsrenderspotvolumetricdensity"
                      tool_tip="EXPERIMENTAL. How thick the air is. Low values are a light haze, high values a smoky room."
-                     top="1262"
+                     top="1428"
                      width="100" />
                     <text
                      follows="left|top"
@@ -1987,7 +2128,7 @@
                      left="35"
                      name="fs_fsrenderspotvolumetricmaxlights_label"
                      tool_tip="EXPERIMENTAL. How many of the nearest projectors get a light cone. Each one costs a ray march at reduced resolution."
-                     top="1292"
+                     top="1458"
                      width="285">
                         Most lights
                     </text>
@@ -2004,7 +2145,7 @@
                      min_val="1"
                      name="fs_fsrenderspotvolumetricmaxlights"
                      tool_tip="EXPERIMENTAL. How many of the nearest projectors get a light cone. Each one costs a ray march at reduced resolution."
-                     top="1290"
+                     top="1456"
                      width="100" />
                     <text
                      follows="left|top"
@@ -2013,7 +2154,7 @@
                      left="35"
                      name="fs_fsrenderspotvolumetricresolution_label"
                      tool_tip="EXPERIMENTAL. Fraction of the screen resolution the cones are marched at. Lower is faster and softer."
-                     top="1320"
+                     top="1486"
                      width="285">
                         Resolution
                     </text>
@@ -2030,7 +2171,7 @@
                      min_val="0.25"
                      name="fs_fsrenderspotvolumetricresolution"
                      tool_tip="EXPERIMENTAL. Fraction of the screen resolution the cones are marched at. Lower is faster and softer."
-                     top="1318"
+                     top="1484"
                      width="100" />
                     <text
                      follows="left|top"
@@ -2039,7 +2180,7 @@
                      left="35"
                      name="fs_fsrenderspotvolumetricsteps_label"
                      tool_tip="EXPERIMENTAL. Samples along each view ray through a light. More is smoother and slower."
-                     top="1348"
+                     top="1514"
                      width="285">
                         Steps
                     </text>
@@ -2056,7 +2197,7 @@
                      min_val="4"
                      name="fs_fsrenderspotvolumetricsteps"
                      tool_tip="EXPERIMENTAL. Samples along each view ray through a light. More is smoother and slower."
-                     top="1346"
+                     top="1512"
                      width="100" />
                     <check_box
                      control_name="FSRenderSpotVolumetricUnshadowed"
@@ -2068,7 +2209,7 @@
                      left="35"
                      name="fs_fsrenderspotvolumetricunshadowed"
                      tool_tip="EXPERIMENTAL. Also give cones to projectors without a shadow map. Their light passes through walls and objects."
-                     top="1374"
+                     top="1540"
                      width="455" />
                     <text
                      follows="left|top"
@@ -2077,7 +2218,7 @@
                      left="35"
                      name="fs_fsrenderspotvolumetricanisotropy_label"
                      tool_tip="EXPERIMENTAL. 0 makes cones equally bright from every side; higher values make them glow most when looking toward the light."
-                     top="1402"
+                     top="1568"
                      width="285">
                         Forward scattering
                     </text>
@@ -2094,7 +2235,7 @@
                      min_val="0.0"
                      name="fs_fsrenderspotvolumetricanisotropy"
                      tool_tip="EXPERIMENTAL. 0 makes cones equally bright from every side; higher values make them glow most when looking toward the light."
-                     top="1400"
+                     top="1566"
                      width="100" />
                     <text
                      follows="left|top"
@@ -2103,7 +2244,7 @@
                      layout="topleft"
                      left="15"
                      name="fs_heading_water"
-                     top="1440"
+                     top="1606"
                      width="340">
                         Water
                     </text>
@@ -2115,7 +2256,7 @@
                      left="370"
                      name="reset_fs_heading_water"
                      tool_tip="Set every option in &quot;Water&quot; back to its default value."
-                     top="1439"
+                     top="1605"
                      width="120">
                         <button.commit_callback
                          function="FSExperimental.ResetSection"
@@ -2130,7 +2271,7 @@
                      left="15"
                      name="fs_fsrenderwatercaustics"
                      tool_tip="EXPERIMENTAL. Moving patterns of sunlight focused by the waves on the sea floor, submerged objects and avatars standing in the water. They fade with depth and with a low sun. Costs a little in the sun lighting pass, only on pixels under the water."
-                     top="1466"
+                     top="1632"
                      width="475" />
                     <text
                      follows="left|top"
@@ -2139,7 +2280,7 @@
                      left="35"
                      name="fs_fsrenderwatercausticsstrength_label"
                      tool_tip="EXPERIMENTAL. Brightness of the caustics, as a fraction of the direct sunlight."
-                     top="1494"
+                     top="1660"
                      width="285">
                         Caustics strength
                     </text>
@@ -2156,7 +2297,7 @@
                      min_val="0.0"
                      name="fs_fsrenderwatercausticsstrength"
                      tool_tip="EXPERIMENTAL. Brightness of the caustics, as a fraction of the direct sunlight."
-                     top="1492"
+                     top="1658"
                      width="100" />
                     <text
                      follows="left|top"
@@ -2165,7 +2306,7 @@
                      left="35"
                      name="fs_fsrenderwatercausticsscale_label"
                      tool_tip="EXPERIMENTAL. Size of the caustic cells in metres."
-                     top="1522"
+                     top="1688"
                      width="285">
                         Caustics size
                     </text>
@@ -2182,7 +2323,7 @@
                      min_val="0.25"
                      name="fs_fsrenderwatercausticsscale"
                      tool_tip="EXPERIMENTAL. Size of the caustic cells in metres."
-                     top="1520"
+                     top="1686"
                      width="100" />
                     <text
                      follows="left|top"
@@ -2191,7 +2332,7 @@
                      left="35"
                      name="fs_fsrenderwatercausticsspeed_label"
                      tool_tip="EXPERIMENTAL. How fast the caustics move. 0 freezes them."
-                     top="1550"
+                     top="1716"
                      width="285">
                         Caustics speed
                     </text>
@@ -2208,7 +2349,7 @@
                      min_val="0.0"
                      name="fs_fsrenderwatercausticsspeed"
                      tool_tip="EXPERIMENTAL. How fast the caustics move. 0 freezes them."
-                     top="1548"
+                     top="1714"
                      width="100" />
                     <check_box
                      control_name="FSRenderWaterFoam"
@@ -2219,7 +2360,7 @@
                      left="15"
                      name="fs_fsrenderwaterfoam"
                      tool_tip="EXPERIMENTAL. A soft, moving band of foam where the water meets land, rocks, boats and anything else standing in it, seen from above and below the surface. Needs transparent water."
-                     top="1576"
+                     top="1742"
                      width="475" />
                     <text
                      follows="left|top"
@@ -2228,7 +2369,7 @@
                      left="35"
                      name="fs_fsrenderwaterfoamwidth_label"
                      tool_tip="EXPERIMENTAL. Water depth in metres at which the foam band ends."
-                     top="1604"
+                     top="1770"
                      width="285">
                         Foam width
                     </text>
@@ -2245,7 +2386,7 @@
                      min_val="0.05"
                      name="fs_fsrenderwaterfoamwidth"
                      tool_tip="EXPERIMENTAL. Water depth in metres at which the foam band ends."
-                     top="1602"
+                     top="1768"
                      width="100" />
                     <text
                      follows="left|top"
@@ -2254,7 +2395,7 @@
                      left="35"
                      name="fs_fsrenderwaterfoamstrength_label"
                      tool_tip="EXPERIMENTAL. Opacity of the foam."
-                     top="1632"
+                     top="1798"
                      width="285">
                         Foam strength
                     </text>
@@ -2271,7 +2412,7 @@
                      min_val="0.0"
                      name="fs_fsrenderwaterfoamstrength"
                      tool_tip="EXPERIMENTAL. Opacity of the foam."
-                     top="1630"
+                     top="1796"
                      width="100" />
                     <check_box
                      control_name="FSRenderSunGlints"
@@ -2282,7 +2423,7 @@
                      left="15"
                      name="fs_fsrendersunglints"
                      tool_tip="EXPERIMENTAL. Sparkling highlights where the waves catch the sun, the glitter around the sun's reflection. They follow the sun colour and sun shadows and flicker as the waves move. Costs a little on water pixels only. Changing it rebuilds the shaders."
-                     top="1662"
+                     top="1828"
                      width="475" />
                     <text
                      follows="left|top"
@@ -2291,7 +2432,7 @@
                      left="35"
                      name="fs_fsrendersunglintsintensity_label"
                      tool_tip="EXPERIMENTAL. How bright the sun glints are."
-                     top="1690"
+                     top="1856"
                      width="285">
                         Glint brightness
                     </text>
@@ -2308,7 +2449,7 @@
                      min_val="0.0"
                      name="fs_fsrendersunglintsintensity"
                      tool_tip="EXPERIMENTAL. How bright the sun glints are."
-                     top="1688"
+                     top="1854"
                      width="100" />
                     <text
                      follows="left|top"
@@ -2317,7 +2458,7 @@
                      left="35"
                      name="fs_fsrendersunglintsdensity_label"
                      tool_tip="EXPERIMENTAL. How many sun glints there are."
-                     top="1718"
+                     top="1884"
                      width="285">
                         Glint density
                     </text>
@@ -2334,7 +2475,7 @@
                      min_val="0.1"
                      name="fs_fsrendersunglintsdensity"
                      tool_tip="EXPERIMENTAL. How many sun glints there are."
-                     top="1716"
+                     top="1882"
                      width="100" />
                     <text
                      follows="left|top"
@@ -2343,7 +2484,7 @@
                      layout="topleft"
                      left="15"
                      name="fs_heading_lens_dirt"
-                     top="1752"
+                     top="1918"
                      width="340">
                         Lens dirt
                     </text>
@@ -2355,7 +2496,7 @@
                      left="370"
                      name="reset_fs_heading_lens_dirt"
                      tool_tip="Set every option in &quot;Lens dirt&quot; back to its default value."
-                     top="1751"
+                     top="1917"
                      width="120">
                         <button.commit_callback
                          function="FSExperimental.ResetSection"
@@ -2371,7 +2512,7 @@
                      left="15"
                      name="fs_fsrenderbloomlensdirt"
                      tool_tip="EXPERIMENTAL. Smudges and specks on the lens that light up where bloom falls on them, as with bright lights or the sun in a camera. Needs bloom."
-                     top="1778"
+                     top="1944"
                      width="475" />
                     <text
                      follows="left|top"
@@ -2380,7 +2521,7 @@
                      left="35"
                      name="fs_fsrenderbloomlensdirtstrength_label"
                      tool_tip="EXPERIMENTAL. How much the dirt adds to the bloom where it lies."
-                     top="1806"
+                     top="1972"
                      width="285">
                         Lens dirt strength
                     </text>
@@ -2397,7 +2538,7 @@
                      min_val="0.0"
                      name="fs_fsrenderbloomlensdirtstrength"
                      tool_tip="EXPERIMENTAL. How much the dirt adds to the bloom where it lies."
-                     top="1804"
+                     top="1970"
                      width="100" />
                     <text
                      follows="left|top"
@@ -2406,7 +2547,7 @@
                      layout="topleft"
                      left="15"
                      name="fs_heading_exposure_and_tone_mapping"
-                     top="1846"
+                     top="2012"
                      width="340">
                         Exposure and tone mapping
                     </text>
@@ -2418,7 +2559,7 @@
                      left="370"
                      name="reset_fs_heading_exposure_and_tone_mapping"
                      tool_tip="Set every option in &quot;Exposure and tone mapping&quot; back to its default value."
-                     top="1845"
+                     top="2011"
                      width="120">
                         <button.commit_callback
                          function="FSExperimental.ResetSection"
@@ -2433,7 +2574,7 @@
                      left="15"
                      name="fs_fsrenderlocaltonemap"
                      tool_tip="EXPERIMENTAL. Evens out large differences in brightness, such as a room beside a bright window, while keeping fine detail and contrast. Applied before the tonemapper. Costs a small quarter resolution pass."
-                     top="1872"
+                     top="2038"
                      width="475" />
                     <text
                      follows="left|top"
@@ -2442,7 +2583,7 @@
                      left="35"
                      name="fs_fsrenderexposurespeedtobright_label"
                      tool_tip="EXPERIMENTAL. How fast auto exposure adjusts when the scene gets brighter, as a multiple of the normal speed. 1 is the default."
-                     top="1900"
+                     top="2066"
                      width="285">
                         Adapt to bright speed
                     </text>
@@ -2458,7 +2599,7 @@
                      min_val="0.1"
                      name="fs_fsrenderexposurespeedtobright"
                      tool_tip="EXPERIMENTAL. How fast auto exposure adjusts when the scene gets brighter, as a multiple of the normal speed. 1 is the default."
-                     top="1898"
+                     top="2064"
                      width="100" />
                     <text
                      follows="left|top"
@@ -2467,7 +2608,7 @@
                      left="35"
                      name="fs_fsrenderexposurespeedtodark_label"
                      tool_tip="EXPERIMENTAL. How fast auto exposure adjusts when the scene gets darker, as a multiple of the normal speed. Real eyes adapt to darkness more slowly than to light. 1 is the default."
-                     top="1928"
+                     top="2094"
                      width="285">
                         Adapt to dark speed
                     </text>
@@ -2483,7 +2624,7 @@
                      min_val="0.1"
                      name="fs_fsrenderexposurespeedtodark"
                      tool_tip="EXPERIMENTAL. How fast auto exposure adjusts when the scene gets darker, as a multiple of the normal speed. Real eyes adapt to darkness more slowly than to light. 1 is the default."
-                     top="1926"
+                     top="2092"
                      width="100" />
                     <text
                      follows="left|top"
@@ -2492,7 +2633,7 @@
                      left="35"
                      name="fs_fsrenderexposurecenterweight_label"
                      tool_tip="EXPERIMENTAL. How much auto exposure favours the middle of the screen. 0 meters the whole view; 1 only the centre, so a bright sky at the edges doesn't darken a portrait."
-                     top="1956"
+                     top="2122"
                      width="285">
                         Centre weighted metering
                     </text>
@@ -2508,7 +2649,7 @@
                      min_val="0"
                      name="fs_fsrenderexposurecenterweight"
                      tool_tip="EXPERIMENTAL. How much auto exposure favours the middle of the screen. 0 meters the whole view; 1 only the centre, so a bright sky at the edges doesn't darken a portrait."
-                     top="1954"
+                     top="2120"
                      width="100" />
                     <text
                      follows="left|top"
@@ -2517,7 +2658,7 @@
                      left="35"
                      name="fs_fsrenderexposurerangelimit_label"
                      tool_tip="EXPERIMENTAL. Limits how far auto exposure can brighten or darken, in stops either side of the middle of its range. 0 means no limit."
-                     top="1984"
+                     top="2150"
                      width="285">
                         Adaptation range limit (stops)
                     </text>
@@ -2533,7 +2674,7 @@
                      min_val="0"
                      name="fs_fsrenderexposurerangelimit"
                      tool_tip="EXPERIMENTAL. Limits how far auto exposure can brighten or darken, in stops either side of the middle of its range. 0 means no limit."
-                     top="1982"
+                     top="2148"
                      width="100" />
                     <text
                      follows="left|top"
@@ -2542,7 +2683,7 @@
                      left="35"
                      name="fs_fsrenderlocaltonemapstrength_label"
                      tool_tip="EXPERIMENTAL. How much large scale brightness differences are reduced. 0 leaves them; 1 evens them out completely."
-                     top="2012"
+                     top="2178"
                      width="285">
                         Local tone mapping strength
                     </text>
@@ -2559,7 +2700,7 @@
                      min_val="0"
                      name="fs_fsrenderlocaltonemapstrength"
                      tool_tip="EXPERIMENTAL. How much large scale brightness differences are reduced. 0 leaves them; 1 evens them out completely."
-                     top="2010"
+                     top="2176"
                      width="100" />
                     <text
                      follows="left|top"
@@ -2568,7 +2709,7 @@
                      left="35"
                      name="fs_fsrenderlocaltonemapdetail_label"
                      tool_tip="EXPERIMENTAL. Multiplies the fine detail kept on top of the evened out lighting. 1 keeps it as is; higher values add local contrast but can show halos at bright edges."
-                     top="2040"
+                     top="2206"
                      width="285">
                         Local detail boost
                     </text>
@@ -2585,7 +2726,7 @@
                      min_val="0"
                      name="fs_fsrenderlocaltonemapdetail"
                      tool_tip="EXPERIMENTAL. Multiplies the fine detail kept on top of the evened out lighting. 1 keeps it as is; higher values add local contrast but can show halos at bright edges."
-                     top="2038"
+                     top="2204"
                      width="100" />
                     <text
                      follows="left|top"
@@ -2594,7 +2735,7 @@
                      layout="topleft"
                      left="15"
                      name="fs_heading_output"
-                     top="2080"
+                     top="2246"
                      width="340">
                         Output
                     </text>
@@ -2606,7 +2747,7 @@
                      left="370"
                      name="reset_fs_heading_output"
                      tool_tip="Set every option in &quot;Output&quot; back to its default value."
-                     top="2079"
+                     top="2245"
                      width="120">
                         <button.commit_callback
                          function="FSExperimental.ResetSection"
@@ -2621,7 +2762,7 @@
                      left="15"
                      name="fs_fsrenderdeband"
                      tool_tip="EXPERIMENTAL. Removes the visible steps (banding) in skies, fog and soft gradients by adding an invisible fine grain of one colour step before the image is reduced to 8 bits. Replaces the viewer's own present noise. Practically free."
-                     top="2106"
+                     top="2272"
                      width="475" />
                     <text
                      follows="left|top"
@@ -2630,7 +2771,7 @@
                      left="35"
                      name="fs_fsrenderdebandstrength_label"
                      tool_tip="EXPERIMENTAL. Amplitude of the debanding dither in colour steps. 1 is correct for 8 bit output; raise it only if some banding remains, it makes the grain visible."
-                     top="2134"
+                     top="2300"
                      width="285">
                         Dither strength
                     </text>
@@ -2647,7 +2788,7 @@
                      min_val="0.25"
                      name="fs_fsrenderdebandstrength"
                      tool_tip="EXPERIMENTAL. Amplitude of the debanding dither in colour steps. 1 is correct for 8 bit output; raise it only if some banding remains, it makes the grain visible."
-                     top="2132"
+                     top="2298"
                      width="100" />
                     <text
                      follows="left|top"
@@ -2656,7 +2797,7 @@
                      layout="topleft"
                      left="15"
                      name="fs_heading_height_fog"
-                     top="2174"
+                     top="2340"
                      width="340">
                         Height fog
                     </text>
@@ -2668,7 +2809,7 @@
                      left="370"
                      name="reset_fs_heading_height_fog"
                      tool_tip="Set every option in &quot;Height fog&quot; back to its default value."
-                     top="2173"
+                     top="2339"
                      width="120">
                         <button.commit_callback
                          function="FSExperimental.ResetSection"
@@ -2683,7 +2824,7 @@
                      left="15"
                      name="fs_fsrenderheightfog"
                      tool_tip="EXPERIMENTAL. Fog that is thickest low down and thins with altitude, so valleys, the sea and the distance get haze. Coloured by the current sky, brighter toward the sun. Covers solid objects, the sky and transparent objects above the water. Changing it rebuilds the shaders; the values below change live at no extra cost."
-                     top="2200"
+                     top="2366"
                      width="475" />
                     <check_box
                      control_name="FSRenderHeightFogSkyColor"
@@ -2695,7 +2836,7 @@
                      left="35"
                      name="fs_fsrenderheightfogskycolor"
                      tool_tip="EXPERIMENTAL. Take the fog's colour from the current sky (times the tint). Off uses the tint colour at the sky's brightness."
-                     top="2226"
+                     top="2392"
                      width="455" />
                     <check_box
                      control_name="FSRenderHeightFogBaseAbsolute"
@@ -2707,7 +2848,7 @@
                      left="35"
                      name="fs_fsrenderheightfogbaseabsolute"
                      tool_tip="EXPERIMENTAL. The base height is a region height in meters instead of a height above the water."
-                     top="2252"
+                     top="2418"
                      width="455" />
                     <check_box
                      control_name="FSRenderHeightFogSkyHaze"
@@ -2719,7 +2860,7 @@
                      left="35"
                      name="fs_fsrenderheightfogskyhaze"
                      tool_tip="EXPERIMENTAL. Hazier skies make the fog a little thicker, clearer skies a little thinner (half to twice the set density)."
-                     top="2278"
+                     top="2444"
                      width="455" />
                     <text
                      follows="left|top"
@@ -2728,7 +2869,7 @@
                      left="35"
                      name="fs_fsrenderheightfogdensity_label"
                      tool_tip="EXPERIMENTAL. Fog per meter at and below the base height. 0.003 hides most of what is 1 km away at that height."
-                     top="2306"
+                     top="2472"
                      width="285">
                         Density
                     </text>
@@ -2745,7 +2886,7 @@
                      min_val="0.0"
                      name="fs_fsrenderheightfogdensity"
                      tool_tip="EXPERIMENTAL. Fog per meter at and below the base height. 0.003 hides most of what is 1 km away at that height."
-                     top="2304"
+                     top="2470"
                      width="100" />
                     <text
                      follows="left|top"
@@ -2754,7 +2895,7 @@
                      left="35"
                      name="fs_fsrenderheightfogfalloff_label"
                      tool_tip="EXPERIMENTAL. How fast the fog thins with height, per meter. 0.02 is a third as dense 50 m up; 0 is even fog at every height."
-                     top="2334"
+                     top="2500"
                      width="285">
                         Height falloff
                     </text>
@@ -2771,7 +2912,7 @@
                      min_val="0.0"
                      name="fs_fsrenderheightfogfalloff"
                      tool_tip="EXPERIMENTAL. How fast the fog thins with height, per meter. 0.02 is a third as dense 50 m up; 0 is even fog at every height."
-                     top="2332"
+                     top="2498"
                      width="100" />
                     <text
                      follows="left|top"
@@ -2780,7 +2921,7 @@
                      left="35"
                      name="fs_fsrenderheightfogbaseheight_label"
                      tool_tip="EXPERIMENTAL. Meters above the water (or the region height, with Absolute base height) where the fog reaches full density."
-                     top="2362"
+                     top="2528"
                      width="285">
                         Base height
                     </text>
@@ -2797,7 +2938,7 @@
                      min_val="-4096.0"
                      name="fs_fsrenderheightfogbaseheight"
                      tool_tip="EXPERIMENTAL. Meters above the water (or the region height, with Absolute base height) where the fog reaches full density."
-                     top="2360"
+                     top="2526"
                      width="100" />
                     <text
                      follows="left|top"
@@ -2806,7 +2947,7 @@
                      left="35"
                      name="fs_fsrenderheightfogmaxopacity_label"
                      tool_tip="EXPERIMENTAL. The most the fog may hide, so the horizon never disappears completely."
-                     top="2390"
+                     top="2556"
                      width="285">
                         Maximum opacity
                     </text>
@@ -2823,7 +2964,7 @@
                      min_val="0.0"
                      name="fs_fsrenderheightfogmaxopacity"
                      tool_tip="EXPERIMENTAL. The most the fog may hide, so the horizon never disappears completely."
-                     top="2388"
+                     top="2554"
                      width="100" />
                     <text
                      follows="left|top"
@@ -2832,7 +2973,7 @@
                      left="35"
                      name="fs_fsrenderheightfoganisotropy_label"
                      tool_tip="EXPERIMENTAL. 0 lights the fog evenly; higher values make it glow toward the sun or moon. Same scale as the sun rays' scattering."
-                     top="2418"
+                     top="2584"
                      width="285">
                         Sun scattering
                     </text>
@@ -2849,7 +2990,7 @@
                      min_val="0.0"
                      name="fs_fsrenderheightfoganisotropy"
                      tool_tip="EXPERIMENTAL. 0 lights the fog evenly; higher values make it glow toward the sun or moon. Same scale as the sun rays' scattering."
-                     top="2416"
+                     top="2582"
                      width="100" />
                     <text
                      follows="left|top"
@@ -2858,7 +2999,7 @@
                      left="35"
                      name="fs_fsrenderheightfogtint_label"
                      tool_tip="EXPERIMENTAL. Colour multiplied into the fog. White leaves it the sky's colour; with sky colour off, this is the fog's colour."
-                     top="2446"
+                     top="2612"
                      width="285">
                         Tint
                     </text>
@@ -2874,7 +3015,7 @@
                      left="330"
                      name="fs_fsrenderheightfogtint"
                      tool_tip="EXPERIMENTAL. Colour multiplied into the fog. White leaves it the sky's colour; with sky colour off, this is the fog's colour."
-                     top="2444"
+                     top="2610"
                      width="44" />
                     <check_box
                      control_name="FSRenderHeightFogInteriors"
@@ -2886,7 +3027,7 @@
                      left="35"
                      name="fs_fsrenderheightfoginteriors"
                      tool_tip="EXPERIMENTAL. Detects rooms and roofs around the camera with a few short rays per second, and keeps the height fog out of the room and out of the sun and sky light under a roof. Windows still show the fog outside."
-                     top="2476"
+                     top="2642"
                      width="455" />
                     <text
                      follows="left|top"
@@ -2895,7 +3036,7 @@
                      left="35"
                      name="fs_fsrenderheightfoginteriorrange_label"
                      tool_tip="EXPERIMENTAL. Length of the rays cast around the camera to find walls and ceilings. Rooms wider than this count as open air. Longer rays cost more CPU."
-                     top="2504"
+                     top="2670"
                      width="285">
                         Interior detection range (m)
                     </text>
@@ -2912,7 +3053,7 @@
                      min_val="5"
                      name="fs_fsrenderheightfoginteriorrange"
                      tool_tip="EXPERIMENTAL. Length of the rays cast around the camera to find walls and ceilings. Rooms wider than this count as open air. Longer rays cost more CPU."
-                     top="2502"
+                     top="2668"
                      width="100" />
                     <text
                      follows="left|top"
@@ -2921,7 +3062,7 @@
                      left="35"
                      name="fs_fsrenderheightfoginteriorstrength_label"
                      tool_tip="EXPERIMENTAL. How strongly rooms and roofs hold back the fog and its sky and sun light. 0 is the plain fog."
-                     top="2532"
+                     top="2698"
                      width="285">
                         Interior strength
                     </text>
@@ -2938,7 +3079,7 @@
                      min_val="0"
                      name="fs_fsrenderheightfoginteriorstrength"
                      tool_tip="EXPERIMENTAL. How strongly rooms and roofs hold back the fog and its sky and sun light. 0 is the plain fog."
-                     top="2530"
+                     top="2696"
                      width="100" />
                 </panel>
             </scroll_container>
