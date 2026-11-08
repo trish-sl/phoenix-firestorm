@@ -28,6 +28,7 @@
 
 #include "llappviewer.h"
 #include "fsrenderthread.h" // <FS:Trish/> FSRenderThread
+#include "fsgputimers.h" // <FS:Trish/> FSRenderGPUTimings
 #include "fsnativepopout.h"
 
 // Viewer includes
@@ -1605,6 +1606,13 @@ bool LLAppViewer::frame()
 bool LLAppViewer::doFrame()
 {
     FSRenderThread::frameStart(); // <FS:Trish/> FSRenderThread: start, check setting, stats
+    // <FS:Trish> FSRenderGPUTimings: GPU time per profiler zone, logged every few seconds
+    {
+        static LLCachedControl<bool> gpu_timings(gSavedSettings, "FSRenderGPUTimings", false);
+        static LLCachedControl<F32> gpu_timings_interval(gSavedSettings, "FSRenderGPUTimingsInterval", 10.f);
+        FSGPUTimers::frame(gpu_timings && gGLManager.mInited, gpu_timings_interval);
+    }
+    // </FS:Trish>
     resumeMainloopTimeout("Main:doFrameStart");
 #ifdef LL_DISCORD
     {
