@@ -479,6 +479,11 @@ void LLShaderMgr::dumpObjectLog(GLuint ret, bool warns, const std::string& filen
     }
  }
 
+// <FS:Trish> Parallel shader compile: every object compiled while a batch runs. A failed batch must delete
+// them, not detach them like the shared objects of earlier phases, although they are in the object maps too.
+static std::vector<GLuint> sFSBatchObjects;
+// </FS:Trish>
+
 GLuint LLShaderMgr::loadShaderFile(const std::string& filename, S32 & shader_level, GLenum type, std::map<std::string, std::string>* defines, S32 texture_index_channels)
 {
 
@@ -958,6 +963,7 @@ GLuint LLShaderMgr::loadShaderFile(const std::string& filename, S32 & shader_lev
     if (error == GL_NO_ERROR && ret && mFSBatching)
     {
         mFSPendingObjects.push_back(ret);
+        sFSBatchObjects.push_back(ret);
     }
     else
     // </FS:Trish>
@@ -1374,6 +1380,7 @@ bool LLShaderMgr::fsRunBatched(const std::function<bool()>& load_phase)
 
     mFSBatching = true;
     mFSBatchFailed = false;
+    sFSBatchObjects.clear(); // <FS:Trish/>
     mFSPendingObjects.clear();
     mFSPendingPrograms.clear();
     mFSBatchPrograms.clear();
@@ -1454,7 +1461,8 @@ bool LLShaderMgr::fsRunBatched(const std::function<bool()>& load_phase)
         {
             shared_objects.insert(entry.second);
         }
-        for (GLuint object : mFSPendingObjects)
+        //for (GLuint object : mFSPendingObjects) // <FS:Trish/>
+        for (GLuint object : sFSBatchObjects) // <FS:Trish/> the programs' own objects too, not only the shared ones
         {
             shared_objects.erase(object); // compiled in this phase: deleted below, compiled again
         }
@@ -1485,12 +1493,14 @@ bool LLShaderMgr::fsRunBatched(const std::function<bool()>& load_phase)
         ++mFSBatchRetries;
         mFSPendingObjects.clear();
         mFSBatchPrograms.clear();
+        sFSBatchObjects.clear(); // <FS:Trish/>
         mFSBatchFailed = false;
         return load_phase();
     }
 
     mFSPendingObjects.clear();
     mFSBatchPrograms.clear();
+    sFSBatchObjects.clear(); // <FS:Trish/>
     return true;
 }
 
