@@ -126,6 +126,7 @@ set(viewer_SOURCE_FILES
     fsfoginterior.cpp
     fsgddarena.cpp
     fsgpudrivendraws.cpp
+    fsgpudrivenlegacy.cpp
     fsgpudrivenpbr.cpp
     fsinventorycustomtabs.cpp
     fsfloaterassetblacklist.cpp
@@ -1020,6 +1021,7 @@ set(viewer_HEADER_FILES
     fsfoginterior.h
     fsgddarena.h
     fsgpudrivendraws.h
+    fsgpudrivenlegacy.h
     fsgpudrivenpbr.h
     fsinventorycustomtabs.h
     fsfloaterassetblacklist.h
