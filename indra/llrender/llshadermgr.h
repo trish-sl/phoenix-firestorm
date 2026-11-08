@@ -378,6 +378,12 @@ public:
         FS_COLORED_SHADOW_MAP1,             // "coloredShadowMap1"
         // </FS:Trish>
         FS_SSR_HIZ_MAP,                     // "ssrHiZMap" <FS:Trish/>
+        // <FS:Trish> Water fog variation (waterFogF.glsl)
+        FS_WATER_FOG_NOISE,                 // "fs_water_fog_noise"
+        FS_WATER_FOG_VIEW_TO_WORLD0,        // "fs_water_fog_vtw0": rows of eye space to agent space
+        FS_WATER_FOG_VIEW_TO_WORLD1,        // "fs_water_fog_vtw1"
+        FS_WATER_FOG_VIEW_TO_WORLD2,        // "fs_water_fog_vtw2"
+        // </FS:Trish>
         END_RESERVED_UNIFORMS
     } eGLSLReservedUniforms;
     // clang-format on
