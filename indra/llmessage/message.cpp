@@ -916,7 +916,33 @@ bool LLMessageSystem::isHighPriorityMessage(const LLPacketBuffer& pkt) const
     //
     // AvatarAppearance is "Low 158" which means it is stored in four bytes: 0xff 0xff 0x00 0x9E
     // the last two bytes represent 158 in a BigEndian U16
-    return header[1] != 255 && header[2] != 0 && header[3] != 158;
+    // <FS:Trish> The old test sent every Low and Fixed message (RegionHandshake,
+    // AgentMovementComplete, ChatFromSimulator, PacketAck...) to the low
+    // priority queue and made Medium messages depend on their first body byte.
+    //return header[1] != 255 && header[2] != 0 && header[3] != 158;
+    if (header[1] != 255)
+    {
+        // Medium frequency
+        return true;
+    }
+
+    // Low or Fixed frequency. The message number follows the 6 byte packet
+    // header and is part of the zero-coded body, so a zero-coded
+    // AvatarAppearance arrives as 0xff 0xff 0x00 0x01 0x9e.
+    const U8* data = (const U8*)pkt.getData();
+    if (data[PHL_FLAGS] & LL_ZERO_CODE_FLAG)
+    {
+        if (size >= LL_PACKET_ID_SIZE + 5 && header[2] == 0 && header[3] == 1 && header[4] == 158)
+        {
+            return false;
+        }
+    }
+    else if (header[2] == 0 && header[3] == 158)
+    {
+        return false;
+    }
+    return true;
+    // </FS:Trish>
 }
 
 void LLMessageSystem::dropPackets(U32 num_to_drop)
