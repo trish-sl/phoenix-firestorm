@@ -200,6 +200,7 @@ set(viewer_SOURCE_FILES
     fsposingmotion.cpp
     fsprimfeedauth.cpp
     fsradar.cpp
+    fsrenderthread.cpp
     fsradarentry.cpp
     fsradarlistctrl.cpp
     fsradarmenu.cpp
@@ -1097,6 +1098,7 @@ set(viewer_HEADER_FILES
     fsposingmotion.h
     fsprimfeedauth.h
     fsradar.h
+    fsrenderthread.h
     fsradarentry.h
     fsradarlistctrl.h
     fsradarmenu.h
