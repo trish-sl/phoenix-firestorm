@@ -66,6 +66,10 @@ float fsSampleSpotShadowExtra(vec3 pos, vec3 norm)
     }
 
     vec4 lpos = fs_spot_shadow_matrix * vec4(pos, 1.0);
+    if (lpos.w <= 0.0)
+    {
+        return 1.0; // behind the projector: the divide would mirror the map
+    }
 #if defined(PCSS_SHADOW) && defined(FS_SPOT_PCSS_FETCH)
     float shadow = pcssSpotContactShadow(fs_spot_shadow_map, fs_spot_shadow_depth, fs_spot_shadow_matrix, lpos, pos, norm, 0.8);
 #elif defined(PCSS_SHADOW)

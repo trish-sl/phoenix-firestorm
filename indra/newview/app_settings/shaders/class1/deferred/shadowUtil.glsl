@@ -130,6 +130,10 @@ float pcfShadow(sampler2DShadow shadowMap, vec3 norm, vec4 stc, float bias_mul, 
 float pcfSpotShadow(sampler2DShadow shadowMap, vec4 stc, float bias_scale, vec2 pos_screen)
 {
 #if defined(SPOT_SHADOW)
+    if (stc.w <= 0.0)
+    {
+        return 1.0; // behind the projector: the divide would mirror the map
+    }
     stc.xyz /= stc.w;
     stc.z += spot_shadow_bias * bias_scale;
     if (cube_snapshot != 0)
@@ -251,6 +255,10 @@ float pcssPCF(sampler2DShadow shadowMap, vec3 c, vec2 grad, vec2 extent, vec2 ro
 // stc: projected, not yet divided; z_bias: the constant bias added to the reference depth.
 float pcssPoissonPCF(sampler2DShadow shadowMap, mat4 m, vec4 stc, vec3 pos, vec3 norm, float z_bias, vec2 res)
 {
+    if (stc.w <= 0.0)
+    {
+        return 1.0; // behind the projector: the divide would mirror the map
+    }
     stc.xyz /= stc.w;
     vec2 grad = abs(pcssDepthGradient(m, pos, norm, stc.xyz));
     stc.z += z_bias;
@@ -388,6 +396,10 @@ vec3 pcssProjectorEye(mat4 m)
 // penumbra (full width, metres on the receiver) = PCSS_SPOT_LIGHT_SIZE * (d_r - d_b) / d_b.
 float pcssSpotContactShadow(sampler2DShadow shadowMap, sampler2D depthMap, mat4 m, vec4 stc, vec3 pos, vec3 norm, float bias_scale)
 {
+    if (stc.w <= 0.0)
+    {
+        return 1.0; // behind the projector: the divide would mirror the map, clamp(d_b) inverts
+    }
     vec3 c = stc.xyz / stc.w;
     float d_r = stc.w;                       // linear distance along the projector's axis
     vec2 grad = abs(pcssDepthGradient(m, pos, norm, c));
