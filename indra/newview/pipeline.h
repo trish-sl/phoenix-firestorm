@@ -379,6 +379,7 @@ public:
     void stateSort(LLSpatialBridge* bridge, LLCamera& camera, bool fov_changed = false);
     void stateSort(LLDrawable* drawablep, LLCamera& camera);
     void postSort(LLCamera& camera);
+    bool postSortBuildRenderMapParallel(LLCamera& camera); // <FS:Trish/> FSPerfParallelPostSort
 
     void forAllVisibleDrawables(void (*func)(LLDrawable*));
 
