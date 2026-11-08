@@ -364,6 +364,7 @@ bool    LLPipeline::sBakeSunlight = false;
 bool    LLPipeline::sNoAlpha = false;
 bool    LLPipeline::sUseFarClip = true;
 bool    LLPipeline::sShadowRender = false;
+LLVector3 LLPipeline::sShadowDistanceOrigin; // <FS:Trish/>
 F32     LLPipeline::sShadowMinCasterSize = 0.f; // <FS:Trish/>
 bool    LLPipeline::sRenderGlow = false;
 bool    LLPipeline::sReflectionRender = false;
@@ -1233,6 +1234,13 @@ bool LLPipeline::allocateShadowBuffer(U32 resX, U32 resY)
     LL_PROFILE_ZONE_SCOPED_CATEGORY_DISPLAY;
     S32 shadow_detail = RenderShadowDetail;
 
+    // <FS:Trish> Fresh maps hold nothing the throttles or the caster cache can reuse
+    if (!gCubeSnapshot)
+    {
+        fsInvalidateShadowReuse();
+    }
+    // </FS:Trish>
+
     F32 scale = gCubeSnapshot ? 1.0f : llmax(0.f, RenderShadowResolutionScale); // Don't scale probe shadow maps
     U32 sun_shadow_map_width = BlurHappySize(resX, scale);
     U32 sun_shadow_map_height = BlurHappySize(resY, scale);
@@ -1611,6 +1619,7 @@ void LLPipeline::releaseSunShadowTargets()
     }
     fsReleaseShadowCache(); // <FS:Trish/> FSPerfShadowStaticCache
     fsReleaseShadowSinglePass(); // <FS:Trish/> FSPerfShadowSinglePass
+    fsInvalidateShadowReuse(); // <FS:Trish/>
 }
 
 void LLPipeline::releaseSpotShadowTargets()
@@ -1623,6 +1632,12 @@ void LLPipeline::releaseSpotShadowTargets()
             mSpotShadow[i].release();
         }
         fsReleaseSpotColoredTargets(); // <FS:Trish/> they shared these depth buffers
+        // <FS:Trish> the projector throttle must not reuse a released map
+        for (SpotShadowState& state : mSpotShadowState)
+        {
+            state.mValid = false;
+        }
+        // </FS:Trish>
     }
 }
 
@@ -4380,7 +4395,7 @@ namespace
 {
     typedef std::vector<std::pair<U32, LLDrawInfo*> > fs_postsort_infos_t;
 
-    struct FSPostSortChunk
+    struct alignas(64) FSPostSortChunk // own cache line: workers push into neighbouring chunks
     {
         fs_postsort_infos_t mInfos;
         U32                 mIndices = 0;
@@ -8970,7 +8985,9 @@ bool LLPipeline::renderLocalTonemapBase(LLRenderTarget* src)
     static LLCachedControl<F32> detail(gSavedSettings, "FSRenderLocalTonemapDetail", 1.1f);
     static LLStaticHashedString s_src_texel("src_texel");
 
-    if (!enabled || gSnapshotNoPost || !gFSLocalTonemapLumProgram.isComplete() ||
+    // Skipped too when the tonemap pass runs the no-post programs (they don't read it) and for
+    // avatars only renders, whose mostly empty frame would wreck the key
+    if (!enabled || gSnapshotNoPost || mFSNoPost || isAvatarOnlyRender() || !gFSLocalTonemapLumProgram.isComplete() ||
         (strength <= 0.f && detail == 1.f))
     {
         if (!enabled && mLocalTonemapMap.isComplete())
@@ -9058,6 +9075,15 @@ static void fs_set_deband(LLGLSLShader& shader, bool writes_8bit)
     const F32 amplitude = (fs_deband_enabled() && writes_8bit) ? llclamp((F32)strength, 0.f, 2.f) / 255.f : 0.f;
     shader.uniform1f(s_deband, amplitude);
 }
+
+// Whether the tonemap pass runs the no-post programs, which read neither bloom nor local tone mapping
+static bool fs_tonemap_no_post()
+{
+    static LLCachedControl<bool> buildNoPost(gSavedSettings, "RenderDisablePostProcessing", false);
+    static LLCachedControl<bool> should_auto_adjust(gSavedSettings, "RenderSkyAutoAdjustLegacy", false);
+    LLSettingsSky::ptr_t psky = LLEnvironment::instance().getCurrentSky();
+    return gSnapshotNoPost || psky->getReflectionProbeAmbiance(should_auto_adjust) == 0.f || (buildNoPost && gFloaterTools && gFloaterTools->isAvailable());
+}
 // </FS:Trish>
 
 void LLPipeline::tonemap(LLRenderTarget* src, LLRenderTarget* dst, bool gamma_correct)
@@ -9078,7 +9104,10 @@ void LLPipeline::tonemap(LLRenderTarget* src, LLRenderTarget* dst, bool gamma_co
 
         LLSettingsSky::ptr_t psky = LLEnvironment::instance().getCurrentSky();
 
-        bool no_post = gSnapshotNoPost || psky->getReflectionProbeAmbiance(should_auto_adjust) == 0.f || (buildNoPost && gFloaterTools && gFloaterTools->isAvailable());
+        // <FS:Trish> The same test renderFinalize made for mFSNoPost
+        //bool no_post = gSnapshotNoPost || psky->getReflectionProbeAmbiance(should_auto_adjust) == 0.f || (buildNoPost && gFloaterTools && gFloaterTools->isAvailable());
+        bool no_post = fs_tonemap_no_post();
+        // </FS:Trish>
         LLGLSLShader* shader = nullptr;
         if(gamma_correct)
         {
@@ -10161,6 +10190,7 @@ void LLPipeline::renderFinalize()
     bool hdr = gGLManager.mGLVersion > 4.05f && has_hdr();
 
     mLensDoF.mActive = false; // <FS:Trish/> renderDoF sets it again when depth of field runs
+    mFSNoPost = fs_tonemap_no_post(); // <FS:Trish/> bloom and local tone mapping are skipped when tonemap won't read them
 
     // <FS:Trish> Avatars only snapshot. These passes reuse the exposure and the SSR history of the
     // full scene render taken just before them, so the avatars are exposed and reflect as they do
@@ -10955,6 +10985,13 @@ static void fs_bind_sun_shadow_extras(LLGLSLShader& shader, const glm::mat4& mod
         }
     }
 }
+
+// Takes the cloud noise textures fs_bind_sun_shadow_extras bound off their units again
+static void fs_unbind_sun_shadow_extras(LLGLSLShader& shader)
+{
+    shader.disableTexture(LLShaderMgr::CLOUD_NOISE_MAP);
+    shader.disableTexture(LLShaderMgr::CLOUD_NOISE_MAP_NEXT);
+}
 // </FS:Trish>
 
 // <FS:Trish> Skin subsurface scattering (FSRenderSkinSSS). A separable, depth-aware blur of the
@@ -11227,7 +11264,11 @@ void LLPipeline::renderDeferredLighting()
                 const bool skip_ssao = gCubeSnapshot || (RenderDeferredSSAO && RenderSSAOFactor == 0.f && !(RenderShadowPCSS && RenderShadowDetail > 0));
                 // </FS:Trish>
                 LLGLSLShader& sun_shader = skip_ssao ? gDeferredSunProbeProgram : gDeferredSunProgram;
-                LLRenderTarget* fs_gtao_half = skip_ssao ? nullptr : fs_render_gtao_half(deferred_light_target); // <FS:Trish/> Half-resolution GTAO
+                // <FS:Trish> Half-resolution GTAO; zero-strength SSAO skips it as it skips stock SSAO
+                // (PCSS keeps the SSAO program then, its AO term unused)
+                //LLRenderTarget* fs_gtao_half = skip_ssao ? nullptr : fs_render_gtao_half(deferred_light_target);
+                LLRenderTarget* fs_gtao_half = (skip_ssao || RenderSSAOFactor == 0.f) ? nullptr : fs_render_gtao_half(deferred_light_target);
+                // </FS:Trish>
                 bindDeferredShader(sun_shader, deferred_light_target);
 
                 // A projector slot with no shadow-casting light is never read back (see
@@ -11293,6 +11334,11 @@ void LLPipeline::renderDeferredLighting()
                 {
                     bindShadowDepthFetch(sun_shader, false); // <Vulkanstorm/> PCSS: release the units and the sampler
                 }
+                // <FS:Trish> Unbind what unbindDeferredShader doesn't know about: the GTAO occlusion
+                // map and the cloud shadow noise
+                sun_shader.disableTexture(LLShaderMgr::OCCLUSION_MAP);
+                fs_unbind_sun_shadow_extras(sun_shader);
+                // </FS:Trish>
                 unbindDeferredShader(sun_shader);
             }
             deferred_light_target->flush();
@@ -13502,6 +13548,24 @@ void LLPipeline::fsRenderExtraSpotShadows(LLCamera& camera, const glm::mat4& sav
     static LLCullResult result[FS_MAX_SPOT_SHADOWS];
     static LLCachedControl<U32> spot_update_interval(gSavedSettings, "FSRenderSpotShadowUpdateInterval", 1);
 
+    // no projector program has a texture unit left to sample slots 2+: rendering them is wasted,
+    // unless the projector volumetrics or the dust motes sample them (they bind their own units)
+    static LLCachedControl<bool> spot_volumetric(gSavedSettings, "FSRenderSpotVolumetric", false);
+    static LLCachedControl<bool> dust_motes(gSavedSettings, "FSRenderDustMotes", false);
+    const bool other_consumers = spot_volumetric || dust_motes;
+    if (count > 2 && !other_consumers && !fsExtraSpotShadowUnitsFree())
+    {
+        for (U32 i = 2; i < count; i++)
+        {
+            mSpotShadowState[i].mValid = false;
+            if (!gCubeSnapshot && mSpotShadow[i].isComplete())
+            {
+                mSpotShadow[i].release();
+            }
+        }
+        return;
+    }
+
     for (U32 i = 2; i < count; i++)
     {
         set_current_modelview(saved_view);
@@ -13621,6 +13685,29 @@ void LLPipeline::fsRenderExtraSpotShadows(LLCamera& camera, const glm::mat4& sav
 
         mSpotShadow[i].flush();
     }
+}
+
+// Whether a projector program can take fs_spot_shadow_map (and fs_spot_shadow_depth) on units
+// past its own, the same test fsBeginExtraSpotShadows makes at draw time.
+bool LLPipeline::fsExtraSpotShadowUnitsFree() const
+{
+    static LLStaticHashedString s_spot_shadow_map("fs_spot_shadow_map");
+    static LLStaticHashedString s_spot_shadow_depth("fs_spot_shadow_depth");
+
+    const S32 limit = llmin(gGLManager.mNumTextureImageUnits, (S32)LL_NUM_TEXTURE_LAYERS);
+    for (LLGLSLShader* shader : { &gDeferredSpotLightProgram, &gDeferredMultiSpotLightProgram })
+    {
+        if (!shader->mProgramObject || shader->getUniformLocation(s_spot_shadow_map) < 0)
+        {
+            continue;
+        }
+        const S32 needed = (shader->getUniformLocation(s_spot_shadow_depth) >= 0 && gGL.getDepthFetchSampler()) ? 2 : 1;
+        if (shader->mActiveTextureChannels + needed <= limit)
+        {
+            return true;
+        }
+    }
+    return false;
 }
 
 // After binding a projector program: when it samples slots 2+ (FS_SPOT_SHADOW_EXTRA), give
@@ -13939,7 +14026,13 @@ void LLPipeline::renderSunRays()
     static LLCachedControl<F32> height_falloff(gSavedSettings, "FSRenderSunRaysHeightFalloff", 0.005f);
     static LLCachedControl<bool> moon_rays(gSavedSettings, "FSRenderSunRaysMoon", true);
 
-    if (!enabled || strength <= 0.f || density <= 0.f || RenderShadowDetail <= 0 ||
+    if (!enabled)
+    {
+        mSunRayMap.release(); // as renderSpotVolumetrics frees its map
+        return;
+    }
+
+    if (strength <= 0.f || density <= 0.f || RenderShadowDetail <= 0 ||
         gSnapshotNoPost || sUnderWaterRender ||
         !gFSSunRaysProgram.isComplete() || !gFSSunRaysCompositeProgram.isComplete())
     {
@@ -14602,7 +14695,16 @@ void LLPipeline::renderBloom()
     static LLCachedControl<F32> exposure(gSavedSettings, "RenderExposure", 1.f);
 
     mBloomLevelCount = 0;
-    if (!enabled || gSnapshotNoPost ||
+    if (!enabled)
+    {
+        for (LLRenderTarget& level : mBloomLevels)
+        {
+            level.release(); // a no-op on a released target
+        }
+        return;
+    }
+    // the tonemap pass only reads bloom when it runs the post programs
+    if (mFSNoPost || gSnapshotNoPost ||
         !gFSBloomPrefilterProgram.isComplete() || !gFSBloomDownProgram.isComplete() || !gFSBloomUpProgram.isComplete())
     {
         return;
@@ -15020,8 +15122,11 @@ bool LLPipeline::renderLensEffects(LLRenderTarget* src, LLRenderTarget* dst)
     {
         ca = 0.f;
     }
-    // Scale with the target, so snapshots larger than the window look the same
-    ca *= (F32)dst->getHeight() / (F32)llmax(gViewerWindow->getWindowHeightRaw(), 1);
+    // Scale with the target, so snapshots larger than the window and dynamic resolution look the
+    // same. The world view, not the window, is what the main target covers.
+    //ca *= (F32)dst->getHeight() / (F32)llmax(gViewerWindow->getWindowHeightRaw(), 1);
+    const F32 target_scale = (F32)dst->getHeight() / (F32)llmax(gViewerWindow->getWorldViewHeightRaw(), 1);
+    ca *= target_scale;
 
     F32 flare = llmax((F32)flare_strength, 0.f);
     const F32 grain = llclamp((F32)grain_strength, 0.f, 1.f);
@@ -15094,7 +15199,8 @@ bool LLPipeline::renderLensEffects(LLRenderTarget* src, LLRenderTarget* dst)
     shader.uniform3fv(s_sun_screen, 1, sun_screen.mV);
 
     shader.uniform1f(s_grain_strength, grain * 0.25f);
-    shader.uniform1f(s_grain_size, llclamp((F32)grain_size, 1.f, 8.f));
+    // grain size is set in screen pixels, the shader works in target pixels
+    shader.uniform1f(s_grain_size, llmax(llclamp((F32)grain_size, 1.f, 8.f) * target_scale, 0.25f));
     shader.uniform1f(s_grain_seed, (F32)(LLFrameTimer::getFrameCount() % 4096) * 0.6180339f);
 
     fs_draw_screen_triangle(mScreenTriangleVB);
@@ -15104,26 +15210,10 @@ bool LLPipeline::renderLensEffects(LLRenderTarget* src, LLRenderTarget* dst)
 }
 // </FS:Trish>
 
-// Groups inside a spatial bridge (avatars, attachments, animesh) have object bounds local to
-// the bridge, so testing them against an agent space cascade frustum is meaningless. Test the
-// bridge's own agent space extents instead, as LLSpatialBridge::setVisible does in
-// RenderShadowCullMode 0, so these expensive casters only render into cascades they reach.
+// <FS:Trish> The union cull's groups all come from region partitions (bridges arrive as drawables),
+// so the RenderShadowCullBridgesPerCascade bridge-extents branch could never run and was removed.
 static bool shadowGroupInCascade(LLSpatialGroup* group, LLCamera& cam)
 {
-    static LLCachedControl<bool> cull_bridges(gSavedSettings, "RenderShadowCullBridgesPerCascade", true);
-    LLSpatialPartition* part = group->getSpatialPartition();
-    if (cull_bridges && part && part->isBridge())
-    {
-        const LLVector4a* exts = part->asBridge()->getSpatialExtents();
-        LLVector4a center;
-        center.setAdd(exts[0], exts[1]);
-        center.mul(0.5f);
-        LLVector4a size;
-        size.setSub(exts[1], exts[0]);
-        size.mul(0.5f);
-        return cam.AABBInFrustum(center, size) > 0;
-    }
-
     return cam.AABBInFrustum(group->getObjectBounds()[0], group->getObjectBounds()[1]) > 0;
 }
 // </FS:Trish>
@@ -15193,6 +15283,13 @@ void LLPipeline::generateSunShadow(LLCamera& camera)
     LL_PROFILE_GPU_ZONE("generateSunShadow");
 
     LLDisableOcclusionCulling no_occlusion;
+
+    // <FS:Trish> Avatar shadow distance is measured from the main camera, also during probe captures
+    if (!gCubeSnapshot)
+    {
+        sShadowDistanceOrigin = camera.getOrigin();
+    }
+    // </FS:Trish>
 
     bool skip_avatar_update = false;
     if (!isAgentAvatarValid() || gAgentCamera.getCameraAnimating() || gAgentCamera.getCameraMode() != CAMERA_MODE_MOUSELOOK || !LLVOAvatar::sVisibleInFirstPerson)
@@ -15454,15 +15551,20 @@ void LLPipeline::generateSunShadow(LLCamera& camera)
         const U32 interval = llclamp((U32)far_cascade_interval, 1U, 16U);
         ++mShadowFrame;
 
-        bool force = interval <= 1 ||
+        // a FOV or aspect change moves the splits and frustum, and tiled snapshots render sub-frusta
+        bool force = interval <= 1 || gSnapshot ||
                      dist_vec(camera.getOrigin(), mFarCascadeEye) > llmax(mSunClipPlanes.mV[3], 1.f) * 0.02f ||
                      camera.getAtAxis() * mFarCascadeAt < 0.9986f ||    // about 3 degrees
-                     lightDir * mFarCascadeLight < 0.99999f;            // about a quarter of a degree
+                     lightDir * mFarCascadeLight < 0.99999f ||          // about a quarter of a degree
+                     fabsf(camera.getView() - mFarCascadeFov) > 1e-4f ||
+                     fabsf(camera.getAspect() - mFarCascadeAspect) > 1e-4f;
         if (force)
         {
             mFarCascadeEye = camera.getOrigin();
             mFarCascadeAt = camera.getAtAxis();
             mFarCascadeLight = lightDir;
+            mFarCascadeFov = camera.getView();
+            mFarCascadeAspect = camera.getAspect();
         }
         else
         {
@@ -17352,7 +17454,38 @@ void LLPipeline::skipRenderingShadows()
         mRT->shadow[j].clear();
         mRT->shadow[j].flush();
     }
+    // <FS:Trish> The sun maps hold nothing now, so the far cascade throttle and the caster cache
+    // can't reuse them. Only the sun maps were cleared: the projector maps keep their contents,
+    // and invalidating them here (every frame at night) defeated FSRenderSpotShadowUpdateInterval.
+    if (!gCubeSnapshot)
+    {
+        fsInvalidateShadowReuse(false);
+    }
+    // </FS:Trish>
 }
+
+// <FS:Trish> Shadow maps were cleared, released or reallocated (a new texture can reuse the old
+// name): the far cascade and projector throttles and the static caster cache must re-render.
+void LLPipeline::fsInvalidateShadowReuse(bool spots)
+{
+    for (bool& valid : mFarCascadeValid)
+    {
+        valid = false;
+    }
+    if (spots)
+    {
+        for (SpotShadowState& state : mSpotShadowState)
+        {
+            state.mValid = false;
+        }
+    }
+    for (FSShadowCache& cache : mFSShadowCache)
+    {
+        cache.mValid = false;
+        cache.mMatch = false;
+    }
+}
+// </FS:Trish>
 
 void LLPipeline::handleShadowDetailChanged()
 {
@@ -17458,7 +17591,8 @@ bool LLPipeline::isBeyondAvatarShadowDistance(const LLVOAvatar* avatar)
     {
         return false;
     }
-    return dist_vec_squared(avatar->getPositionAgent(), LLViewerCamera::getInstance()->getOrigin()) > max_dist * max_dist;
+    // LLViewerCamera is the probe origin during probe captures; use the main camera, cached each frame
+    return dist_vec_squared(avatar->getPositionAgent(), sShadowDistanceOrigin) > max_dist * max_dist;
 }
 
 //static
