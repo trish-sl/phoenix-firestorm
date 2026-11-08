@@ -289,6 +289,7 @@ public:
     U32 mLastTextureUpdate = 0;
 
 private:
+    friend class FSParallelGeometry; // <FS:Trish/> reads mVertexBufferGLTF to decide whether a fill may run on a worker
     LLPointer<LLVertexBuffer> mVertexBuffer;
     LLPointer<LLVertexBuffer> mVertexBufferGLTF;
 
