@@ -184,6 +184,7 @@ set(viewer_SOURCE_FILES
     fspanelpreferenceuisounds.cpp
     fspanelprefs.cpp
     fspanelradar.cpp
+    fsparallelcull.cpp
     fsparcelderender.cpp
     fsparticipantlist.cpp
     fspointlightbatch.cpp
@@ -1074,6 +1075,7 @@ set(viewer_HEADER_FILES
     fspanelpreferenceuisounds.h
     fspanelprefs.h
     fspanelradar.h
+    fsparallelcull.h
     fsparcelderender.h
     fsparticipantlist.h
     fspointlightbatch.h
