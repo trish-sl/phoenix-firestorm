@@ -1611,6 +1611,8 @@ bool LLAppViewer::doFrame()
         static LLCachedControl<bool> gpu_timings(gSavedSettings, "FSRenderGPUTimings", false);
         static LLCachedControl<F32> gpu_timings_interval(gSavedSettings, "FSRenderGPUTimingsInterval", 10.f);
         FSGPUTimers::frame(gpu_timings && gGLManager.mInited, gpu_timings_interval);
+        static LLCachedControl<bool> vaos(gSavedSettings, "FSPerfVertexArrayObjects", true);
+        LLVertexBuffer::fsSetVAOEnabled(vaos);
     }
     // </FS:Trish>
     resumeMainloopTimeout("Main:doFrameStart");
