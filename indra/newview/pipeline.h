@@ -895,6 +895,7 @@ public:
     static constexpr U32    FS_BLOOM_MAX_LEVELS = 8;
     LLRenderTarget          mBloomLevels[FS_BLOOM_MAX_LEVELS];
     U32                     mBloomLevelCount = 0;       // levels drawn this frame, 0 when bloom is off
+    bool                    mFSNoPost = false;          // tonemap runs the no-post programs this frame (set in renderFinalize)
     LLPointer<LLImageGL>    mColorGradeLUT;
     std::string             mColorGradeLUTName;
     S32                     mColorGradeLUTSize = 0;
@@ -989,6 +990,10 @@ public:
     LLVector3               mFarCascadeEye;                 // camera and sun at the last forced update
     LLVector3               mFarCascadeAt;
     LLVector3               mFarCascadeLight;
+    F32                     mFarCascadeFov = 0.f;           // projection at the last forced update
+    F32                     mFarCascadeAspect = 0.f;
+    void                    fsInvalidateShadowReuse(bool spots = true); // shadow maps were cleared or reallocated; spots: also the projector maps
+    static LLVector3        sShadowDistanceOrigin;          // main camera origin, cached once per frame
     struct SpotShadowState
     {
         const LLDrawable*   mLight = nullptr;               // identity only, never dereferenced
@@ -1014,6 +1019,7 @@ public:
     void                    fsRenderExtraSpotShadows(LLCamera& camera, const glm::mat4& saved_view, const glm::mat4& saved_proj, const glm::mat4& inv_view);
     bool                    fsEnsureExtraSpotShadowTarget(U32 slot);
     void                    fsBeginExtraSpotShadows(LLGLSLShader& shader);  // after binding a projector program
+    bool                    fsExtraSpotShadowUnitsFree() const;             // a projector program can sample slots 2+
     bool                    fsBindExtraSpotShadow(LLGLSLShader& shader, U32 slot);
     void                    fsEndExtraSpotShadows();
     S32                     mFSSpotShadowUnit = -1;                         // texture unit of fs_spot_shadow_map, -1 when unused
