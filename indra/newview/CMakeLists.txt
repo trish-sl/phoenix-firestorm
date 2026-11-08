@@ -124,6 +124,7 @@ set(viewer_SOURCE_FILES
     fsfavoritecontacts.cpp
     fsfavoritegroups.cpp
     fsfoginterior.cpp
+    fsgddarena.cpp
     fsgpudrivendraws.cpp
     fsinventorycustomtabs.cpp
     fsfloaterassetblacklist.cpp
@@ -1015,6 +1016,7 @@ set(viewer_HEADER_FILES
     fsfavoritecontacts.h
     fsfavoritegroups.h
     fsfoginterior.h
+    fsgddarena.h
     fsgpudrivendraws.h
     fsinventorycustomtabs.h
     fsfloaterassetblacklist.h
