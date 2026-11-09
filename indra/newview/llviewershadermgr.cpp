@@ -212,6 +212,7 @@ LLGLSLShader            gNoPostTonemapLegacyGammaCorrectProgram;
 // <FS:Trish> Sun rays, bloom and lens effects
 LLGLSLShader            gFSSunRaysProgram;
 LLGLSLShader            gFSSunRaysCompositeProgram;
+LLGLSLShader            gFSUnderwaterRaysProgram; // <FS:Trish/> Underwater light rays
 LLGLSLShader            gFSSpotVolumetricProgram;
 LLGLSLShader            gFSSpotVolumetricCompositeProgram;
 LLGLSLShader            gFSDustMotesProgram; // <FS:Trish/> Dust motes
@@ -1717,6 +1718,7 @@ bool LLViewerShaderMgr::loadShadersDeferred()
         // <FS:Trish> Sun rays, bloom and lens effects
         gFSSunRaysProgram.unload();
         gFSSunRaysCompositeProgram.unload();
+        gFSUnderwaterRaysProgram.unload(); // <FS:Trish/> Underwater light rays
         gFSSpotVolumetricProgram.unload();
         gFSSpotVolumetricCompositeProgram.unload();
         gFSDustMotesProgram.unload(); // <FS:Trish/> Dust motes
@@ -3393,6 +3395,7 @@ bool LLViewerShaderMgr::loadShadersDeferred()
         const FSPostShader fs_post_shaders[] = {
             { &gFSSunRaysProgram,          "FS Sun Rays",           "deferred/fsSunRaysF.glsl",          true },
             { &gFSSunRaysCompositeProgram, "FS Sun Rays Composite", "deferred/fsSunRaysCompositeF.glsl", true },
+            { &gFSUnderwaterRaysProgram,   "FS Underwater Rays",    "deferred/fsUnderwaterRaysF.glsl",   true }, // <FS:Trish/> Underwater light rays
             { &gFSSpotVolumetricProgram,   "FS Spot Volumetric",    "deferred/fsSpotVolumetricF.glsl",   true },
             { &gFSSpotVolumetricCompositeProgram, "FS Spot Volumetric Composite", "deferred/fsSpotVolumetricCompositeF.glsl", true },
             { &gFSDustMotesProgram,        "FS Dust Motes",         "deferred/fsDustMotesF.glsl",        true }, // <FS:Trish/> Dust motes
@@ -3417,6 +3420,10 @@ bool LLViewerShaderMgr::loadShadersDeferred()
             if (post.mShader == &gFSDynResUpscaleProgram)
             {
                 post.mShader->mShaderFiles.push_back(make_pair("deferred/fsDebandF.glsl", GL_FRAGMENT_SHADER)); // Debanding dither
+            }
+            if (post.mShader == &gFSUnderwaterRaysProgram)
+            {
+                post.mShader->mShaderFiles.push_back(make_pair("deferred/fsCausticsF.glsl", GL_FRAGMENT_SHADER)); // the caustic pattern
             }
             post.mShader->mShaderLevel = mShaderLevel[SHADER_DEFERRED];
             if (!post.mShader->createShader())

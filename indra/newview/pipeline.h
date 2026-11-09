@@ -903,6 +903,7 @@ public:
 
     // <FS:Trish> Sun rays, bloom, colour grading and lens effects
     LLRenderTarget          mSunRayMap;
+    LLRenderTarget          mUnderwaterRayMap;  // <FS:Trish/> Underwater light rays, as mSunRayMap
     LLRenderTarget          mSpotVolumeMap;     // volumetric projector light: rgb light, a distance marched to
     static constexpr U32    FS_BLOOM_MAX_LEVELS = 8;
     LLRenderTarget          mBloomLevels[FS_BLOOM_MAX_LEVELS];
@@ -922,6 +923,7 @@ public:
     } mLensDoF;
 
     void renderSunRays();
+    void renderUnderwaterRays(); // <FS:Trish/> Underwater light rays
     void renderSpotVolumetrics();
     // <FS:Trish> Dust motes in the sunbeams and projector cones (FSRenderDustMotes). The two
     // volumetric passes leave what they lit this frame here, renderDustMotes reads and clears it.

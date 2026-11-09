@@ -28872,6 +28872,83 @@ Change of this parameter will affect the layout of buttons in notification toast
       <key>Value</key>
       <real>512.0</real>
     </map>
+    <key>FSRenderUnderwaterRays</key>
+    <map>
+      <key>Comment</key>
+      <string>EXPERIMENTAL. While the camera is under water, sunlight scattered in the water toward the camera, in shafts that carry the moving caustic pattern of the surface down into the depth (like light shafts in shallow sea water). Shadowed by the sun shadow maps, so it needs shadows. Replaces the sun rays under water. Uses the caustic size and speed of the water caustics.</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>Boolean</string>
+      <key>Value</key>
+      <integer>0</integer>
+    </map>
+    <key>FSRenderUnderwaterRaysStrength</key>
+    <map>
+      <key>Comment</key>
+      <string>Brightness of the underwater light rays.</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>F32</string>
+      <key>Value</key>
+      <real>1.0</real>
+    </map>
+    <key>FSRenderUnderwaterRaysDensity</key>
+    <map>
+      <key>Comment</key>
+      <string>How much light the water scatters toward the camera per metre: more makes the shafts and the haze between them brighter.</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>F32</string>
+      <key>Value</key>
+      <real>0.04</real>
+    </map>
+    <key>FSRenderUnderwaterRaysClarity</key>
+    <map>
+      <key>Comment</key>
+      <string>Water clarity in metres: the distance over which light in the water fades to about a third. Lower is murkier, with shafts fading out sooner with depth and distance.</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>F32</string>
+      <key>Value</key>
+      <real>30.0</real>
+    </map>
+    <key>FSRenderUnderwaterRaysShafts</key>
+    <map>
+      <key>Comment</key>
+      <string>How strongly the light gathers into shafts: 0 is even light, 1 full shafts from the caustic pattern.</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>F32</string>
+      <key>Value</key>
+      <real>1.0</real>
+    </map>
+    <key>FSRenderUnderwaterRaysSteps</key>
+    <map>
+      <key>Comment</key>
+      <string>Samples along each view ray for the underwater light rays. More is smoother and costs more.</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>S32</string>
+      <key>Value</key>
+      <integer>24</integer>
+    </map>
+    <key>FSRenderUnderwaterRaysDistance</key>
+    <map>
+      <key>Comment</key>
+      <string>Metres the underwater light rays reach from the camera.</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>F32</string>
+      <key>Value</key>
+      <real>48.0</real>
+    </map>
     <key>FSRenderSunRays</key>
     <map>
       <key>Comment</key>

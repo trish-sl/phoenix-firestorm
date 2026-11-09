@@ -10317,6 +10317,7 @@ void LLPipeline::renderFinalize()
         // <FS:Trish> Added into the HDR scene before exposure is measured, so the exposure accounts
         // for them. After the SSR copy, so reflections don't pick them up a second time.
         renderSunRays();
+        renderUnderwaterRays(); // <FS:Trish/> Underwater light rays, instead of the sun rays under water
         renderSpotVolumetrics();
         renderDustMotes(); // <FS:Trish/> Dust motes, lit by the two passes above
         renderBloom();
@@ -10930,6 +10931,49 @@ static void fs_bind_water_caustics(LLGLSLShader& shader)
 
     const glm::mat4 inv_view = glm::inverse(get_current_modelview());
     shader.uniformMatrix4fv(s_inv_view, 1, GL_FALSE, glm::value_ptr(inv_view));
+
+    // Each region's own water height, nearest to the camera first (fsCausticsF.glsl)
+    static LLStaticHashedString s_region_count("fs_caustic_region_count");
+    static LLStaticHashedString s_region_rect("fs_caustic_region_rect");
+    static LLStaticHashedString s_region_water("fs_caustic_region_water");
+    constexpr S32 MAX_REGIONS = 16;
+    struct RegionWater
+    {
+        F32 mDist;
+        LLVector4 mRect;
+        F32 mWater;
+    };
+    std::vector<RegionWater> regions;
+    const LLVector3 camera = LLViewerCamera::getInstance()->getOrigin();
+    for (LLViewerRegion* region : LLWorld::getInstance()->getRegionList())
+    {
+        if (!region)
+        {
+            continue;
+        }
+        const LLVector3 origin = region->getOriginAgent();
+        const F32 width = region->getWidth();
+        const F32 dx = llmax(llmax(origin.mV[VX] - camera.mV[VX], camera.mV[VX] - (origin.mV[VX] + width)), 0.f);
+        const F32 dy = llmax(llmax(origin.mV[VY] - camera.mV[VY], camera.mV[VY] - (origin.mV[VY] + width)), 0.f);
+        regions.push_back({ dx * dx + dy * dy,
+                            LLVector4(origin.mV[VX], origin.mV[VY], origin.mV[VX] + width, origin.mV[VY] + width),
+                            region->getWaterHeight() });
+    }
+    std::sort(regions.begin(), regions.end(), [](const RegionWater& a, const RegionWater& b) { return a.mDist < b.mDist; });
+    const S32 count = llmin((S32)regions.size(), MAX_REGIONS);
+    LLVector4 rects[MAX_REGIONS];
+    F32 water[MAX_REGIONS] = {};
+    for (S32 i = 0; i < count; ++i)
+    {
+        rects[i] = regions[i].mRect;
+        water[i] = regions[i].mWater;
+    }
+    shader.uniform1i(s_region_count, count);
+    if (count > 0)
+    {
+        shader.uniform4fv(s_region_rect, count, rects[0].mV);
+        shader.uniform1fv(s_region_water, count, water);
+    }
 }
 // </FS:Trish>
 
@@ -14836,6 +14880,7 @@ void LLPipeline::releaseFSPostTargets()
 {
     releaseAvatarOnlyTargets();
     mSunRayMap.release();
+    mUnderwaterRayMap.release(); // <FS:Trish/> Underwater light rays
     mSpotVolumeMap.release();
     mLocalTonemapMap.release(); // <FS:Trish/> Local tone mapping
     for (LLRenderTarget& level : mBloomLevels)
@@ -14855,6 +14900,14 @@ static bool fs_ensure_target(LLRenderTarget& target, U32 width, U32 height, U32 
     target.release();
     return target.allocate(width, height, format);
 }
+
+// <FS:Trish> Underwater light rays: sUnderWaterRender is reset before renderFinalize, which runs
+// the post passes, so they ask the camera
+static bool fs_camera_under_water()
+{
+    return LLViewerCamera::getInstance()->cameraUnderWater() && LLWorld::getInstance()->getAllowRenderWater();
+}
+// </FS:Trish>
 
 static void fs_draw_screen_triangle(LLVertexBuffer* vb)
 {
@@ -14892,6 +14945,13 @@ void LLPipeline::renderSunRays()
     {
         return;
     }
+    // <FS:Trish> Under water the underwater light rays scatter the sunlight instead
+    static LLCachedControl<bool> underwater_rays(gSavedSettings, "FSRenderUnderwaterRays", false);
+    if (underwater_rays && fs_camera_under_water())
+    {
+        return;
+    }
+    // </FS:Trish>
 
     // The shadow maps follow the sun while it is up, else the moon
     LLEnvironment& environment = LLEnvironment::instance();
@@ -15004,6 +15064,132 @@ void LLPipeline::renderSunRays()
         mRT->screen.flush();
     }
 }
+
+// <FS:Trish> Underwater light rays: while the camera is under water, sunlight scattered in the
+// water toward the camera, in shafts that carry the caustic pattern down from the surface
+// (fsUnderwaterRaysF, linked with fsCausticsF). Marched at reduced resolution and added to the
+// scene by the sun rays composite, which renderSunRays doesn't draw under water.
+void LLPipeline::renderUnderwaterRays()
+{
+    static LLCachedControl<bool> enabled(gSavedSettings, "FSRenderUnderwaterRays", false);
+    static LLCachedControl<F32> strength(gSavedSettings, "FSRenderUnderwaterRaysStrength", 1.f);
+    static LLCachedControl<F32> density(gSavedSettings, "FSRenderUnderwaterRaysDensity", 0.04f);
+    static LLCachedControl<F32> clarity(gSavedSettings, "FSRenderUnderwaterRaysClarity", 30.f);
+    static LLCachedControl<F32> shafts(gSavedSettings, "FSRenderUnderwaterRaysShafts", 1.f);
+    static LLCachedControl<S32> steps(gSavedSettings, "FSRenderUnderwaterRaysSteps", 24);
+    static LLCachedControl<F32> max_distance(gSavedSettings, "FSRenderUnderwaterRaysDistance", 48.f);
+    static LLCachedControl<F32> resolution(gSavedSettings, "FSRenderSunRaysResolution", 0.5f);
+    static LLCachedControl<F32> caustic_scale(gSavedSettings, "FSRenderWaterCausticsScale", 1.5f);
+    static LLCachedControl<F32> caustic_speed(gSavedSettings, "FSRenderWaterCausticsSpeed", 1.f);
+
+    if (!enabled)
+    {
+        mUnderwaterRayMap.release();
+        return;
+    }
+
+    if (!fs_camera_under_water() || gCubeSnapshot || gSnapshotNoPost || strength <= 0.f || density <= 0.f ||
+        RenderShadowDetail <= 0 || !gFSUnderwaterRaysProgram.isComplete() || !gFSSunRaysCompositeProgram.isComplete())
+    {
+        return;
+    }
+
+    LLEnvironment& environment = LLEnvironment::instance();
+    LLSettingsSky::ptr_t psky = environment.getCurrentSky();
+    LLSettingsWater::ptr_t pwater = environment.getCurrentWater();
+    if (!psky || !pwater || !environment.getIsSunUp())
+    {
+        return;
+    }
+
+    // Fade in over the first few degrees of sun, as the sun rays
+    const F32 elevation = environment.getSunDirection().mV[VZ];
+    const F32 fade_t = llclamp(elevation / 0.08f, 0.f, 1.f);
+    const F32 fade = fade_t * fade_t * (3.f - 2.f * fade_t);
+    if (fade <= 0.f)
+    {
+        return;
+    }
+
+    // Sunlight, tinted by the water: the fog colour's hue at full brightness
+    LLColor3 light = linearColor3(LLColor3(mSunDiffuse.mV));
+    const LLColor3 water = linearColor3(pwater->getWaterFogColor());
+    const F32 water_max = llmax(llmax(water.mV[VRED], water.mV[VGREEN]), llmax(water.mV[VBLUE], 0.001f));
+    for (S32 i = 0; i < 3; ++i)
+    {
+        light.mV[i] *= llclamp(water.mV[i] / water_max, 0.f, 1.f);
+    }
+    light *= (F32)strength * fade;
+
+    LL_PROFILE_GPU_ZONE("underwater rays");
+
+    const F32 scale = llclamp((F32)resolution, 0.25f, 1.f);
+    const U32 width = llmax((U32)(mRT->screen.getWidth() * scale), 1u);
+    const U32 height = llmax((U32)(mRT->screen.getHeight() * scale), 1u);
+    if (!fs_ensure_target(mUnderwaterRayMap, width, height, GL_RG16F)) // scattering, distance marched to
+    {
+        return;
+    }
+
+    LLGLDepthTest depth(GL_FALSE, GL_FALSE);
+    LLGLDisable cull(GL_CULL_FACE);
+
+    static LLStaticHashedString s_ray_steps("ray_steps");
+    static LLStaticHashedString s_ray_max_dist("ray_max_dist");
+    static LLStaticHashedString s_ray_density("ray_density");
+    static LLStaticHashedString s_ray_extinction("ray_extinction");
+    static LLStaticHashedString s_ray_anisotropy("ray_anisotropy");
+    static LLStaticHashedString s_ray_shafts("ray_shafts");
+    static LLStaticHashedString s_ray_color("ray_color");
+    static LLStaticHashedString s_caustic_params("fs_caustic_params");
+    static LLStaticHashedString s_caustic_inv_view("fs_caustic_inv_view");
+
+    // The caustic pattern of the floor (fs_bind_water_caustics), also when floor caustics are off
+    constexpr F64 wrap = 6283.185307179586; // 1000 turns of the phase, seamless
+    const F32 phase = (F32)fmod(LLFrameTimer::getElapsedSeconds() * llclamp((F32)caustic_speed, 0.f, 10.f), wrap);
+    const glm::mat4 inv_view = glm::inverse(get_current_modelview());
+
+    // March
+    {
+        LLGLDisable blend(GL_BLEND);
+        mUnderwaterRayMap.bindTarget();
+        bindDeferredShader(gFSUnderwaterRaysProgram); // depth, shadow maps, their matrices and the light directions
+        gFSUnderwaterRaysProgram.uniform4fv(LLShaderMgr::WATER_WATERPLANE, 1, LLDrawPoolAlpha::sWaterPlane.mV);
+        gFSUnderwaterRaysProgram.uniform1i(s_ray_steps, llclamp((S32)steps, 4, 128));
+        gFSUnderwaterRaysProgram.uniform1f(s_ray_max_dist, llclamp((F32)max_distance, 4.f, 256.f));
+        gFSUnderwaterRaysProgram.uniform1f(s_ray_density, llclamp((F32)density, 0.f, 1.f));
+        // Clarity: metres for the light to fall to about a third
+        gFSUnderwaterRaysProgram.uniform1f(s_ray_extinction, 1.f / llclamp((F32)clarity, 1.f, 500.f));
+        gFSUnderwaterRaysProgram.uniform1f(s_ray_anisotropy, 0.7f);
+        gFSUnderwaterRaysProgram.uniform1f(s_ray_shafts, llclamp((F32)shafts, 0.f, 1.f));
+        gFSUnderwaterRaysProgram.uniform4f(s_caustic_params, 1.f, 1.f / llclamp((F32)caustic_scale, 0.1f, 20.f), phase, 0.f);
+        gFSUnderwaterRaysProgram.uniformMatrix4fv(s_caustic_inv_view, 1, GL_FALSE, glm::value_ptr(inv_view));
+        fs_draw_screen_triangle(mScreenTriangleVB);
+        unbindDeferredShader(gFSUnderwaterRaysProgram);
+        mUnderwaterRayMap.flush();
+    }
+
+    // Composite onto the HDR scene, as the sun rays
+    {
+        mRT->screen.bindTarget();
+        gGL.setColorMask(true, false); // the screen's alpha is glow
+        LLGLEnable blend(GL_BLEND);
+        gGL.setSceneBlendType(LLRender::BT_ADD);
+
+        gFSSunRaysCompositeProgram.bind();
+        gFSSunRaysCompositeProgram.bindTexture(LLShaderMgr::DEFERRED_DIFFUSE, &mUnderwaterRayMap, false, LLTexUnit::TFO_POINT);
+        gFSSunRaysCompositeProgram.bindTexture(LLShaderMgr::DEFERRED_DEPTH, &mRT->deferredScreen, true);
+        gFSSunRaysCompositeProgram.uniform2f(LLShaderMgr::DEFERRED_SCREEN_RES, (GLfloat)mRT->screen.getWidth(), (GLfloat)mRT->screen.getHeight());
+        gFSSunRaysCompositeProgram.uniform3fv(s_ray_color, 1, light.mV);
+        fs_draw_screen_triangle(mScreenTriangleVB);
+        gFSSunRaysCompositeProgram.unbind();
+
+        gGL.setSceneBlendType(LLRender::BT_ALPHA);
+        gGL.setColorMask(true, true);
+        mRT->screen.flush();
+    }
+}
+// </FS:Trish>
 
 // Volumetric projector light: light cones in the air from the nearest projectors.
 // Each light is ray marched through its range at reduced resolution (fsSpotVolumetricF), its
