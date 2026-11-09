@@ -177,6 +177,7 @@ void LLViewerJointMesh::uploadJointMatrices()
         if (LLGLSLShader::sCurBoundShaderPtr)
         {
             LLGLSLShader::sCurBoundShaderPtr->uniform4fv(LLViewerShaderMgr::AVATAR_MATRIX, 45, mat);
+            LLGLSLShader::sCurBoundShaderPtr->mFSPaletteSerial = 0; // <FS:Trish/> not an uploadMatrixPalette palette
         }
         stop_glerror();
 }

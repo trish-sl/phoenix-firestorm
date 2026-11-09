@@ -519,6 +519,12 @@ public:
     // <FS:Trish> FSPerfParallelAvatarUpdate: pose queued for evaluation on a worker, see fsparallelavatar.cpp
     bool                mFSPosePending = false;
     bool                mFSPoseWasSitGround = false;
+    // idleUpdateMisc() left the attachment moves to FSParallelAvatar::endIdle(), after the pose
+    bool                mFSAttachMovesPending = false;
+    bool                mFSAttachMovesVisible = false;
+    bool                mFSAttachMovesOnly = false;
+    bool                fsDeferAttachmentMoves(bool& visible);
+    void                fsMoveDeferredAttachments();
     // </FS:Trish>
 
     S32                 mLastSkeletonSerialNum;

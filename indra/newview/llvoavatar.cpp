@@ -3538,6 +3538,43 @@ static bool override_bbox_unchanged(LLDrawable* drawable, const LLVector4a* exte
 }
 // </FS:Trish>
 
+// <FS:Trish> FSPerfParallelAvatarUpdate
+// Called by idleUpdateMisc() before it moves the attachments. True when the pose of this avatar
+// is still queued, FSParallelAvatar::endIdle() then calls fsMoveDeferredAttachments().
+bool LLVOAvatar::fsDeferAttachmentMoves(bool& visible)
+{
+    if (mFSAttachMovesOnly)
+    {
+        visible = mFSAttachMovesVisible;
+        return false;
+    }
+    if (mFSPosePending)
+    {
+        mFSAttachMovesPending = true;
+        mFSAttachMovesVisible = visible;
+        return true;
+    }
+    return false;
+}
+
+// Main thread, after the queued pose and finishPose()
+void LLVOAvatar::fsMoveDeferredAttachments()
+{
+    if (!mFSAttachMovesPending)
+    {
+        return;
+    }
+    mFSAttachMovesPending = false;
+    if (isDead() || mDrawable.isNull())
+    {
+        return;
+    }
+    mFSAttachMovesOnly = true;
+    idleUpdateMisc(true);
+    mFSAttachMovesOnly = false;
+}
+// </FS:Trish>
+
 void LLVOAvatar::idleUpdateMisc(bool detailed_update)
 {
     LL_PROFILE_ZONE_SCOPED_CATEGORY_AVATAR;
@@ -3552,7 +3589,11 @@ void LLVOAvatar::idleUpdateMisc(bool detailed_update)
     bool visible = isVisible() || mNeedsAnimUpdate;
 
     // update attachments positions
-    if (detailed_update)
+    // <FS:Trish> FSPerfParallelAvatarUpdate: a queued pose is not evaluated yet, the moves below
+    // would place the attachments on last frame's joints
+    //if (detailed_update)
+    if (detailed_update && !fsDeferAttachmentMoves(visible))
+    // </FS:Trish>
     {
         U32 draw_order = 0;
         bool attachment_selected = LLSelectMgr::getInstance()->getSelection()->getObjectCount() > 0 && LLSelectMgr::getInstance()->getSelection()->isAttachment();
@@ -3644,6 +3685,13 @@ void LLVOAvatar::idleUpdateMisc(bool detailed_update)
             }
         }
     }
+
+    // <FS:Trish> FSPerfParallelAvatarUpdate: only the deferred attachment moves
+    if (mFSAttachMovesOnly)
+    {
+        return;
+    }
+    // </FS:Trish>
 
     mNeedsAnimUpdate = false;
 
