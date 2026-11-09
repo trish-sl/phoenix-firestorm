@@ -137,6 +137,14 @@ protected:
     typedef std::unordered_map<LLUUID, LLPointer<LLFetchedGLTFMaterial > > uuid_mat_map_t;
     uuid_mat_map_t mList;
 
+    // <FS:Trish> Asset requests of new materials, issued from flushMaterials() within a small time
+    // budget: each request first checks the disk cache synchronously, and objects arriving in a
+    // burst used to ask for hundreds of materials in one frame.
+    std::vector<std::pair<LLUUID, LLPointer<LLFetchedGLTFMaterial> > > mFSPendingFetches;
+    size_t mFSPendingFetchHead = 0;
+    void fsIssueFetches();
+    // </FS:Trish>
+
     typedef std::vector<LLPointer<LLGLTFMaterial> > override_list_t;
     typedef std::unordered_map<LLUUID, override_list_t > queued_override_map_t;
     queued_override_map_t mQueuedOverrides;

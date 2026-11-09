@@ -575,14 +575,35 @@ public:
 
         Time cutoff = std::chrono::steady_clock::now() - 5s;
 
+        // <FS:Trish> At most 0.5 ms per clean: objects leaving in a burst age out thousands of buffers
+        // together, and freeing all of them (GL name and CPU copy each) in one frame took a few hundred
+        // milliseconds. What is left is freed by the next cleans, which come sooner then.
+        const Time budget_end = std::chrono::steady_clock::now() + 500us;
+        U32 freed = 0;
+        bool out_of_time = false;
+        // </FS:Trish>
+
         for (auto* pool : pools)
         {
+            // <FS:Trish>
+            if (out_of_time)
+            {
+                break;
+            }
+            // </FS:Trish>
             for (Pool::iterator iter = pool->begin(); iter != pool->end(); )
             {
                 auto& entries = iter->second;
 
                 while (!entries.empty() && entries.back().mAge < cutoff)
                 {
+                    // <FS:Trish>
+                    if ((++freed & 7) == 0 && std::chrono::steady_clock::now() > budget_end)
+                    {
+                        out_of_time = true;
+                        break;
+                    }
+                    // </FS:Trish>
                     LL_PROFILE_ZONE_NAMED_CATEGORY_VERTEX("vbo cache timeout");
                     auto& entry = entries.back();
                     ll_aligned_free_16(entry.mData);
@@ -601,8 +622,21 @@ public:
                 {
                     ++iter;
                 }
+                // <FS:Trish>
+                if (out_of_time)
+                {
+                    break;
+                }
+                // </FS:Trish>
             }
         }
+
+        // <FS:Trish> Continue after a few more touches instead of another 1024
+        if (out_of_time)
+        {
+            mTouchCount = 1024 - 32;
+        }
+        // </FS:Trish>
 
 #if 0
         LL_INFOS() << llformat("(%d/%d)/%d MB (distributed/allocated)/total in VBO Pool. Overhead: %d percent. Hit rate: %d percent",

@@ -631,10 +631,13 @@ LLFetchedGLTFMaterial* LLGLTFMaterialList::getMaterial(const LLUUID& id)
         {
             mat->materialBegin();
 
-            AssetLoadUserData *user_data = new AssetLoadUserData();
-            user_data->mMaterial = mat;
-
-            gAssetStorage->getAssetData(id, LLAssetType::AT_MATERIAL, onAssetLoadComplete, (void*)user_data);
+            // <FS:Trish> Requested from flushMaterials(), see mFSPendingFetches
+            //AssetLoadUserData *user_data = new AssetLoadUserData();
+            //user_data->mMaterial = mat;
+            //
+            //gAssetStorage->getAssetData(id, LLAssetType::AT_MATERIAL, onAssetLoadComplete, (void*)user_data);
+            mFSPendingFetches.emplace_back(id, mat);
+            // </FS:Trish>
         }
 
         return mat;
@@ -653,8 +656,37 @@ void LLGLTFMaterialList::removeMaterial(const LLUUID& id)
     mList.erase(id);
 }
 
+// <FS:Trish> See mFSPendingFetches
+void LLGLTFMaterialList::fsIssueFetches()
+{
+    if (mFSPendingFetchHead >= mFSPendingFetches.size())
+    {
+        return;
+    }
+    LL_PROFILE_ZONE_SCOPED;
+    LLTimer timer;
+    constexpr F32 BUDGET = 0.001f;
+    do
+    {
+        auto& [id, mat] = mFSPendingFetches[mFSPendingFetchHead++];
+        AssetLoadUserData* user_data = new AssetLoadUserData();
+        user_data->mMaterial = mat;
+        gAssetStorage->getAssetData(id, LLAssetType::AT_MATERIAL, onAssetLoadComplete, (void*)user_data);
+        mat = nullptr;
+    } while (mFSPendingFetchHead < mFSPendingFetches.size() && timer.getElapsedTimeF32() < BUDGET);
+
+    if (mFSPendingFetchHead >= mFSPendingFetches.size())
+    {
+        mFSPendingFetches.clear();
+        mFSPendingFetchHead = 0;
+    }
+}
+// </FS:Trish>
+
 void LLGLTFMaterialList::flushMaterials()
 {
+    fsIssueFetches(); // <FS:Trish/>
+
     // Similar variant to what textures use
     static const S32 MIN_UPDATE_COUNT = gSavedSettings.getS32("TextureFetchUpdateMinCount");       // default: 32
     //update MIN_UPDATE_COUNT or 5% of materials, whichever is greater
