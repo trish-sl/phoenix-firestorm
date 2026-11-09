@@ -210,7 +210,9 @@ void FSPanelBuildInfo::refreshSelection()
     S64 full_bytes = 0;
     for (LLViewerTexture* tex : textures)
     {
-        if (LLImageGL* image = tex->getGLTexture())
+        // A texture still loading has no format yet, and sizing format 0 is a fatal error
+        LLImageGL* image = tex->getGLTexture();
+        if (image && image->getPrimaryFormat() != 0)
         {
             if (tex->hasGLTexture())
             {

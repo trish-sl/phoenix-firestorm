@@ -28,6 +28,7 @@
 #define LL_LLTEXTUREVIEW_H
 
 #include "llcontainerview.h"
+#include "llframetimer.h" // <FS:Trish/>
 
 class LLViewerFetchedTexture;
 class LLTextureBar;
@@ -61,6 +62,7 @@ private:
     bool mFreezeView;
     bool mOrderFetch;
     bool mPrintList;
+    LLFrameTimer mFSRebuildTimer; // <FS:Trish/> the bars are rebuilt a few times a second, not every draw
 
     LLTextBox *mInfoTextp;
 
