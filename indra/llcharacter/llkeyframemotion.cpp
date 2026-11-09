@@ -64,6 +64,7 @@ static F32 MIN_ACCELERATION_SQUARED = 0.0005f * 0.0005f;
 static F32 MAX_CONSTRAINTS = 10;
 
 static constexpr U32 MAX_ANIM_FETCH_RETRIES = 5; // <FS:Trish/> Download retries after a failed fetch
+bool LLKeyframeMotion::sFSDeferCacheRead = false; // <FS:Trish/> FSPerfDiskThread
 
 //-----------------------------------------------------------------------------
 // JointMotionList
@@ -568,6 +569,15 @@ LLMotion::LLMotionInitStatus LLKeyframeMotion::onInitialize(LLCharacter *charact
     // Load named file by concatenating the character prefix with the motion name.
     // Load data into a buffer to be parsed.
     //-------------------------------------------------------------------------
+    // <FS:Trish> FSPerfDiskThread: request it as if it wasn't cached; a cached one comes back from
+    // the asset storage's lookup on the disk thread
+    if (sFSDeferCacheRead && mID.notNull())
+    {
+        mAssetStatus = ASSET_NEEDS_FETCH;
+        return onInitialize(character);
+    }
+    // </FS:Trish>
+
     U8 *anim_data;
     S32 anim_file_size;
 

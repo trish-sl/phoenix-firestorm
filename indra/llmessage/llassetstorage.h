@@ -278,6 +278,12 @@ public:
     void        markAssetToxic( const LLUUID& uuid );
 
 protected:
+    // <FS:Trish> FSPerfDiskThread: the rest of getAssetData once the disk thread looked the asset up
+    // (cached_size > 0: in the cache)
+    void fsGetAssetDataChecked(const LLUUID& uuid, LLAssetType::EType type, LLGetAssetCallback callback,
+                               void* user_data, bool is_priority, S64 cached_size);
+    std::shared_ptr<bool> mFSAlive = std::make_shared<bool>(true);  // expires with this storage
+    // </FS:Trish>
     bool findInCacheAndInvokeCallback(const LLUUID& uuid, LLAssetType::EType type,
                                           LLGetAssetCallback callback, void *user_data);
 

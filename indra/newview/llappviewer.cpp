@@ -28,6 +28,8 @@
 
 #include "llappviewer.h"
 #include "fsrenderthread.h" // <FS:Trish/> FSRenderThread
+#include "fsdiskthread.h" // <FS:Trish/> FSPerfDiskThread
+#include "llkeyframemotion.h" // <FS:Trish/> FSPerfDiskThread
 #include "fsgputimers.h" // <FS:Trish/> FSRenderGPUTimings
 #include "fsnativepopout.h"
 
@@ -2194,6 +2196,11 @@ bool LLAppViewer::cleanup()
         LLHUDManager::getInstance()->shutdownClass();
     }
 
+    // <FS:Trish> FSPerfDiskThread: finish its lookups before the asset storage goes; their follow ups are
+    // dropped with the storage
+    LLKeyframeMotion::sFSDeferCacheRead = false;
+    FSDiskThread::shutdown();
+    // </FS:Trish>
     delete gAssetStorage;
     gAssetStorage = NULL;
 
@@ -2716,6 +2723,20 @@ bool LLAppViewer::initThreads()
         [apply_texture_thread_priority](LLControlVariable*, const LLSD& new_val, const LLSD&)
         {
             apply_texture_thread_priority(new_val.asBoolean());
+        });
+    // </FS:Trish>
+
+    // <FS:Trish> FSPerfDiskThread: asset cache lookups and access time updates on a disk thread
+    auto apply_disk_thread = [](bool enabled)
+    {
+        FSDiskThread::setEnabled(enabled);
+        LLKeyframeMotion::sFSDeferCacheRead = enabled;
+    };
+    apply_disk_thread(gSavedSettings.getBOOL("FSPerfDiskThread"));
+    gSavedSettings.getControl("FSPerfDiskThread")->getSignal()->connect(
+        [apply_disk_thread](LLControlVariable*, const LLSD& new_val, const LLSD&)
+        {
+            apply_disk_thread(new_val.asBoolean());
         });
     // </FS:Trish>
 

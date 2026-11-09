@@ -199,6 +199,11 @@ public:
 
     static void flushKeyframeCache();
 
+    // <FS:Trish> FSPerfDiskThread: don't read a cached animation on the main thread in onInitialize,
+    // go through the asset storage (whose cache lookup runs on the disk thread) as for a download
+    static bool sFSDeferCacheRead;
+    // </FS:Trish>
+
 protected:
     //-------------------------------------------------------------------------
     // JointConstraintSharedData

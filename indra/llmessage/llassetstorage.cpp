@@ -43,6 +43,8 @@
 #include "message.h"
 #include "llxfermanager.h"
 #include "llfilesystem.h"
+#include "fsdiskthread.h" // <FS:Trish/> FSPerfDiskThread
+#include "lldiskcache.h" // <FS:Trish/>
 #include "lldbstrings.h"
 
 #include "lltransfersourceasset.h"
@@ -520,6 +522,54 @@ void LLAssetStorage::getAssetData(const LLUUID uuid,
         return;
     }
 
+    // <FS:Trish> FSPerfDiskThread: look the asset up in the disk cache on the disk thread, reading it once
+    // there so the callback's read comes from the OS file cache, and continue on the main thread
+    if (FSDiskThread::isEnabled())
+    {
+        std::weak_ptr<bool> alive = mFSAlive;
+        std::shared_ptr<S64> cached_size = std::make_shared<S64>(0);
+        const bool posted = FSDiskThread::post(
+            [uuid, type, cached_size]()
+            {
+                const std::string filename = LLDiskCache::metaDataToFilepath(uuid, type);
+                const S64 size = LLFile::size(filename);
+                if (size == 0)
+                {   // as the main thread path below: a cache file with no data is removed
+                    LLFile::remove(filename, ENOENT);
+                }
+                else if (size > 0)
+                {
+                    constexpr S64 MAX_PREFETCH = 16 * 1024 * 1024;
+                    if (size <= MAX_PREFETCH)
+                    {
+                        if (LLFILE* fp = LLFile::fopen(filename, LLFILE_MODE("rb")))
+                        {
+                            thread_local std::vector<U8> buffer(256 * 1024);
+                            while (fread(buffer.data(), 1, buffer.size(), fp) == buffer.size())
+                            {
+                            }
+                            LLFile::close(fp);
+                        }
+                    }
+                    LLFileSystem::fsUpdateFileAccessTime(fsyspath(filename));
+                }
+                *cached_size = size;
+            },
+            [this, alive, uuid, type, callback, user_data, is_priority, cached_size]()
+            {
+                if (alive.expired())
+                {
+                    return;
+                }
+                fsGetAssetDataChecked(uuid, type, callback, user_data, is_priority, *cached_size);
+            });
+        if (posted)
+        {
+            return;
+        }
+    }
+    // </FS:Trish>
+
     if (findInCacheAndInvokeCallback(uuid,type,callback,user_data))
     {
         LL_DEBUGS("AssetStorage") << "ASSET_TRACE asset " << uuid << " found in cache" << LL_ENDL;
@@ -582,6 +632,52 @@ void LLAssetStorage::getAssetData(const LLUUID uuid,
         _queueDataRequest(uuid, type, callback, user_data, duplicate, is_priority);
     }
 }
+
+// <FS:Trish> FSPerfDiskThread: getAssetData after its cache lookup, which the disk thread did. Main thread.
+void LLAssetStorage::fsGetAssetDataChecked(const LLUUID& uuid, LLAssetType::EType type, LLGetAssetCallback callback,
+                                           void* user_data, bool is_priority, S64 cached_size)
+{
+    LL_PROFILE_ZONE_SCOPED;
+    if (mShutDown)
+    {
+        if (callback)
+        {
+            add(sFailedDownloadCount, 1);
+            callback(uuid, type, user_data, LL_ERR_ASSET_REQUEST_FAILED, LLExtStat::NONE);
+        }
+        return;
+    }
+    if (cached_size > 0)
+    {
+        LL_DEBUGS("AssetStorage") << "ASSET_TRACE asset " << uuid << " found in cache" << LL_ENDL;
+        if (callback)
+        {
+            callback(uuid, type, user_data, LL_ERR_NOERR, LLExtStat::CACHE_CACHED);
+        }
+        return;
+    }
+
+    // as getAssetData: check to see if there's a pending download of this uuid already
+    bool duplicate = false;
+    for (LLAssetRequest* tmp : mPendingDownloads)
+    {
+        if ((type == tmp->getType()) && (uuid == tmp->getUUID()))
+        {
+            if (callback == tmp->mDownCallback && user_data == tmp->mUserData)
+            {
+                // this is a duplicate from the same subsystem - throw it away
+                LL_DEBUGS("AssetStorage") << "Discarding duplicate request for asset " << uuid
+                                          << "." << LLAssetType::lookup(type) << LL_ENDL;
+                return;
+            }
+            // this is a duplicate request
+            // queue the request, but don't actually ask for it again
+            duplicate = true;
+        }
+    }
+    _queueDataRequest(uuid, type, callback, user_data, duplicate, is_priority);
+}
+// </FS:Trish>
 
 // static
 void LLAssetStorage::removeAndCallbackPendingDownloads(const LLUUID& file_id, LLAssetType::EType file_type,

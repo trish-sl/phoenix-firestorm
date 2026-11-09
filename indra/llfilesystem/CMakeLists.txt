@@ -11,6 +11,7 @@ set(llfilesystem_SOURCE_FILES
     lllfsthread.cpp
     lldiskcache.cpp
     llfilesystem.cpp
+    fsdiskthread.cpp
     )
 
 set(llfilesystem_HEADER_FILES
@@ -20,6 +21,7 @@ set(llfilesystem_HEADER_FILES
     lldiriterator.h
     lllfsthread.h
     lldiskcache.h
+    fsdiskthread.h
     llfilesystem.h
     )
 

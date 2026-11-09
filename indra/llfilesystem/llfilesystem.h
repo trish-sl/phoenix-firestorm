@@ -60,6 +60,7 @@ class LLFileSystem
          * accessed is up to date (This is used in the mechanism for purging the cache)
          */
         void updateFileAccessTime();
+        static void fsUpdateFileAccessTime(const std::filesystem::path& path); // <FS:Trish/> FSPerfDiskThread
 
         static bool getExists(const LLUUID& file_id, const LLAssetType::EType file_type);
         static bool removeFile(const LLUUID& file_id, const LLAssetType::EType file_type, int suppress_warning = 0);

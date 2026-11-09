@@ -36,6 +36,13 @@
 #include "llsdserialize.h"
 #include "llagent.h" // <FS:Beq/> For gAgent
 #include "llworld.h" // For LLWorld::getInstance()
+// <FS:Trish> FSPerfDiskThread
+#include "fsdiskthread.h"
+#include "llsdutil.h"
+#include <atomic>
+#include <filesystem>
+#include <thread>
+// </FS:Trish>
 
 //static variables
 U32 LLVOCacheEntry::sMinFrameRange = 0;
@@ -1660,6 +1667,65 @@ bool LLVOCache::readFromCache(U64 handle, const LLUUID& id, LLVOCacheEntry::voca
 }
 
 // We now pass in the cache entry map, so that we can remove entries from extras that are no longer in the primary cache.
+// <FS:Trish> FSPerfDiskThread: the generic extras of a region are written on the disk thread (formatting
+// them as XML took a few hundred milliseconds when a region went out of range). Into a temporary file
+// renamed over the old one, so a read sees either the old file or the new one; a read for a region
+// whose write is still running waits for it, so the extras never lag behind the object cache.
+namespace
+{
+    std::map<U64, std::shared_ptr<std::atomic<bool>>> sFSExtrasWrites;   // by handle, main thread
+
+    void fs_wait_for_extras_write(U64 handle)
+    {
+        auto it = sFSExtrasWrites.find(handle);
+        if (it == sFSExtrasWrites.end())
+        {
+            return;
+        }
+        LL_PROFILE_ZONE_NAMED("fs wait for extras write");
+        while (!it->second->load(std::memory_order_acquire))
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+    }
+
+    // Disk thread. True when the whole file was written and moved into place.
+    bool fs_write_extras_file(const std::string& filename, const LLUUID& id, const std::vector<LLSD>& entries)
+    {
+        const std::string temp = filename + ".fstmp";
+        {
+            llofstream out(temp, std::ios::out | std::ios::binary);
+            if (!out.good())
+            {
+                return false;
+            }
+            out << LLGLTFOverrideCacheEntry::VERSION_LABEL << ":" << LLGLTFOverrideCacheEntry::VERSION << '\n';
+            out << id << '\n';
+            out << std::setw(10) << std::setfill('0') << entries.size() << '\n';
+            for (const LLSD& entry : entries)
+            {
+                LLSDSerialize::serialize(entry, out, LLSDSerialize::LLSD_XML);
+                out << '\n';
+            }
+            if (!out.good())
+            {
+                out.close();
+                LLFile::remove(temp);
+                return false;
+            }
+        }
+        std::error_code ec;
+        std::filesystem::rename(fsyspath(temp), fsyspath(filename), ec);
+        if (ec)
+        {
+            LLFile::remove(temp);
+            return false;
+        }
+        return true;
+    }
+}
+// </FS:Trish>
+
 void LLVOCache::readGenericExtrasFromCache(U64 handle, const LLUUID& id, LLVOCacheEntry::vocache_gltf_overrides_map_t& cache_extras_entry_map, const LLVOCacheEntry::vocache_entry_map_t& cache_entry_map)
 {
 	LL_PROFILE_ZONE_SCOPED_CATEGORY_NETWORK;
@@ -1681,6 +1747,7 @@ void LLVOCache::readGenericExtrasFromCache(U64 handle, const LLUUID& id, LLVOCac
         return;
     }
 
+    fs_wait_for_extras_write(handle); // <FS:Trish/> FSPerfDiskThread
     std::string filename(getObjectCacheExtrasFilename(handle));
     // <FS:Beq> Material Override Cache caused long delays
 	#ifdef TRACY_ENABLE
@@ -2001,6 +2068,60 @@ void LLVOCache::writeGenericExtrasToCache(U64 handle, const LLUUID& id, const LL
     }
 
     std::string filename = getObjectCacheExtrasFilename(handle);
+
+    // <FS:Trish> FSPerfDiskThread: collect the entries here, format and write them on the disk thread
+    if (FSDiskThread::isEnabled())
+    {
+        LL_PROFILE_ZONE_NAMED("fs collect extras");
+        LLViewerRegion* region = LLWorld::getInstance()->getRegionFromHandle(handle);
+        auto entries = std::make_shared<std::vector<LLSD>>();
+        entries->reserve(cache_extras_entry_map.size());
+        for (auto [local_id, entry] : cache_extras_entry_map)
+        {
+            // as below
+            if (entry.mObjectId.isNull() && region)
+            {
+                gObjectList.getUUIDFromLocal(entry.mObjectId, local_id, region->getHost().getAddress(), region->getHost().getPort());
+            }
+            if (entry.mSides.size() > 0 && entry.mSides.size() == entry.mGLTFMaterial.size())
+            {
+                LLSD entry_llsd = entry.toLLSD();
+                entry_llsd["local_id"] = (S32)local_id;
+                // A deep copy: LLSD shares its values with reference counts that aren't thread safe
+                entries->push_back(llsd_clone(entry_llsd));
+            }
+        }
+        fs_wait_for_extras_write(handle);   // one write per file at a time
+        auto finished = std::make_shared<std::atomic<bool>>(false);
+        auto ok = std::make_shared<bool>(false);
+        sFSExtrasWrites[handle] = finished;
+        const bool posted = FSDiskThread::post(
+            [filename, id, entries, finished, ok]()
+            {
+                *ok = fs_write_extras_file(filename, id, *entries);
+                finished->store(true, std::memory_order_release);
+            },
+            [handle, finished, ok]()
+            {
+                auto it = sFSExtrasWrites.find(handle);
+                if (it != sFSExtrasWrites.end() && it->second == finished)
+                {
+                    sFSExtrasWrites.erase(it);
+                }
+                if (!*ok && LLVOCache::instanceExists())
+                {
+                    LL_WARNS() << "Failed writing extras cache for handle " << handle << LL_ENDL;
+                    LLVOCache::instance().removeGenericExtrasForHandle(handle);
+                }
+            });
+        if (posted)
+        {
+            return;
+        }
+        sFSExtrasWrites.erase(handle);
+    }
+    // </FS:Trish>
+
     llofstream out(filename, std::ios::out | std::ios::binary);
     if(!out.good())
     {
