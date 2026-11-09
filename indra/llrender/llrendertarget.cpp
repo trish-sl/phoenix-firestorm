@@ -29,6 +29,7 @@
 #include "llrendertarget.h"
 #include "llrender.h"
 #include "llgl.h"
+#include "fsglstream.h" // <FS:Trish/> FSRenderThread
 
 LLRenderTarget* LLRenderTarget::sBoundTarget = NULL;
 U32 LLRenderTarget::sBytesAllocated = 0;
@@ -49,6 +50,33 @@ void check_framebuffer_status()
         }
     }
 }
+
+// <FS:Trish> FSRenderThread: glGetError makes the main thread wait for the render thread to work
+// through everything queued, once per attachment (impostors as avatars switch, resizes, dynamic
+// resolution). While it records, the check runs on the render thread in stream order and only logs.
+namespace
+{
+    void fs_check_alloc_error(U64 depth)
+    {
+        if (glGetError() != GL_NO_ERROR)
+        {
+            LL_WARNS() << (depth ? "Unable to allocate depth buffer for render target."
+                                 : "Could not allocate color buffer for render target.") << LL_ENDL;
+        }
+    }
+
+    // True when the allocation just made failed (always false while recording, see above)
+    bool fs_alloc_failed(bool depth)
+    {
+        if (FSGLStream::isRecording())
+        {
+            FSGLStream::recordCall(&fs_check_alloc_error, depth ? 1 : 0);
+            return false;
+        }
+        return glGetError() != GL_NO_ERROR;
+    }
+}
+// </FS:Trish>
 
 bool LLRenderTarget::sUseFBO = false;
 U32 LLRenderTarget::sCurFBO = 0;
@@ -237,7 +265,10 @@ bool LLRenderTarget::addColorAttachment(U32 color_fmt)
     {
         clear_glerror();
         LLImageGL::setManualImage(LLTexUnit::getInternalType(mUsage), 0, color_fmt, mResX, mResY, GL_RGBA, GL_UNSIGNED_BYTE, NULL, false);
-        if (glGetError() != GL_NO_ERROR)
+        // <FS:Trish> FSRenderThread
+        //if (glGetError() != GL_NO_ERROR)
+        if (fs_alloc_failed(false))
+        // </FS:Trish>
         {
             LL_WARNS() << "Could not allocate color buffer for render target." << LL_ENDL;
             return false;
@@ -310,7 +341,10 @@ bool LLRenderTarget::allocateDepth()
 
     sBytesAllocated += mResX*mResY*4;
 
-    if (glGetError() != GL_NO_ERROR)
+    // <FS:Trish> FSRenderThread
+    //if (glGetError() != GL_NO_ERROR)
+    if (fs_alloc_failed(true))
+    // </FS:Trish>
     {
         LL_WARNS() << "Unable to allocate depth buffer for render target." << LL_ENDL;
         return false;
