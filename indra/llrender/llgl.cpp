@@ -1786,6 +1786,7 @@ void LLGLManager::initExtensions()
     {
         proc = nullptr;
     }
+#if LL_WINDOWS || LL_SDL_WINDOW // LL_GET_PROC_ADDRESS is only defined for these
     if (mFSHasGPUDrivenDraws && mGLExtensions.contains("GL_ARB_bindless_texture"))
     {
         mFSBindlessProcs[0] = (void*)LL_GET_PROC_ADDRESS("glGetTextureSamplerHandleARB");
@@ -1796,6 +1797,7 @@ void LLGLManager::initExtensions()
             mFSBindlessProcs[0] = mFSBindlessProcs[1] = mFSBindlessProcs[2] = nullptr;
         }
     }
+#endif
     LL_INFOS("RenderInit") << "Bindless textures available: " << (mFSBindlessProcs[0] != nullptr) << LL_ENDL;
     // </FS:Trish>
 
