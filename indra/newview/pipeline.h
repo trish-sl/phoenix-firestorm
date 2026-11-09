@@ -299,6 +299,8 @@ public:
         U32             mTex = 0;                   // cascade depth texture it was rendered for
         bool            mValid = false;
         bool            mMatch = false;             // this update's projection matches the cached one
+        glm::mat4       mPrevPendingClip = glm::mat4(1.f);  // the last update's
+        bool            mStill = false;             // this update's projection matches the last update's
         LLVector3       mLight;                     // light direction the cascade is built with
         bool            mLightSet = false;
         F32             mDepthNear = 0.f;           // world anchored, snapped light space depth range
@@ -1025,6 +1027,11 @@ public:
         glm::vec3           mClipCenter = glm::vec3(0.f);   // ...and the sphere around that box
         F32                 mClipRadius = 0.f;
         std::vector<std::pair<LLPointer<LLViewerTexture>, S32>> mMaskTextures; // alpha tested textures, discard
+        // FSPerfSpotShadowSplit: the static casters' depth kept in mFSSpotStatic
+        bool                mStaticCached = false;          // mFSSpotStatic holds this slot's static depth
+        U32                 mStaticTex = 0;                 // the slot's depth texture it was copied from
+        bool                mHasDynamic = false;            // the slot's map holds dynamic casters drawn over it
+        F32                 mSplitRetryTime = 0.f;          // static part wasn't cacheable: render whole until then
     } mSpotShadowState[FS_MAX_SPOT_SHADOWS];
     // FSPerfSpotShadowCache (pipeline.cpp): a projector's shadow is kept, not re-rendered, while nothing it
     // could show changed: the light, static geometry in its frustum, its alpha masks, and no avatar or
@@ -1041,6 +1048,15 @@ public:
     void                    fsSpotCacheForgetAll();
     bool                    fsSpotShadowStill(U32 slot, LLCamera& shadow_cam);
     void                    fsSpotShadowRecord(U32 slot, LLCullResult& result, const glm::mat4& clip);
+    bool                    fsSpotMasksUnchanged(const SpotShadowState& state) const;
+    // FSPerfSpotShadowSplit (pipeline.cpp): a projector with avatars or moving objects in view keeps its
+    // static casters' depth and only culls and draws the dynamic ones over a copy of it each frame
+    enum EFSShadowPartitions { FS_SHADOW_PARTS_ALL = 0, FS_SHADOW_PARTS_STATIC, FS_SHADOW_PARTS_DYNAMIC };
+    U32                     mFSShadowParts = FS_SHADOW_PARTS_ALL; // which partitions a shadow cull walks
+    LLRenderTarget          mFSSpotStatic[FS_MAX_SPOT_SHADOWS];
+    bool                    fsRenderSpotShadowSplit(U32 slot, LLDrawable* light, const glm::mat4& view, const glm::mat4& proj,
+                                                    LLCamera& shadow_cam, LLCullResult& result, bool light_unchanged);
+    void                    fsReleaseSpotStatic(U32 slot);
     void                    fsUpdateShadowStaticMatrices();
     // </FS:Trish>
 

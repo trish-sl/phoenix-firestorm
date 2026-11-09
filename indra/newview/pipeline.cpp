@@ -1649,6 +1649,7 @@ void LLPipeline::releaseSpotShadowTargets()
         for (U32 i = 0; i < FS_MAX_SPOT_SHADOWS; i++) // <FS:Trish/> slots 2+ are allocated on demand
         {
             mSpotShadow[i].release();
+            fsReleaseSpotStatic(i); // <FS:Trish/> FSPerfSpotShadowSplit
         }
         fsReleaseSpotColoredTargets(); // <FS:Trish/> they shared these depth buffers
         // <FS:Trish> the projector throttle must not reuse a released map
@@ -2924,6 +2925,17 @@ void LLPipeline::updateCull(LLCamera& camera, LLCullResult& result, bool hud_att
                 i != LLViewerRegion::PARTITION_CONTROL_AV)
             {
                 continue;
+            }
+            // </FS:Trish>
+            // <FS:Trish> FSPerfSpotShadowSplit: the static pass walks only the region object and terrain
+            // partitions, the dynamic pass everything else
+            if (mFSShadowParts != FS_SHADOW_PARTS_ALL && sShadowRender)
+            {
+                const bool is_static = i == LLViewerRegion::PARTITION_VOLUME || i == LLViewerRegion::PARTITION_TERRAIN;
+                if (is_static != (mFSShadowParts == FS_SHADOW_PARTS_STATIC))
+                {
+                    continue;
+                }
             }
             // </FS:Trish>
             LLSpatialPartition* part = region->getSpatialPartition(i);
@@ -13214,22 +13226,26 @@ void LLPipeline::fsShadowCacheBeginCascade(S32 cascade, const glm::mat4& proj, c
         }
     }
 
+    cache.mPrevPendingClip = cache.mPendingClip;
     cache.mPendingClip = proj * view;
-    bool match = cache.mValid && cache.mTex == shadow.getDepth();
-    for (S32 c = 0; match && c < 4; ++c)
+    auto same_clip = [](const glm::mat4& x, const glm::mat4& y)
     {
-        for (S32 r = 0; r < 4; ++r)
+        for (S32 c = 0; c < 4; ++c)
         {
-            const F32 a = cache.mClip[c][r];
-            const F32 b = cache.mPendingClip[c][r];
-            if (fabsf(a - b) > llmax(fabsf(a), fabsf(b)) * 1e-5f + 1e-6f)
+            for (S32 r = 0; r < 4; ++r)
             {
-                match = false;
-                break;
+                const F32 a = x[c][r];
+                const F32 b = y[c][r];
+                if (fabsf(a - b) > llmax(fabsf(a), fabsf(b)) * 1e-5f + 1e-6f)
+                {
+                    return false;
+                }
             }
         }
-    }
-    cache.mMatch = match;
+        return true;
+    };
+    cache.mMatch = cache.mValid && cache.mTex == shadow.getDepth() && same_clip(cache.mClip, cache.mPendingClip);
+    cache.mStill = cache.mMatch || same_clip(cache.mPrevPendingClip, cache.mPendingClip);
 
     fsUpdateShadowStaticMatrices();
 
@@ -13320,9 +13336,12 @@ void LLPipeline::fsShadowCacheRenderStatic(LLCamera& shadow_cam, const U32* type
         x = (x ^ (x >> 27)) * 0x94d049bb133111ebULL;
         return x ^ (x >> 31);
     };
+    // While the cascade moves (camera moving), the cached depth can't match and storing it is wasted:
+    // no hash and no copy into the cache until the projection holds still for an update.
+    const bool keep = cache.mMatch || cache.mStill;
     U64 hash = 0;
     U64 items = 0;
-    for (U32 t = 0; t < type_count; ++t)
+    for (U32 t = 0; keep && t < type_count; ++t)
     {
         for (LLCullResult::drawinfo_iterator i = beginRenderMap(types[t]), end = endRenderMap(types[t]); i != end; ++i)
         {
@@ -13336,7 +13355,7 @@ void LLPipeline::fsShadowCacheRenderStatic(LLCamera& shadow_cam, const U32* type
             }
         }
     }
-    if (hasRenderType(LLDrawPool::POOL_TERRAIN))
+    if (keep && hasRenderType(LLDrawPool::POOL_TERRAIN))
     {
         for (LLDrawPool* poolp : mPools)
         {
@@ -13357,6 +13376,10 @@ void LLPipeline::fsShadowCacheRenderStatic(LLCamera& shadow_cam, const U32* type
     }
     for (const LLMatrix4* mat : mFSShadowStaticMatrices)
     {
+        if (!keep)
+        {
+            break;
+        }
         U32 tx = 0;
         U32 ty = 0;
         memcpy(&tx, &mat->mMatrix[3][0], sizeof(tx));
@@ -13393,11 +13416,14 @@ void LLPipeline::fsShadowCacheRenderStatic(LLCamera& shadow_cam, const U32* type
 
         renderGeomShadow(shadow_cam); // terrain only under FS_SHADOW_STATIC
 
-        cache.mTarget.copyContents(shadow, 0, 0, width, height, 0, 0, width, height, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
-        cache.mClip = cache.mPendingClip;
-        cache.mHash = hash;
-        cache.mTex = shadow.getDepth();
-        cache.mValid = true;
+        if (keep)
+        {
+            cache.mTarget.copyContents(shadow, 0, 0, width, height, 0, 0, width, height, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+            cache.mClip = cache.mPendingClip;
+            cache.mHash = hash;
+            cache.mTex = shadow.getDepth();
+            cache.mValid = true;
+        }
         ++misses;
     }
 
@@ -13966,14 +13992,20 @@ void LLPipeline::fsRenderExtraSpotShadows(LLCamera& camera, const glm::mat4& sav
         spot_state.mRadius = light_radius;
         spot_state.mFrame = mShadowFrame;
 
+        // There are two spot shadow camera IDs. Shadow passes run with occlusion culling off, so
+        // the IDs only stamp which groups were seen this frame and the slots can share them.
+        LLViewerCamera::sCurCameraID = (LLViewerCamera::eCameraID)(LLViewerCamera::CAMERA_SPOT_SHADOW0 + (i & 1));
+
+        // FSPerfSpotShadowSplit: static casters kept, only the dynamic ones drawn
+        if (fsRenderSpotShadowSplit(i, drawable, view, proj, shadow_cam, result[i], spot_unchanged))
+        {
+            continue;
+        }
+
         fsBeginSpotColoredShadow(i, drawable); // coloured projector shadows, before the target is bound
         mSpotShadow[i].bindTarget();
         mSpotShadow[i].getViewport(gGLViewport);
         mSpotShadow[i].clear();
-
-        // There are two spot shadow camera IDs. Shadow passes run with occlusion culling off, so
-        // the IDs only stamp which groups were seen this frame and the slots can share them.
-        LLViewerCamera::sCurCameraID = (LLViewerCamera::eCameraID)(LLViewerCamera::CAMERA_SPOT_SHADOW0 + (i & 1));
 
         RenderSpotLight = drawable;
         renderShadow(view, proj, shadow_cam, result[i], false);
@@ -14168,6 +14200,7 @@ void LLPipeline::fsSpotCacheForget(U32 slot)
         SpotShadowState& state = mSpotShadowState[slot];
         state.mStaticOnly = false;
         state.mMaskTextures.clear();
+        fsReleaseSpotStatic(slot); // <FS:Trish/> FSPerfSpotShadowSplit
     }
 }
 
@@ -14183,25 +14216,38 @@ void LLPipeline::fsSpotCacheForgetAll()
 }
 
 // Whether the slot's map can be kept this frame (see above). shadow_cam has its frustum planes set.
-bool LLPipeline::fsSpotShadowStill(U32 slot, LLCamera& shadow_cam)
+static constexpr F32 FS_SPOT_CACHE_MAX_AGE = 1.f;   // a kept projector map (or static part) is redrawn after this
+
+// the alpha tested textures of the slot's last static render are still at the discard level it drew them with
+bool LLPipeline::fsSpotMasksUnchanged(const SpotShadowState& state) const
 {
-    constexpr F32 MAX_AGE = 1.f;
-    if (!mFSSpotCacheInUse || gCubeSnapshot || slot >= FS_MAX_SPOT_SHADOWS)
-    {
-        return false;
-    }
-    const SpotShadowState& state = mSpotShadowState[slot];
-    if (!state.mStaticOnly || state.mDirty || gFrameTimeSeconds < state.mRenderTime ||
-        gFrameTimeSeconds - state.mRenderTime > MAX_AGE)
-    {
-        return false;
-    }
     for (const auto& tex : state.mMaskTextures)
     {
         if (tex.first.isNull() || tex.first->getDiscardLevel() != tex.second)
         {
             return false;
         }
+    }
+    return true;
+}
+
+bool LLPipeline::fsSpotShadowStill(U32 slot, LLCamera& shadow_cam)
+{
+    if (!mFSSpotCacheInUse || gCubeSnapshot || slot >= FS_MAX_SPOT_SHADOWS)
+    {
+        return false;
+    }
+    const SpotShadowState& state = mSpotShadowState[slot];
+    // mHasDynamic: FSPerfSpotShadowSplit drew avatars or moving objects over the static casters, the
+    // map can't be kept as it is even once they left
+    if (!state.mStaticOnly || state.mDirty || state.mHasDynamic || gFrameTimeSeconds < state.mRenderTime ||
+        gFrameTimeSeconds - state.mRenderTime > FS_SPOT_CACHE_MAX_AGE)
+    {
+        return false;
+    }
+    if (!fsSpotMasksUnchanged(state))
+    {
+        return false;
     }
 
     // avatars that cast a shadow (attachments are in their bounds) and active objects, gathered
@@ -14371,6 +14417,128 @@ void LLPipeline::fsSpotShadowRecord(U32 slot, LLCullResult& result, const glm::m
     }
     textures.clear();
     state.mStaticOnly = true;
+}
+
+// FSPerfSpotShadowSplit. A projector with an avatar, attachment, animesh or moving object in its frustum
+// can't be kept by FSPerfSpotShadowCache, and re-rendering it means culling, sorting and drawing the
+// whole scene in its frustum on the main thread every frame. Split, its map is drawn in two passes:
+//  - static: only the region object and terrain partitions are culled and drawn; when what they drew
+//    passes fsSpotShadowRecord (the same test FSPerfSpotShadowCache keeps a whole map by), its depth is
+//    copied into mFSSpotStatic,
+//  - dynamic: only the other partitions (bridges with the avatars' attachments and moving objects,
+//    avatars, animesh, trees and grass) are culled and drawn over it.
+// While the static part is still valid by the FSPerfSpotShadowCache rules (light unchanged, no static
+// change noted in the frustum, same masks, less than a second old), a frame copies it back and draws
+// the dynamic pass only. A static part that can't be kept (an animated alpha mask, coloured casters)
+// leaves the slot to the whole render for a couple of seconds. Coloured translucent casters are only
+// drawn by the static pass: dynamic ones stay grey in the colour map while it is kept.
+// Returns false when the caller renders the slot whole, as before.
+bool LLPipeline::fsRenderSpotShadowSplit(U32 slot, LLDrawable* light, const glm::mat4& view, const glm::mat4& proj,
+                                         LLCamera& shadow_cam, LLCullResult& result, bool light_unchanged)
+{
+    if (slot >= FS_MAX_SPOT_SHADOWS)
+    {
+        return false;
+    }
+    static LLCachedControl<bool> split(gSavedSettings, "FSPerfSpotShadowSplit", false);
+    SpotShadowState& state = mSpotShadowState[slot];
+    LLRenderTarget& target = mSpotShadow[slot];
+    LLRenderTarget& cache = mFSSpotStatic[slot];
+    const U32 width = target.getWidth();
+    const U32 height = target.getHeight();
+    if (!split || !mFSSpotCacheInUse || gCubeSnapshot || gFrameTimeSeconds < state.mSplitRetryTime ||
+        !target.getDepth() || !width || !height)
+    {
+        if (!gCubeSnapshot)
+        {   // the whole render below replaces whatever was drawn over the static part, and its
+            // fsSpotShadowRecord clears the change notes the kept static part was checked against
+            state.mHasDynamic = false;
+            state.mStaticCached = false;
+            if (!split && cache.getDepth())
+            {
+                fsReleaseSpotStatic(slot);
+            }
+        }
+        return false;
+    }
+    LL_PROFILE_ZONE_SCOPED_CATEGORY_PIPELINE;
+
+    const bool kept = light_unchanged && state.mStaticCached && state.mStaticOnly && !state.mDirty &&
+                      state.mStaticTex == target.getDepth() && cache.getDepth() &&
+                      cache.getWidth() == width && cache.getHeight() == height &&
+                      gFrameTimeSeconds >= state.mRenderTime &&
+                      gFrameTimeSeconds - state.mRenderTime <= FS_SPOT_CACHE_MAX_AGE &&
+                      fsSpotMasksUnchanged(state);
+
+    RenderSpotLight = light;
+    if (kept)
+    {
+        target.bindTarget();
+        target.getViewport(gGLViewport);
+        target.copyContents(cache, 0, 0, width, height, 0, 0, width, height, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+    }
+    else
+    {
+        fsBeginSpotColoredShadow(slot, light); // before the target is bound
+        target.bindTarget();
+        target.getViewport(gGLViewport);
+        target.clear();
+
+        mFSShadowParts = FS_SHADOW_PARTS_STATIC;
+        renderShadow(view, proj, shadow_cam, result, false);
+        mFSShadowParts = FS_SHADOW_PARTS_ALL;
+        fsEndSpotColoredShadow();
+        fsSpotShadowRecord(slot, result, proj * view);
+
+        state.mStaticCached = false;
+        if (state.mStaticOnly)
+        {
+            if (!cache.getDepth() || cache.getWidth() != width || cache.getHeight() != height)
+            {
+                cache.release();
+                if (!cache.allocate(width, height, 0, true))
+                {
+                    cache.release();
+                }
+            }
+            if (cache.getDepth())
+            {
+                cache.copyContents(target, 0, 0, width, height, 0, 0, width, height, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+                state.mStaticCached = true;
+                state.mStaticTex = target.getDepth();
+            }
+        }
+        if (!state.mStaticCached)
+        {
+            state.mSplitRetryTime = gFrameTimeSeconds + 2.f;
+        }
+    }
+
+    // the dynamic casters over the static depth
+    mFSShadowParts = FS_SHADOW_PARTS_DYNAMIC;
+    renderShadow(view, proj, shadow_cam, result, false);
+    mFSShadowParts = FS_SHADOW_PARTS_ALL;
+    state.mHasDynamic = result.getVisibleGroupsSize() || result.getVisibleBridgeSize() || result.getVisibleListSize();
+
+    RenderSpotLight = nullptr;
+    target.flush();
+    return true;
+}
+
+void LLPipeline::fsReleaseSpotStatic(U32 slot)
+{
+    if (slot >= FS_MAX_SPOT_SHADOWS)
+    {
+        return;
+    }
+    SpotShadowState& state = mSpotShadowState[slot];
+    state.mStaticCached = false;
+    state.mStaticTex = 0;
+    state.mHasDynamic = false;
+    if (mFSSpotStatic[slot].getDepth())
+    {
+        mFSSpotStatic[slot].release();
+    }
 }
 
 // Whether a projector program can take fs_spot_shadow_map (and fs_spot_shadow_depth) on units
@@ -17105,12 +17273,18 @@ void LLPipeline::generateSunShadow(LLCamera& camera)
 
                 //
 
+                // <FS:Trish> FSPerfSpotShadowSplit: static casters kept, only the dynamic ones drawn
+                static LLCullResult result[2];
+                LLViewerCamera::sCurCameraID = (LLViewerCamera::eCameraID)(LLViewerCamera::CAMERA_SPOT_SHADOW0 + i);
+                if (!fsRenderSpotShadowSplit(i, drawable, view[i + 4], proj[i + 4], shadow_cam, result[i], spot_unchanged))
+                {
+                // </FS:Trish>
                 fsBeginSpotColoredShadow(i, drawable); // <FS:Trish/> coloured projector shadows, before the target is bound
                 mSpotShadow[i].bindTarget();
                 mSpotShadow[i].getViewport(gGLViewport);
                 mSpotShadow[i].clear();
 
-                static LLCullResult result[2];
+                //static LLCullResult result[2]; // <FS:Trish/> above
 
                 LLViewerCamera::sCurCameraID = (LLViewerCamera::eCameraID)(LLViewerCamera::CAMERA_SPOT_SHADOW0 + i);
 
@@ -17123,6 +17297,7 @@ void LLPipeline::generateSunShadow(LLCamera& camera)
                 RenderSpotLight = nullptr;
 
                 mSpotShadow[i].flush();
+                } // <FS:Trish/>
             }
         }
 

@@ -271,9 +271,67 @@ void LLPipeline::fsReleaseShadowSinglePass()
     mFSShadowSPLastCull = nullptr;
 }
 
+namespace
+{
+    // Which sun shadow update records now: a batch stamped with it is already in a list (LLDrawInfo::mFSShadowSPStamp)
+    U32 sFSShadowSPStamp = 0;
+
+    // A recorded batch with the keys the draw order sorts on, copied out of its LLDrawInfo once, so sorting
+    // doesn't chase a pointer per comparison
+    struct SortItem
+    {
+        U32 mMask;
+        uintptr_t mKeys[5];     // avatar, skin, texture (each 0 where they don't count), model matrix, buffer
+        U32 mOffset;
+        U32 mCountInv;          // ~count: longer first
+        LLPipeline::FSShadowSPEntry mEntry;
+
+        bool operator<(const SortItem& other) const
+        {
+            if (mMask != other.mMask)
+            {
+                return mMask < other.mMask;
+            }
+            for (U32 i = 0; i < 5; ++i)
+            {
+                if (mKeys[i] != other.mKeys[i])
+                {
+                    return mKeys[i] < other.mKeys[i];
+                }
+            }
+            if (mOffset != other.mOffset)
+            {
+                return mOffset < other.mOffset;
+            }
+            return mCountInv < other.mCountInv;
+        }
+    };
+    std::vector<SortItem> sFSShadowSPSort;  // main thread, reused
+
+    // Adds a cascade's bit to the batch's entry in list, or a new entry the first time this update
+    void record_entry(std::vector<LLPipeline::FSShadowSPEntry>& list, LLDrawInfo* params, U32 bit)
+    {
+        if (params->mFSShadowSPStamp == sFSShadowSPStamp && params->mFSShadowSPList == &list &&
+            params->mFSShadowSPIndex < list.size() && list[params->mFSShadowSPIndex].mParams == params)
+        {
+            list[params->mFSShadowSPIndex].mMask |= bit;
+            return;
+        }
+        params->mFSShadowSPStamp = sFSShadowSPStamp;
+        params->mFSShadowSPList = &list;
+        params->mFSShadowSPIndex = (U32)list.size();
+        list.push_back({ params, bit });
+    }
+}
+
 // generateSunShadow, before the cascade loop: decides whether this update records, and lays out the atlas.
 void LLPipeline::fsShadowSinglePassBegin()
 {
+    // a new stamp, so nothing recorded by an earlier update counts as in a list (0 is never one)
+    if (++sFSShadowSPStamp == 0)
+    {
+        sFSShadowSPStamp = 1;
+    }
     mFSShadowSPActive = false;
     mFSShadowSPCascade = -1;
     mFSShadowSPRecorded = 0;
@@ -430,10 +488,10 @@ bool LLPipeline::fsShadowSinglePassRecord(U32 kind, bool rigged, const U32* type
             }
             if (double_sided && params->mGLTFMaterial.notNull() && params->mGLTFMaterial->mDoubleSided)
             {
-                double_sided->push_back({ params, bit });
+                record_entry(*double_sided, params, bit);
                 continue;
             }
-            list.push_back({ params, bit });
+            record_entry(list, params, bit);
         }
     }
     return true;
@@ -486,65 +544,33 @@ void LLPipeline::fsShadowSinglePassFinish()
             {
                 continue;
             }
-            std::sort(list.begin(), list.end(), [](const FSShadowSPEntry& a, const FSShadowSPEntry& b)
-            {
-                return a.mParams < b.mParams;
-            });
-            size_t out = 0;
-            for (size_t i = 0; i < list.size(); ++i)
-            {
-                if (out && list[out - 1].mParams == list[i].mParams)
-                {
-                    list[out - 1].mMask |= list[i].mMask;
-                }
-                else
-                {
-                    list[out++] = list[i];
-                }
-            }
-            list.resize(out);
+            // each batch is in the list once, with the bits of every cascade that recorded it (record_entry)
 
             // grouped by cascade set, then by what saves state changes: model matrix and buffer (opaque, where
             // runs of index ranges merge), skin palette (rigged), texture (alpha masked)
             const bool rigged = r == 1;
             const bool opaque = kind <= FS_SHADOW_SP_GLTF_DOUBLE_SIDED; // depth only, untextured
-            std::sort(list.begin(), list.end(), [rigged, opaque](const FSShadowSPEntry& a, const FSShadowSPEntry& b)
+            std::vector<SortItem>& items = sFSShadowSPSort;
+            items.resize(list.size());
+            for (size_t i = 0; i < list.size(); ++i)
             {
-                if (a.mMask != b.mMask)
-                {
-                    return a.mMask < b.mMask;
-                }
-                const LLDrawInfo* lhs = a.mParams;
-                const LLDrawInfo* rhs = b.mParams;
-                if (rigged)
-                {
-                    if (lhs->mAvatar.get() != rhs->mAvatar.get())
-                    {
-                        return lhs->mAvatar.get() < rhs->mAvatar.get();
-                    }
-                    if (lhs->mSkinInfo.get() != rhs->mSkinInfo.get())
-                    {
-                        return lhs->mSkinInfo.get() < rhs->mSkinInfo.get();
-                    }
-                }
-                if (!opaque && lhs->mTexture.get() != rhs->mTexture.get())
-                {
-                    return lhs->mTexture.get() < rhs->mTexture.get();
-                }
-                if (lhs->mModelMatrix != rhs->mModelMatrix)
-                {
-                    return lhs->mModelMatrix < rhs->mModelMatrix;
-                }
-                if (lhs->mVertexBuffer.get() != rhs->mVertexBuffer.get())
-                {
-                    return lhs->mVertexBuffer.get() < rhs->mVertexBuffer.get();
-                }
-                if (lhs->mOffset != rhs->mOffset)
-                {
-                    return lhs->mOffset < rhs->mOffset;
-                }
-                return lhs->mCount > rhs->mCount;
-            });
+                const LLDrawInfo* params = list[i].mParams;
+                SortItem& item = items[i];
+                item.mMask = list[i].mMask;
+                item.mKeys[0] = rigged ? (uintptr_t)params->mAvatar.get() : 0;
+                item.mKeys[1] = rigged ? (uintptr_t)params->mSkinInfo.get() : 0;
+                item.mKeys[2] = opaque ? 0 : (uintptr_t)params->mTexture.get();
+                item.mKeys[3] = (uintptr_t)params->mModelMatrix;
+                item.mKeys[4] = (uintptr_t)params->mVertexBuffer.get();
+                item.mOffset = params->mOffset;
+                item.mCountInv = ~params->mCount;
+                item.mEntry = list[i];
+            }
+            std::sort(items.begin(), items.end());
+            for (size_t i = 0; i < list.size(); ++i)
+            {
+                list[i] = items[i].mEntry;
+            }
         }
     }
 
