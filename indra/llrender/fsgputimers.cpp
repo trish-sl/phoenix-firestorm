@@ -277,10 +277,12 @@ namespace FSGPUTimers
             LLFSGPUZone::sBegin = &zoneBegin;
             LLFSGPUZone::sEnd = &zoneEnd;
         }
+#if LL_WINDOWS // elsewhere these are prototypes, not loaded pointers
         if (!glQueryCounter || !glGetQueryObjectui64v)
         {
             enabled = false;
         }
+#endif
 
         if (sOn)
         {
