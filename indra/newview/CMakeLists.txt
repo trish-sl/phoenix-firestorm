@@ -129,6 +129,7 @@ set(viewer_SOURCE_FILES
     fsgpudrivenlegacy.cpp
     fsgpudrivenmaterials.cpp
     fsgpudrivenpbr.cpp
+    fsgpudrivenshadowalpha.cpp
     fsinventorycustomtabs.cpp
     fsfloaterassetblacklist.cpp
     fsfloateravataralign.cpp
@@ -1025,6 +1026,7 @@ set(viewer_HEADER_FILES
     fsgpudrivenlegacy.h
     fsgpudrivenmaterials.h
     fsgpudrivenpbr.h
+    fsgpudrivenshadowalpha.h
     fsinventorycustomtabs.h
     fsfloaterassetblacklist.h
     fsfloateravatarrendersettings.h
