@@ -27548,6 +27548,17 @@ Change of this parameter will affect the layout of buttons in notification toast
       <key>Value</key>
       <integer>0</integer>
     </map>
+    <key>FSPerfTextureThreadUploadRate</key>
+    <map>
+      <key>Comment</key>
+      <string>Megabytes per second (with mipmaps) the texture thread uploads at most; up to a tenth of a second of it at once. At login the decoded texture cache can hand over gigabytes within seconds, and uploading them as fast as they come floods the driver and the GPU, which the desktop shares, so the whole PC stutters. The texture thread waits, the main thread doesn't. 0 = no limit.</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>F32</string>
+      <key>Value</key>
+      <real>384.0</real>
+    </map>
     <key>FSPerfTextureUploadBudgetMB</key>
     <map>
       <key>Comment</key>

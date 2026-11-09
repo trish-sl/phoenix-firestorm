@@ -241,6 +241,12 @@ public:
     static S32 sAuxCount;
     static LLFrameTimer sEvaluationTimer;
     static F32 sDesiredDiscardBias;
+    // <FS:Trish> Downscale only under real memory pressure, and keep textures drawn in the last
+    // few seconds unless it is high: a bias just above 1 used to downscale every texture that left
+    // the screen, which then came back full size and was uploaded again, continuously.
+    static bool fsUnderDownscalePressure();
+    static bool fsMayDownscale(const LLImageGL* gl);
+    // </FS:Trish>
     static S32 sSnapshotDiscardBoost; // <FS:Trish/> Discard levels sharper than the screen needs, while a larger snapshot waits for textures
     static U32 sBiasTexturesUpdated;
     static S32 sMaxSculptRez ;
@@ -352,6 +358,13 @@ public:
     bool createTexture(S32 usename = 0);
     void postCreateTexture();
     void scheduleCreateTexture();
+    bool fsCreateNotNeeded(); // <FS:Trish/> as LLViewerTextureList::updateImagesCreateTextures skips loads
+    // <FS:Trish> Uploads handed to the texture thread and loads skipped there, main thread, for the
+    // "Texture uploads" log line (taken and reset by LLViewerTextureList)
+    static S64 sFSThreadUploadBytes;
+    static U32 sFSThreadUploads;
+    static U32 sFSThreadSkipped;
+    // </FS:Trish>
 
     void destroyTexture() ;
 
@@ -474,6 +487,11 @@ private:
 private:
     bool  mFullyLoaded;
     bool  mInFastCacheList;
+    // <FS:Trish> FSPerfDiskThread: the fast cache read runs on the disk thread; mInFastCacheList stays
+    // set until its result is applied, so nothing fetches meanwhile
+    bool  mFSFastCachePending = false;
+    void  fsApplyFastCacheRaw(LLPointer<LLImageRaw> raw, S32 discard, F32 read_seconds);
+    // </FS:Trish>
     bool  mForceCallbackFetch;
 
 protected:
