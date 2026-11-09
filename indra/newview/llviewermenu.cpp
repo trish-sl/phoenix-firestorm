@@ -8358,6 +8358,16 @@ class LLWorldCreateLandmark : public view_listener_t
             return true;
 // [/RLVa:KB]
 
+        // <FS:Trish> The toolbar button no longer greys out when a landmark for this spot exists:
+        // the check walks the Favorites and Landmarks folders, and toolbars ran it on every draw.
+        // Check once here instead.
+        if (LLLandmarkActions::landmarkAlreadyExists())
+        {
+            LLNotificationsUtil::add("LandmarkAlreadyExists");
+            return true;
+        }
+        // </FS:Trish>
+
         LLFloaterReg::showInstance("add_landmark");
 
         return true;

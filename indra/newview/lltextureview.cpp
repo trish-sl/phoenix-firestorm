@@ -915,8 +915,14 @@ struct KillView
 
 void LLTextureView::draw()
 {
-    if (!mFreezeView)
+    // <FS:Trish> Destroying and recreating every bar and walking the whole texture list took about 6 ms per
+    // draw, and with the console open the UI is drawn every frame: four rebuilds a second read the same
+    //if (!mFreezeView)
+    constexpr F32 FS_REBUILD_INTERVAL = 0.25f;
+    if (!mFreezeView && (mTextureBars.empty() || !mGLTexMemBar || mFSRebuildTimer.getElapsedTimeF32() >= FS_REBUILD_INTERVAL))
+    // </FS:Trish>
     {
+        mFSRebuildTimer.reset(); // <FS:Trish/>
 //      LLViewerObject *objectp;
 //      S32 te;
 
