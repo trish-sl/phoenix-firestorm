@@ -5,6 +5,14 @@
 uniform vec4 fs_caustic_params;     // x strength (0 = off), y cells per metre, z animation phase
 uniform mat4 fs_caustic_inv_view;   // eye space to agent space
 
+// The regions around the camera, each with its own water height: the water plane passed in is the
+// camera region's, and a neighbour's land or objects below that height but above its own water
+// must stay dry. A point in none of them uses the water plane.
+const int FS_CAUSTIC_MAX_REGIONS = 16;
+uniform int fs_caustic_region_count;
+uniform vec4 fs_caustic_region_rect[FS_CAUSTIC_MAX_REGIONS];    // agent space x, y min and x, y max
+uniform float fs_caustic_region_water[FS_CAUSTIC_MAX_REGIONS];  // water height, agent space z
+
 // Hash of a 2D cell index to two values in [0, 1), arithmetic only so it is stable across GPUs
 vec2 fsCausticHash(vec2 p)
 {
@@ -53,7 +61,23 @@ float fsWaterCaustics(vec3 pos, vec3 norm, vec3 light_dir, vec4 water_plane)
     float below = -(dot(pos, water_plane.xyz) + water_plane.w); // metres under the surface
     float sun_height = dot(light_dir, water_plane.xyz);          // sine of the sun's elevation
     float nl = dot(norm, light_dir);
-    if (strength <= 0.0 || below <= 0.0 || sun_height <= 0.0 || nl <= 0.0)
+    if (strength <= 0.0 || sun_height <= 0.0 || nl <= 0.0)
+    {
+        return 0.0;
+    }
+
+    vec3 wpos = (fs_caustic_inv_view * vec4(pos, 1.0)).xyz;
+    // Under the water of the region the point is in
+    for (int i = 0; i < fs_caustic_region_count && i < FS_CAUSTIC_MAX_REGIONS; ++i)
+    {
+        vec4 r = fs_caustic_region_rect[i];
+        if (wpos.x >= r.x && wpos.y >= r.y && wpos.x < r.z && wpos.y < r.w)
+        {
+            below = fs_caustic_region_water[i] - wpos.z;
+            break;
+        }
+    }
+    if (below <= 0.0)
     {
         return 0.0;
     }
@@ -66,7 +90,6 @@ float fsWaterCaustics(vec3 pos, vec3 norm, vec3 light_dir, vec4 water_plane)
         return 0.0;
     }
 
-    vec3 wpos = (fs_caustic_inv_view * vec4(pos, 1.0)).xyz;
     vec3 wlight = mat3(fs_caustic_inv_view) * light_dir;
 
     // Trace back up the (refracted, so steeper) sun ray to where it entered the water, so the

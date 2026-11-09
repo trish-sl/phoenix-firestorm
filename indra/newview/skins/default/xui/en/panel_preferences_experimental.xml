@@ -924,7 +924,7 @@
              bottom="-1">
                 <panel
                  follows="left|top"
-                 height="2904"
+                 height="3138"
                  layout="topleft"
                  left="0"
                  name="experimental_effects_settings"
@@ -3219,6 +3219,198 @@
                      name="fs_fsrenderheightfoginteriorstrength"
                      tool_tip="EXPERIMENTAL. How strongly rooms and roofs hold back the fog and its sky and sun light. 0 is the plain fog."
                      top="2862"
+                     width="100" />
+                    <text
+                     follows="left|top"
+                     font="SansSerifBold"
+                     height="18"
+                     layout="topleft"
+                     left="15"
+                     name="fs_heading_underwater_light_rays"
+                     top="2904"
+                     width="340">
+                        Underwater light rays
+                    </text>
+                    <button
+                     follows="left|top"
+                     height="19"
+                     label="Reset to default"
+                     layout="topleft"
+                     left="370"
+                     name="reset_fs_heading_underwater_light_rays"
+                     tool_tip="Set every option in &quot;Underwater light rays&quot; back to its default value."
+                     top="2903"
+                     width="120">
+                        <button.commit_callback
+                         function="FSExperimental.ResetSection"
+                         parameter="FSRenderUnderwaterRays,FSRenderUnderwaterRaysStrength,FSRenderUnderwaterRaysDensity,FSRenderUnderwaterRaysClarity,FSRenderUnderwaterRaysShafts,FSRenderUnderwaterRaysSteps,FSRenderUnderwaterRaysDistance" />
+                    </button>
+                    <check_box
+                     control_name="FSRenderUnderwaterRays"
+                     follows="left|top"
+                     height="20"
+                     label="Underwater light rays"
+                     layout="topleft"
+                     left="15"
+                     name="fs_fsrenderunderwaterrays"
+                     tool_tip="EXPERIMENTAL. While the camera is under water, sunlight scattered in the water toward the camera, in shafts that carry the moving caustic pattern of the surface down into the depth. Shadowed by the sun shadow maps, so it needs shadows. Replaces the sun rays under water; the caustic size and speed are those of the water caustics."
+                     top="2930"
+                     width="475" />
+                    <text
+                     follows="left|top"
+                     height="18"
+                     layout="topleft"
+                     left="35"
+                     name="fs_fsrenderunderwaterraysstrength_label"
+                     tool_tip="Brightness of the underwater light rays."
+                     top="2958"
+                     width="285">
+                        Strength
+                    </text>
+                    <spinner
+                     control_name="FSRenderUnderwaterRaysStrength"
+                     decimal_digits="2"
+                     enabled_control="FSRenderUnderwaterRays"
+                     follows="left|top"
+                     height="20"
+                     increment="0.1"
+                     layout="topleft"
+                     left="330"
+                     max_val="5.0"
+                     min_val="0.0"
+                     name="fs_fsrenderunderwaterraysstrength"
+                     tool_tip="Brightness of the underwater light rays."
+                     top="2956"
+                     width="100" />
+                    <text
+                     follows="left|top"
+                     height="18"
+                     layout="topleft"
+                     left="35"
+                     name="fs_fsrenderunderwaterraysdensity_label"
+                     tool_tip="How much light the water scatters toward the camera per metre: more makes the shafts and the haze between them brighter."
+                     top="2986"
+                     width="285">
+                        Density
+                    </text>
+                    <spinner
+                     control_name="FSRenderUnderwaterRaysDensity"
+                     decimal_digits="3"
+                     enabled_control="FSRenderUnderwaterRays"
+                     follows="left|top"
+                     height="20"
+                     increment="0.005"
+                     layout="topleft"
+                     left="330"
+                     max_val="0.5"
+                     min_val="0.005"
+                     name="fs_fsrenderunderwaterraysdensity"
+                     tool_tip="How much light the water scatters toward the camera per metre: more makes the shafts and the haze between them brighter."
+                     top="2984"
+                     width="100" />
+                    <text
+                     follows="left|top"
+                     height="18"
+                     layout="topleft"
+                     left="35"
+                     name="fs_fsrenderunderwaterraysclarity_label"
+                     tool_tip="Water clarity in metres: the distance over which light in the water fades to about a third. Lower is murkier, with shafts fading out sooner with depth and distance."
+                     top="3014"
+                     width="285">
+                        Clarity (m)
+                    </text>
+                    <spinner
+                     control_name="FSRenderUnderwaterRaysClarity"
+                     decimal_digits="0"
+                     enabled_control="FSRenderUnderwaterRays"
+                     follows="left|top"
+                     height="20"
+                     increment="1.0"
+                     layout="topleft"
+                     left="330"
+                     max_val="200.0"
+                     min_val="2.0"
+                     name="fs_fsrenderunderwaterraysclarity"
+                     tool_tip="Water clarity in metres: the distance over which light in the water fades to about a third. Lower is murkier, with shafts fading out sooner with depth and distance."
+                     top="3012"
+                     width="100" />
+                    <text
+                     follows="left|top"
+                     height="18"
+                     layout="topleft"
+                     left="35"
+                     name="fs_fsrenderunderwaterraysshafts_label"
+                     tool_tip="How strongly the light gathers into shafts: 0 is even light, 1 full shafts from the caustic pattern."
+                     top="3042"
+                     width="285">
+                        Shafts
+                    </text>
+                    <spinner
+                     control_name="FSRenderUnderwaterRaysShafts"
+                     decimal_digits="2"
+                     enabled_control="FSRenderUnderwaterRays"
+                     follows="left|top"
+                     height="20"
+                     increment="0.05"
+                     layout="topleft"
+                     left="330"
+                     max_val="1.0"
+                     min_val="0.0"
+                     name="fs_fsrenderunderwaterraysshafts"
+                     tool_tip="How strongly the light gathers into shafts: 0 is even light, 1 full shafts from the caustic pattern."
+                     top="3040"
+                     width="100" />
+                    <text
+                     follows="left|top"
+                     height="18"
+                     layout="topleft"
+                     left="35"
+                     name="fs_fsrenderunderwaterrayssteps_label"
+                     tool_tip="Samples along each view ray. More is smoother and costs more."
+                     top="3070"
+                     width="285">
+                        Steps
+                    </text>
+                    <spinner
+                     control_name="FSRenderUnderwaterRaysSteps"
+                     decimal_digits="0"
+                     enabled_control="FSRenderUnderwaterRays"
+                     follows="left|top"
+                     height="20"
+                     increment="4"
+                     layout="topleft"
+                     left="330"
+                     max_val="64"
+                     min_val="8"
+                     name="fs_fsrenderunderwaterrayssteps"
+                     tool_tip="Samples along each view ray. More is smoother and costs more."
+                     top="3068"
+                     width="100" />
+                    <text
+                     follows="left|top"
+                     height="18"
+                     layout="topleft"
+                     left="35"
+                     name="fs_fsrenderunderwaterraysdistance_label"
+                     tool_tip="Metres the underwater light rays reach from the camera."
+                     top="3098"
+                     width="285">
+                        Distance (m)
+                    </text>
+                    <spinner
+                     control_name="FSRenderUnderwaterRaysDistance"
+                     decimal_digits="0"
+                     enabled_control="FSRenderUnderwaterRays"
+                     follows="left|top"
+                     height="20"
+                     increment="4.0"
+                     layout="topleft"
+                     left="330"
+                     max_val="128.0"
+                     min_val="8.0"
+                     name="fs_fsrenderunderwaterraysdistance"
+                     tool_tip="Metres the underwater light rays reach from the camera."
+                     top="3096"
                      width="100" />
                 </panel>
             </scroll_container>
