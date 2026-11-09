@@ -55,6 +55,10 @@
 #include "llviewercontrol.h"
 #include "pipeline.h"
 #include "llappviewer.h"
+#include "llagent.h" // <FS:Trish/> teleport aware bias hold
+#include "fsdiskthread.h" // <FS:Trish/> FSPerfDiskThread
+#include <atomic> // <FS:Trish/>
+#include <thread> // <FS:Trish/>
 #include "llface.h"
 #include "llviewercamera.h"
 #include "lltextureentry.h"
@@ -92,6 +96,30 @@ S32 LLViewerTexture::sRawCount = 0;
 S32 LLViewerTexture::sAuxCount = 0;
 LLFrameTimer LLViewerTexture::sEvaluationTimer;
 F32 LLViewerTexture::sDesiredDiscardBias = 0.f;
+
+// <FS:Trish> See the declaration
+namespace
+{
+    constexpr F32 FS_DOWNSCALE_MIN_BIAS = 1.15f;     // below: VRAM is at most in the soft zone
+    constexpr F32 FS_DOWNSCALE_RECENT_BIAS = 2.f;    // from here, recently drawn textures go too
+}
+
+//static
+bool LLViewerTexture::fsUnderDownscalePressure()
+{
+    return sDesiredDiscardBias > FS_DOWNSCALE_MIN_BIAS;
+}
+
+//static
+bool LLViewerTexture::fsMayDownscale(const LLImageGL* gl)
+{
+    if (!fsUnderDownscalePressure())
+    {
+        return false;
+    }
+    return sDesiredDiscardBias >= FS_DOWNSCALE_RECENT_BIAS || !gl || !gl->getBoundRecently();
+}
+// </FS:Trish>
 S32 LLViewerTexture::sSnapshotDiscardBoost = 0; // <FS:Trish/>
 U32 LLViewerTexture::sBiasTexturesUpdated = 0;
 // <FS:Trish>
@@ -693,9 +721,39 @@ void LLViewerTexture::updateClass()
     static LLFrameTimer recovery_timer; // how long usage has been low enough to lower the bias
     // </FS:Trish>
 
+    // <FS:Trish> A teleport briefly holds the old and the new region's textures together, so running
+    // out of memory then (or while the new scene streams in right after) says little about what the
+    // new scene needs, yet its hold kept the bias up for minutes. Such a hold is released in steps
+    // instead of the slow decay: one bias step at a time, each after usage has settled with room to
+    // spare, so the textures each step lets in arrive before the next and it can't overshoot.
+    // A hold from normal play decays as before.
+    static LLFrameTimer since_teleport;
+    if (gAgent.getTeleportState() != LLAgent::TELEPORT_NONE)
+    {
+        since_teleport.reset();
+    }
+    constexpr F32 TELEPORT_WINDOW = 15.f;      // seconds after arriving that still count as the teleport
+    const bool recent_teleport = since_teleport.getElapsedTimeF32() < TELEPORT_WINDOW;
+    static bool teleport_hold = false;          // the hold comes from a teleport
+    static LLFrameTimer hold_step_timer;        // room since the last step
+    static F32 used_sample[2] = { -1.f, -1.f }; // usage now and about 2 seconds ago
+    static LLFrameTimer used_sample_timer;
+    if (used_sample_timer.getElapsedTimeF32() >= 2.f || used_sample[0] < 0.f)
+    {
+        used_sample[1] = used_sample[0] < 0.f ? used : used_sample[0];
+        used_sample[0] = used;
+        used_sample_timer.reset();
+    }
+    const bool usage_settled = fabsf(used - used_sample[1]) < 0.02f * target;
+    // </FS:Trish>
+
     if (is_low && !was_low)
     {
-        overflow_bias = sDesiredDiscardBias; // <FS:Trish/>
+        // <FS:Trish>
+        overflow_bias = sDesiredDiscardBias;
+        teleport_hold = recent_teleport;
+        hold_step_timer.reset();
+        // </FS:Trish>
         if (is_sys_low)
         {
             // Not having system memory is more serious, so discard harder
@@ -770,7 +828,15 @@ void LLViewerTexture::updateClass()
             static LLCachedControl<F32> soft_discard_increment(gSavedSettings, "RenderLowMemMinDiscardIncrement", .1f);
             const F32 depth = (over_pct + soft_zone) / soft_zone; // 0 at the edge of the zone, 1 at the target
             sDesiredDiscardBias += soft_discard_increment * depth * gFrameIntervalSeconds;
-            soft_zone_peak = llmax(soft_zone_peak, sDesiredDiscardBias);
+            // <FS:Trish> a new peak decides where the hold comes from
+            //soft_zone_peak = llmax(soft_zone_peak, sDesiredDiscardBias);
+            if (sDesiredDiscardBias > soft_zone_peak)
+            {
+                soft_zone_peak = sDesiredDiscardBias;
+                teleport_hold = recent_teleport;
+            }
+            hold_step_timer.reset();
+            // </FS:Trish>
             recovery_timer.reset(); // the band below no longer resets it, so the delay starts here
         }
         else
@@ -807,7 +873,23 @@ void LLViewerTexture::updateClass()
                     decrement = llmin(decrement, SLOW_DECREMENT);
                     // The hold relaxes slowly, otherwise steady modest headroom kept the bias
                     // above 1 for good
-                    overflow_bias = llmax(overflow_bias - HOLD_DECAY * gFrameIntervalSeconds.value(), 0.f);
+                    // <FS:Trish> A teleport's hold goes down in settled steps instead
+                    //overflow_bias = llmax(overflow_bias - HOLD_DECAY * gFrameIntervalSeconds.value(), 0.f);
+                    constexpr F32 TELEPORT_HOLD_STEP = 0.15f;      // one step of the applied bias
+                    constexpr F32 TELEPORT_HOLD_SETTLE = 5.f;      // seconds of room before each step
+                    if (teleport_hold && !recent_teleport)
+                    {
+                        if (hold_step_timer.getElapsedTimeF32() > TELEPORT_HOLD_SETTLE && usage_settled)
+                        {
+                            overflow_bias = llmax(overflow_bias - TELEPORT_HOLD_STEP, 0.f);
+                            hold_step_timer.reset();
+                        }
+                    }
+                    else if (!teleport_hold)
+                    {
+                        overflow_bias = llmax(overflow_bias - HOLD_DECAY * gFrameIntervalSeconds.value(), 0.f);
+                    }
+                    // </FS:Trish>
                 }
                 const F32 previous_bias = sDesiredDiscardBias;
                 sDesiredDiscardBias -= decrement * gFrameIntervalSeconds;
@@ -845,6 +927,7 @@ void LLViewerTexture::updateClass()
         else
         {
             recovery_timer.reset();
+            hold_step_timer.reset(); // <FS:Trish/>
         }
 
         // Back at 1 there is nothing left to hold: forget the old overflow, or its hold kept
@@ -853,6 +936,7 @@ void LLViewerTexture::updateClass()
         {
             overflow_bias = 0.f;
             soft_zone_peak = 0.f;
+            teleport_hold = false; // <FS:Trish/>
         }
         // </FS:Trish>
     }
@@ -860,6 +944,7 @@ void LLViewerTexture::updateClass()
     if (is_low)
     {
         recovery_timer.reset();
+        hold_step_timer.reset(); // <FS:Trish/>
     }
     // </FS:Trish>
 
@@ -1670,15 +1755,81 @@ void LLViewerFetchedTexture::loadFromFastCache()
     {
         return; //no need to access the fast cache.
     }
+    // <FS:Trish> FSPerfDiskThread: read on the disk thread, applied on the main thread
+    if (FSDiskThread::isEnabled())
+    {
+        if (mFSFastCachePending)
+        {
+            return;
+        }
+        struct FastCacheRead
+        {
+            LLPointer<LLImageRaw> mRaw;
+            S32 mDiscard = 0;
+            F32 mSeconds = 0.f;
+        };
+        auto result = std::make_shared<FastCacheRead>();
+        LLPointer<LLViewerFetchedTexture> self = this;
+        const LLUUID id = getID();
+        mFSFastCachePending = true;
+        const bool posted = FSDiskThread::post(
+            [id, result]()
+            {
+                LLTimer timer;
+                result->mRaw = LLAppViewer::getTextureCache()->readFromFastCache(id, result->mDiscard);
+                result->mSeconds = timer.getElapsedTimeF32();
+            },
+            [self, result]()
+            {
+                LLViewerFetchedTexture* tex = self.get();
+                tex->mFSFastCachePending = false;
+                if (!tex->mInFastCacheList)
+                {
+                    return;     // reset meanwhile
+                }
+                tex->mInFastCacheList = false;
+                add(LLTextureFetch::sCacheAttempt, 1.0);
+                tex->fsApplyFastCacheRaw(result->mRaw, result->mDiscard, result->mSeconds);
+            });
+        if (posted)
+        {
+            return;
+        }
+        mFSFastCachePending = false;
+    }
+    // </FS:Trish>
+
     mInFastCacheList = false;
 
     add(LLTextureFetch::sCacheAttempt, 1.0);
 
     LLTimer fastCacheTimer;
-    mRawImage = LLAppViewer::getTextureCache()->readFromFastCache(getID(), mRawDiscardLevel);
+    // <FS:Trish> FSPerfDiskThread: the rest is fsApplyFastCacheRaw, shared with the disk thread's reads
+    //mRawImage = LLAppViewer::getTextureCache()->readFromFastCache(getID(), mRawDiscardLevel);
+    S32 discard = 0;
+    LLPointer<LLImageRaw> raw = LLAppViewer::getTextureCache()->readFromFastCache(getID(), discard);
+    fsApplyFastCacheRaw(raw, discard, fastCacheTimer.getElapsedTimeF32());
+}
+
+// FSPerfDiskThread: what loadFromFastCache did with a fast cache read. Main thread.
+void LLViewerFetchedTexture::fsApplyFastCacheRaw(LLPointer<LLImageRaw> raw, S32 discard, F32 read_seconds)
+{
+    if (raw.notNull())
+    {
+        mRawImage = raw;
+        mRawDiscardLevel = discard;
+    }
+    else
+    {
+        mRawImage = nullptr;
+    }
+    // </FS:Trish>
     if(mRawImage.notNull())
     {
-        F32 cachReadTime = fastCacheTimer.getElapsedTimeF32();
+        // <FS:Trish> FSPerfDiskThread
+        //F32 cachReadTime = fastCacheTimer.getElapsedTimeF32();
+        F32 cachReadTime = read_seconds;
+        // </FS:Trish>
 
         add(LLTextureFetch::sCacheHit, 1.0);
         record(LLTextureFetch::sCacheHitRate, LLUnits::Ratio::fromValue(1));
@@ -2053,6 +2204,74 @@ void LLViewerFetchedTexture::postCreateTexture()
     mNeedsCreateTexture = false;
 }
 
+// <FS:Trish>
+S64 LLViewerFetchedTexture::sFSThreadUploadBytes = 0;
+U32 LLViewerFetchedTexture::sFSThreadUploads = 0;
+U32 LLViewerFetchedTexture::sFSThreadSkipped = 0;
+// </FS:Trish>
+
+// <FS:Trish> FSPerfTextureThreadUploadRate: at login the decoded texture cache hands thousands of
+// textures to the texture thread within seconds (2.8 GB in 10 s was measured), and uploading them
+// as fast as they come floods the driver and the GPU, which the desktop shares: the whole PC
+// stutters. The texture thread waits before an upload once it is ahead of the rate (bytes per
+// second; up to a tenth of a second of it may come at once). Nothing waits on the main thread.
+namespace
+{
+    std::atomic<F32> sFSUploadRateBytes{ 0.f };     // set on the main thread, 0 = no limit
+
+    // Texture thread only
+    void fs_pace_thread_upload(S64 bytes)
+    {
+        const F32 rate = sFSUploadRateBytes.load(std::memory_order_relaxed);
+        if (rate <= 0.f || bytes <= 0)
+        {
+            return;
+        }
+        static F64 tokens = 0.0;
+        static LLTimer refill;
+        static bool started = false;
+        const F64 cap = (F64)rate * 0.1;
+        if (!started)
+        {
+            started = true;
+            tokens = cap;
+            refill.reset();
+        }
+        while (true)
+        {
+            tokens = llmin(cap, tokens + (F64)refill.getElapsedTimeAndResetF64() * rate);
+            // a single texture bigger than the burst goes once the bucket is full
+            if (tokens >= (F64)bytes || tokens >= cap)
+            {
+                tokens -= (F64)bytes;
+                return;
+            }
+            const F64 wait = ((F64)llmin((F64)bytes, cap) - tokens) / rate;
+            std::this_thread::sleep_for(std::chrono::microseconds((S64)llclamp(wait * 1.0e6, 500.0, 50000.0)));
+        }
+    }
+}
+// </FS:Trish>
+
+// <FS:Trish> Keep in sync with the redundant_load / unwanted_load tests of
+// LLViewerTextureList::updateImagesCreateTextures
+bool LLViewerFetchedTexture::fsCreateNotNeeded()
+{
+    if (hasGLTexture() && getDiscardLevel() <= getDesiredDiscardLevel())
+    {
+        return true;
+    }
+    return getDesiredDiscardLevel() > MAX_DISCARD_LEVEL &&
+           getBoostLevel() == LLGLTexture::BOOST_NONE &&
+           getTotalNumFaces() == 0 &&
+           getNumVolumes(LLRender::LIGHT_TEX) == 0 &&
+           getNumVolumes(LLRender::SCULPT_TEX) == 0 &&
+           !hasCallbacks() &&
+           !needsToSaveRawImage() &&
+           !forSculpt();
+}
+// </FS:Trish>
+
 void LLViewerFetchedTexture::scheduleCreateTexture()
 {
     LL_PROFILE_ZONE_SCOPED_CATEGORY_TEXTURE;
@@ -2075,6 +2294,28 @@ void LLViewerFetchedTexture::scheduleCreateTexture()
 #endif
             mNeedsCreateTexture = true;
             auto mainq = LLImageGLThread::sEnabledTextures ? mMainQueue.lock() : nullptr;
+            // <FS:Trish> The texture thread uploads whatever it gets: skip the loads the main thread's
+            // create list would skip (already as sharp on the GPU, or nothing uses it any more)
+            if (mainq && fsCreateNotNeeded())
+            {
+#if LL_IMAGEGL_THREAD_CHECK
+                delete[] data_copy;
+#endif
+                ++sFSThreadSkipped;
+                postCreateTexture();
+                return;
+            }
+            if (mainq)
+            {
+                static LLCachedControl<F32> upload_rate_mb(gSavedSettings, "FSPerfTextureThreadUploadRate", 384.f);
+                sFSUploadRateBytes.store(llmax((F32)upload_rate_mb, 0.f) * 1048576.f, std::memory_order_relaxed);
+            }
+            if (mainq && mRawImage.notNull())
+            {   // with its mipmaps
+                ++sFSThreadUploads;
+                sFSThreadUploadBytes += (S64)mRawImage->getDataSize() * 4 / 3;
+            }
+            // </FS:Trish>
             if (mainq)
             {
                 ref();
@@ -2093,6 +2334,12 @@ void LLViewerFetchedTexture::scheduleCreateTexture()
                     [this]()
                     {
 #endif
+                        // <FS:Trish> FSPerfTextureThreadUploadRate
+                        if (mRawImage.notNull())
+                        {
+                            fs_pace_thread_upload((S64)mRawImage->getDataSize() * 4 / 3);
+                        }
+                        // </FS:Trish>
                         //actually create the texture on a background thread
                         createTexture();
 
@@ -3782,7 +4029,7 @@ void LLViewerLODTexture::processTextureStats()
             // deleted shortly after anyway. With VRAM under target (bias 1) they buy nothing; the
             // bias rises as soon as memory is actually needed, and downscaling resumes then.
             //if (current_discard < mDesiredDiscardLevel && !mForceToSaveRawImage)
-            if (current_discard < mDesiredDiscardLevel && !mForceToSaveRawImage && sDesiredDiscardBias > 1.f)
+            if (current_discard < mDesiredDiscardLevel && !mForceToSaveRawImage && fsMayDownscale(mGLTexturep))
             // </FS:Trish>
             { // should scale down
                 scaleDown();

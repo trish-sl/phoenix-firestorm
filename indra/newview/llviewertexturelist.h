@@ -33,6 +33,7 @@
 #include "llviewertexture.h"
 #include "llui.h"
 #include <list>
+#include <unordered_map>
 #include <unordered_set>
 #include "lluiimage.h"
 
@@ -246,6 +247,25 @@ public:
 private:
     typedef std::map< LLTextureKey, LLPointer<LLViewerFetchedTexture> > uuid_map_t;
     uuid_map_t mUUIDMap;
+    // <FS:Trish> Hashed index of mUUIDMap for findImage: every geometry rebuild looks up the textures
+    // of each face, and a lookup in an ordered map of tens of thousands chases cold pointers. The
+    // ordered map stays for the sweeps that resume at a key. Kept in sync wherever mUUIDMap changes.
+    struct FSTextureKeyHash
+    {
+        size_t operator()(const LLTextureKey& key) const
+        {
+            return std::hash<LLUUID>()(key.textureId) ^ ((size_t)key.textureType * 0x9E3779B97F4A7C15ULL);
+        }
+    };
+    struct FSTextureKeyEqual
+    {
+        bool operator()(const LLTextureKey& a, const LLTextureKey& b) const
+        {
+            return a.textureId == b.textureId && a.textureType == b.textureType;
+        }
+    };
+    std::unordered_map<LLTextureKey, LLViewerFetchedTexture*, FSTextureKeyHash, FSTextureKeyEqual> mFSUUIDIndex;
+    // </FS:Trish>
     LLTextureKey mLastUpdateKey;
     LLTextureKey mLastUrgentUpdateKey;
     // <FS:Trish> The fetch priority refresh lane walks the fetching set instead of the whole map,

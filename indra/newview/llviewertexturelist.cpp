@@ -396,6 +396,7 @@ void LLViewerTextureList::shutdown()
     mFastCacheList.clear();
 
     mUUIDMap.clear();
+    mFSUUIDIndex.clear(); // <FS:Trish/>
 
     mImageList.clear();
 
@@ -740,10 +741,14 @@ void LLViewerTextureList::findTexturesByID(const LLUUID &image_id, std::vector<L
 LLViewerFetchedTexture *LLViewerTextureList::findImage(const LLTextureKey &search_key)
 {
     LL_PROFILE_ZONE_SCOPED_CATEGORY_TEXTURE;
-    uuid_map_t::iterator iter = mUUIDMap.find(search_key);
-    if (iter == mUUIDMap.end())
-        return NULL;
-    return iter->second;
+    // <FS:Trish> The hashed index
+    //uuid_map_t::iterator iter = mUUIDMap.find(search_key);
+    //if (iter == mUUIDMap.end())
+    //    return NULL;
+    //return iter->second;
+    auto iter = mFSUUIDIndex.find(search_key);
+    return iter == mFSUUIDIndex.end() ? NULL : iter->second;
+    // </FS:Trish>
 }
 
 LLViewerFetchedTexture *LLViewerTextureList::findImage(const LLUUID &image_id, ETexListType tex_type)
@@ -840,6 +845,7 @@ void LLViewerTextureList::addImage(LLViewerFetchedTexture *new_image, ETexListTy
 
     addImageToList(new_image);
     mUUIDMap[key] = new_image;
+    mFSUUIDIndex[key] = new_image; // <FS:Trish/>
     new_image->setTextureListType(tex_type);
 }
 
@@ -855,6 +861,7 @@ void LLViewerTextureList::deleteImage(LLViewerFetchedTexture *image)
         }
         LLTextureKey key(image->getID(), (ETexListType)image->getTextureListType());
         llverify(mUUIDMap.erase(key) == 1);
+        mFSUUIDIndex.erase(key); // <FS:Trish/>
         sNumImages--;
         removeImageFromList(image);
     }
@@ -1309,13 +1316,19 @@ namespace
             return;
         }
         const FSTextureUpload::Stats pbo = FSTextureUpload::takeStats();
-        if (upload_frames > 0)
+        const S64 thread_bytes = LLViewerFetchedTexture::sFSThreadUploadBytes;
+        const U32 thread_uploads = LLViewerFetchedTexture::sFSThreadUploads;
+        const U32 thread_skipped = LLViewerFetchedTexture::sFSThreadSkipped;
+        LLViewerFetchedTexture::sFSThreadUploadBytes = 0;
+        LLViewerFetchedTexture::sFSThreadUploads = 0;
+        LLViewerFetchedTexture::sFSThreadSkipped = 0;
+        if (upload_frames > 0 || thread_uploads > 0 || thread_skipped > 0)
         {
             constexpr F64 MB = 1024.0 * 1024.0;
             LL_INFOS("Texture") << "Texture uploads (5s): frames=" << frames
                                 << " upload_frames=" << upload_frames
                                 << " total_mb=" << (F64)total_bytes / MB
-                                << " avg_mb_per_upload_frame=" << (F64)total_bytes / MB / upload_frames
+                                << " avg_mb_per_upload_frame=" << (F64)total_bytes / MB / llmax(upload_frames, 1U)
                                 << " max_frame_mb=" << (F64)max_frame_bytes / MB
                                 << " max_frame_ms=" << max_frame_seconds * 1000.f
                                 << " budget_mb=" << (F64)budget_bytes / MB
@@ -1325,6 +1338,9 @@ namespace
                                 << " pbo_mb=" << (F64)pbo.mPBOBytes / MB
                                 << " pbo_levels=" << pbo.mPBOUploads
                                 << " pbo_ring_full=" << pbo.mRingFull
+                                << " thread_uploads=" << thread_uploads
+                                << " thread_mb=" << (F64)thread_bytes / MB
+                                << " thread_skipped=" << thread_skipped
                                 << LL_ENDL;
         }
         log_timer.reset();
@@ -1421,7 +1437,7 @@ F32 LLViewerTextureList::updateImagesCreateTextures(F32 max_time)
         //if (imagep->hasGLTexture() && imagep->getDiscardLevel() < imagep->getDesiredDiscardLevel() &&
         //   (imagep->getDesiredDiscardLevel() <= MAX_DISCARD_LEVEL))
         if (imagep->hasGLTexture() && imagep->getDiscardLevel() < imagep->getDesiredDiscardLevel() &&
-           (imagep->getDesiredDiscardLevel() <= MAX_DISCARD_LEVEL) && LLViewerTexture::sDesiredDiscardBias > 1.f)
+           (imagep->getDesiredDiscardLevel() <= MAX_DISCARD_LEVEL) && LLViewerTexture::fsMayDownscale(imagep->getGLTexture()))
         // </FS:Trish>
         {
             // NOTE: this may happen if the desired discard reduces while a decode is in progress and does not
@@ -1455,7 +1471,7 @@ F32 LLViewerTextureList::updateImagesCreateTextures(F32 max_time)
     // Entries queued while memory was tight can outlive the pressure. Once VRAM is back under
     // target, release them without the GPU work -- this queue used to keep forcing at least five
     // downscales a frame, past the time budget, for thousands of textures that no longer needed it.
-    if (!mDownScaleQueue.empty() && LLViewerTexture::sDesiredDiscardBias <= 1.f)
+    if (!mDownScaleQueue.empty() && !LLViewerTexture::fsUnderDownscalePressure())
     {
         while (!mDownScaleQueue.empty())
         {
@@ -1836,6 +1852,21 @@ F32 LLViewerTextureList::updateImagesFetchTextures(F32 max_time)
 
     // <FS:Trish> FSPerfParallelTexturePriority: face pass of the whole sweep on workers
     LL_PROFILE_ZONE_NAMED_CATEGORY_TEXTURE("vtluift - sweep");
+    // The loop below stops at max_time and the next sweep resumes at mLastUpdateKey, so entries it
+    // won't reach are only wasted work for the face pass, which does all of them up front (under
+    // memory pressure update_count grows with the bias, to thousands). When the last sweep ran out
+    // of time, take about what it managed.
+    static size_t s_fs_last_done = 0;
+    static bool s_fs_last_limited = false;
+    if (s_fs_last_limited)
+    {
+        const size_t cap = llmax((size_t)64, s_fs_last_done * 3 / 2);
+        if (entries.size() > cap)
+        {
+            entries.resize(cap);
+        }
+    }
+    s_fs_last_limited = false;
     const bool fs_parallel = FSParallelTexture::prepare(entries, urgent_updates);
     size_t fs_index = 0;
     // </FS:Trish>
@@ -1872,9 +1903,11 @@ F32 LLViewerTextureList::updateImagesFetchTextures(F32 max_time)
 
         if (timer.getElapsedTimeF32() > max_time)
         {
+            s_fs_last_limited = true; // <FS:Trish/>
             break;
         }
     }
+    s_fs_last_done = fs_index; // <FS:Trish/>
     FSParallelTexture::finish(); // <FS:Trish/> FSPerfParallelTexturePriority
 
     return timer.getElapsedTimeF32();
