@@ -29305,6 +29305,17 @@ Change of this parameter will affect the layout of buttons in notification toast
       <key>Value</key>
       <integer>0</integer>
     </map>
+    <key>FSPerfDiskThread</key>
+    <map>
+      <key>Comment</key>
+      <string>EXPERIMENTAL. Look assets up in the disk cache on a separate low priority thread instead of the main thread: whether an asset is cached (reading it once there, so the main thread's later read comes from memory) and the last access time of cached files when they are opened. Cached animations go through the same lookup. Helps when content arrives in bursts and the cache is on a slow disk or scanned by antivirus software; a cached asset becomes ready about a frame later.</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>Boolean</string>
+      <key>Value</key>
+      <integer>0</integer>
+    </map>
     <key>FSLowPriorityTextureThreads</key>
     <map>
       <key>Comment</key>

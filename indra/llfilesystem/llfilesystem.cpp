@@ -33,6 +33,7 @@
 #include "llfilesystem.h"
 #include "llfasttimer.h"
 #include "lldiskcache.h"
+#include "fsdiskthread.h" // <FS:Trish/> FSPerfDiskThread
 
 constexpr S32 LLFileSystem::READ        = 0x00000001;
 constexpr S32 LLFileSystem::WRITE       = 0x00000002;
@@ -61,10 +62,23 @@ LLFileSystem::LLFileSystem(const LLUUID& file_id, const LLAssetType::EType file_
         // even though we are reading and not writing because this is the
         // way the cache works - it relies on a valid "last accessed time" for
         // each file so it knows how to remove the oldest, unused files
-        if (LLFile::exists(mPath))
+        // <FS:Trish> FSPerfDiskThread: on the disk thread, nothing here depends on it
+        //if (LLFile::exists(mPath))
+        //{
+        //    updateFileAccessTime();
+        //}
+        const bool posted = FSDiskThread::isEnabled() && FSDiskThread::post([path = mPath]()
+            {
+                if (LLFile::exists(path))
+                {
+                    fsUpdateFileAccessTime(path);
+                }
+            });
+        if (!posted && LLFile::exists(mPath))
         {
             updateFileAccessTime();
         }
+        // </FS:Trish>
     }
 }
 
@@ -351,8 +365,17 @@ bool LLFileSystem::remove() const
     return true;
 }
 
+// <FS:Trish> FSPerfDiskThread: the body, by path, so the disk thread can run it
 void LLFileSystem::updateFileAccessTime()
 {
+    fsUpdateFileAccessTime(mPath);
+}
+
+//static
+void LLFileSystem::fsUpdateFileAccessTime(const std::filesystem::path& path)
+{
+    const std::filesystem::path& mPath = path;
+// </FS:Trish>
     /**
      * Threshold in time_t units that is used to decide if the last access time
      * time of the file is updated or not. Added as a precaution for the concern
