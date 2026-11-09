@@ -152,6 +152,12 @@ public:
     // False means unknown.
     bool mFSGlowFree = false;
     // </FS:Trish>
+    // <FS:Trish> FSPerfShadowSinglePass: the sun shadow update that last recorded this batch, the list and
+    // the index it went to there, so later cascades add their bit to that entry instead of a duplicate
+    U32 mFSShadowSPStamp = 0;
+    U32 mFSShadowSPIndex = 0;
+    const void* mFSShadowSPList = nullptr;
+    // </FS:Trish>
 
     struct CompareTexture
     {
