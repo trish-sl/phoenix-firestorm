@@ -313,6 +313,7 @@ void LLDrawPoolAlpha::forwardRender(bool rigged, EWBOITPhase wboit_phase)
     // </FS:Trish>
 
     LLGLDepthTest depth(GL_TRUE, write_depth ? GL_TRUE : GL_FALSE);
+    mFSWriteDepth = write_depth; // <FS:Trish/>
 
     mColorSFactor = LLRender::BF_SOURCE_ALPHA;           // } regular alpha blend
     mColorDFactor = LLRender::BF_ONE_MINUS_SOURCE_ALPHA; // }
@@ -808,6 +809,18 @@ void LLDrawPoolAlpha::renderAlpha(U32 mask, bool depth_only, bool rigged, EWBOIT
     bool initialized_lighting = false;
     bool light_enabled = true;
 
+    // <FS:Trish> FSPerfAlphaGlowSkip: a draw whose faces all have no glow adds nothing in the glow
+    // pass (it adds glow times coverage to alpha), so it is left out of it. Not when that pass
+    // writes depth (non-rigged, depth writing alpha passes): there the legacy glow shader writes
+    // depth for fragments the alpha draw discarded, and that stays as it is.
+    static LLCachedControl<bool> glow_skip_setting(gSavedSettings, "FSPerfAlphaGlowSkip", false);
+    const bool glow_skip = glow_skip_setting;
+    auto needs_glow = [&](const LLDrawInfo& draw)
+    {
+        return !(glow_skip && draw.mFSGlowFree && (draw.mAvatar.notNull() || !mFSWriteDepth));
+    };
+    // </FS:Trish>
+
     const LLVOAvatar* lastAvatar = nullptr;
     U64 lastMeshId = 0;
     const LLGLSLShader* lastAvatarShader = nullptr;
@@ -926,7 +939,8 @@ void LLDrawPoolAlpha::renderAlpha(U32 mask, bool depth_only, bool rigged, EWBOIT
                     if (wboit_phase == WBOIT_RESIDUAL && accumulated)
                     {
                         if (!depth_only && getType() != LLDrawPool::POOL_ALPHA_PRE_WATER &&
-                            params.mVertexBuffer->hasDataType(LLVertexBuffer::TYPE_EMISSIVE))
+                            params.mVertexBuffer->hasDataType(LLVertexBuffer::TYPE_EMISSIVE) &&
+                            needs_glow(params))
                         {
                             if (params.mAvatar != nullptr)
                             {
@@ -1135,7 +1149,10 @@ void LLDrawPoolAlpha::renderAlpha(U32 mask, bool depth_only, bool rigged, EWBOIT
                     // <FS:Trish> Two-pass rigged alpha: a split draw's glow goes with its fringe pass
                     (mHairPass == HAIR_OFF || hair_split == (mHairPass == HAIR_FRINGE)) &&
                     // </FS:Trish>
-                    params.mVertexBuffer->hasDataType(LLVertexBuffer::TYPE_EMISSIVE))
+                    // <FS:Trish> FSPerfAlphaGlowSkip
+                    //params.mVertexBuffer->hasDataType(LLVertexBuffer::TYPE_EMISSIVE))
+                    params.mVertexBuffer->hasDataType(LLVertexBuffer::TYPE_EMISSIVE) && needs_glow(params))
+                    // </FS:Trish>
                 {
                     if (params.mAvatar != nullptr)
                     {
