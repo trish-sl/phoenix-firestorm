@@ -347,6 +347,7 @@ LLGLSLShader::~LLGLSLShader()
 
 void LLGLSLShader::unload()
 {
+    mFSPaletteSerial = 0; // <FS:Trish/>
     mShaderFiles.clear();
     mDefines.clear();
     mFeatures = LLShaderFeatures();
@@ -419,6 +420,7 @@ bool LLGLSLShader::createShader()
     LL_PROFILE_ZONE_SCOPED_CATEGORY_SHADER;
 
     unloadInternal();
+    mFSPaletteSerial = 0; // <FS:Trish/> a new program has none of the old uniforms
 
     sInstances.insert(this);
 

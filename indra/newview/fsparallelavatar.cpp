@@ -41,6 +41,8 @@
 //   main thread, it applies morphs, may restart the sit motion and change the skeleton.
 // - Motion deactivations (onDeactivate(), deactivate callbacks, deleting deprecated motions)
 //   are deferred to the main thread.
+// - The attachment moves of LLVOAvatar::idleUpdateMisc() read the joints at once, they are
+//   deferred to the main thread after the pose (LLVOAvatar::fsMoveDeferredAttachments()).
 // - LLSmoothInterpolation's interpolant cache is frozen while the workers run (cache misses
 //   are computed without growing the shared vector).
 // - LLJoint world matrix serials come from per thread blocks of an atomic counter, so the rigged
@@ -543,8 +545,26 @@ void FSParallelAvatar::endIdle()
         }
     }
 
+    // idleUpdateMisc() ran right after the pose was queued and left the attachment moves (which place
+    // the attachments on the joints at once) for now, when the joints are up to date
+    {
+        LL_PROFILE_ZONE_NAMED_CATEGORY_AVATAR("FSParallelAvatar attachments");
+        for (PendingPose& pending : sPending)
+        {
+            if (pending.mAlive)
+            {
+                pending.mAvatar->fsMoveDeferredAttachments();
+            }
+            else
+            {
+                pending.mAvatar->mFSAttachMovesPending = false;
+            }
+        }
+    }
+
     // Animesh attachments matched their root to the wearer's attachment point in updateCharacter, before
-    // the wearer's queued pose was evaluated (a frame behind); match them again now that it is
+    // the wearer's queued pose was evaluated (a frame behind); match them again now that it is, and
+    // after the wearer's attachment moves above placed the animesh root volume
     if (any_animesh)
     {
         LL_PROFILE_ZONE_NAMED_CATEGORY_AVATAR("FSParallelAvatar animesh rematch");

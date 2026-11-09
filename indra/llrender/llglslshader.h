@@ -300,6 +300,11 @@ public:
     U32 mLightHash;
 
     GLuint mProgramObject;
+    // <FS:Trish> Build serial (LLVOAvatar::MatrixPaletteCache::mFSBuildSerial) of the skinning palette
+    // last uploaded to this program by LLRenderPass::uploadMatrixPalette, 0 = unknown. Shadow passes
+    // and cascades used to upload the same palette again for every pass.
+    U32 mFSPaletteSerial = 0;
+    // </FS:Trish>
 #if LL_RELEASE_WITH_DEBUG_INFO
     struct attr_name
     {
