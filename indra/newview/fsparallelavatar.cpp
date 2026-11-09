@@ -146,7 +146,12 @@ namespace
                 mOpen = true;
                 ++mGeneration;
             }
-            mWake.notify_all();
+            // Only as many workers as there are tasks beyond the one the main thread takes
+            const U32 wake = llmin((U32)mThreads.size(), count - 1);
+            for (U32 i = 0; i < wake; ++i)
+            {
+                mWake.notify_one();
+            }
 
             work();
 
@@ -206,6 +211,11 @@ namespace
         void threadLoop()
         {
             LL_PROFILER_SET_THREAD_NAME("FSAvatarPose");
+#if LL_WINDOWS
+            // The main thread (HIGHEST) waits on every task taken: a worker preempted by decode or
+            // other threads holds it up for a scheduler quantum. Workers only run while it waits.
+            SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
+#endif
             U64 seen = 0;
             std::unique_lock<std::mutex> lock(mMutex);
             while (true)

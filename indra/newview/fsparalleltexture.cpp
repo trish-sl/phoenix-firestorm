@@ -226,6 +226,11 @@ namespace
         void workerLoop()
         {
             LL_PROFILER_SET_THREAD_NAME("FS Texture Priority");
+#if LL_WINDOWS
+            // The main thread (HIGHEST) waits on every task taken: a worker preempted by decode or
+            // other threads holds it up for a scheduler quantum. Workers only run while it waits.
+            SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
+#endif
             U64 seen = 0;
             while (true)
             {
