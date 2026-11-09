@@ -56,6 +56,8 @@
 
 #include "fsvrs.h"
 
+#include "fsglstream.h"
+
 #include "llgl.h"
 #include "llglslshader.h"
 #include "llrender.h"
@@ -67,6 +69,7 @@
 #include "llviewershadermgr.h"
 #include "pipeline.h"
 
+#include <atomic>
 #include <iomanip>
 #include <sstream>
 
@@ -222,8 +225,15 @@ namespace
     U32 sStatsBytes = 0;
     U32 sStatsTilesX = 0;
     U32 sStatsTilesY = 0;
-    GLsync sStatsFence = nullptr;
     F64 sLastStats = 0.0;
+
+    // The fence, its test and the map of a stats read back run through FSGLStream::recordCall:
+    // on the render thread when it runs (where they don't make the main thread wait for it to
+    // drain its queue), directly otherwise.
+    enum { STATS_IDLE = 0, STATS_PENDING, STATS_READY };
+    std::atomic<int> sStatsState{ STATS_IDLE };
+    GLsync sStatsFence = nullptr;   // GL thread
+    std::vector<U8> sStatsRates;    // written by the GL thread before STATS_READY
 
     bool sAllocated = false;        // anything above needs releasing
 
@@ -416,10 +426,21 @@ namespace
         sBuildFrames[0] = 0;
     }
 
-    // Finishes a read back started by request_stats() once its fence has passed
-    void poll_stats()
+    // GL thread, in stream order after the read back
+    void gl_stats_fence(U64)
     {
-        if (!sStatsFence)
+        if (sStatsFence)
+        {
+            glDeleteSync(sStatsFence);
+        }
+        sStatsFence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+    }
+
+    // GL thread: copies the read back out once its fence has passed. The pack buffer binding is
+    // put back as found, the main thread's stream tracks it.
+    void gl_stats_poll(U64 packed)
+    {
+        if (!sStatsFence || sStatsState.load(std::memory_order_relaxed) != STATS_PENDING)
         {
             return;
         }
@@ -431,15 +452,52 @@ namespace
         glDeleteSync(sStatsFence);
         sStatsFence = nullptr;
 
-        const U32 count = sStatsTilesX * sStatsTilesY;
-        glBindBuffer(GL_PIXEL_PACK_BUFFER, sStatsPBO);
+        const GLuint pbo = (GLuint)(packed >> 32);
+        const U32 count = (U32)(packed & 0xffffffffu);
+        GLint prev = 0;
+        glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &prev);
+        glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo);
         const U8* rates = (const U8*)glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, count, GL_MAP_READ_BIT);
         if (rates)
         {
-            log_stats(rates, count);
+            sStatsRates.assign(rates, rates + count);
             glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
         }
-        glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+        else
+        {
+            sStatsRates.clear();
+        }
+        glBindBuffer(GL_PIXEL_PACK_BUFFER, (GLuint)prev);
+        sStatsState.store(STATS_READY, std::memory_order_release);
+    }
+
+    // GL thread
+    void gl_stats_release(U64)
+    {
+        if (sStatsFence)
+        {
+            glDeleteSync(sStatsFence);
+            sStatsFence = nullptr;
+        }
+        sStatsState.store(STATS_IDLE, std::memory_order_release);
+    }
+
+    // Logs a read back started by request_stats() once the GL thread has copied it out
+    void poll_stats()
+    {
+        const int state = sStatsState.load(std::memory_order_acquire);
+        if (state == STATS_READY)
+        {
+            if (!sStatsRates.empty())
+            {
+                log_stats(sStatsRates.data(), (U32)sStatsRates.size());
+            }
+            sStatsState.store(STATS_IDLE, std::memory_order_relaxed);
+        }
+        else if (state == STATS_PENDING)
+        {
+            FSGLStream::recordCall(&gl_stats_poll, ((U64)sStatsPBO << 32) | (U64)(sStatsTilesX * sStatsTilesY));
+        }
     }
 
     // Copies the freshly built image into the PBO. sRateFBO must be bound.
@@ -447,7 +505,7 @@ namespace
     {
         static LLCachedControl<F32> interval(gSavedSettings, "FSRenderVRSLogInterval", 5.f);
         const F64 now = now_seconds();
-        if (interval <= 0.f || sStatsFence || now - sLastStats < (F64)interval)
+        if (interval <= 0.f || sStatsState.load(std::memory_order_acquire) != STATS_IDLE || now - sLastStats < (F64)interval)
         {
             return;
         }
@@ -471,7 +529,8 @@ namespace
         glReadPixels(0, 0, sTilesX, sTilesY, GL_RED_INTEGER, GL_UNSIGNED_BYTE, nullptr);
         glPixelStorei(GL_PACK_ALIGNMENT, pack_alignment);
         glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
-        sStatsFence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+        sStatsState.store(STATS_PENDING, std::memory_order_relaxed);
+        FSGLStream::recordCall(&gl_stats_fence, 0);
         sStatsTilesX = sTilesX;
         sStatsTilesY = sTilesY;
     }
@@ -487,11 +546,7 @@ namespace
         release_image();
         sGBufferTimer.release();
         sBuildTimer.release();
-        if (sStatsFence)
-        {
-            glDeleteSync(sStatsFence);
-            sStatsFence = nullptr;
-        }
+        FSGLStream::recordCall(&gl_stats_release, 0);
         if (sStatsPBO)
         {
             glDeleteBuffers(1, &sStatsPBO);

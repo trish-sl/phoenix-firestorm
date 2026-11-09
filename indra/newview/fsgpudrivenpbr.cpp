@@ -62,8 +62,9 @@
 // resident and deletes its samplers, which deletes the handles and makes the texture mutable again (checked
 // once per GL context: if a driver keeps the texture immutable, bindless is not used). Handles are looked up
 // by the texture's current GL name every pass, so a reallocated texture (a new name) gets a new handle. Making
-// a handle waits for FSRenderThread, so while it records, a missing handle is queued (the batch takes bound
-// textures this time) and the queued ones are made together, in one wait, at the next frame's first lookup. Only
+// a handle needs the GL thread, so while FSRenderThread records, a missing handle is queued (the batch takes
+// bound textures this time), the queued ones are made together on the render thread at the next frame's first
+// lookup without waiting for it, and filed at a later frame's first lookup once made. Only
 // fetched textures with three or four components that are complete, not waiting for their options to be
 // applied, and not media get handles; a batch with any other texture is drawn with bound textures.
 //
@@ -97,6 +98,7 @@
 #include "pipeline.h"
 
 #include <atomic>
+#include <memory>
 #include <sstream>
 #include <mutex>
 #include <unordered_map>
@@ -314,6 +316,20 @@ namespace
     std::atomic<U32> sHandleTextures{ 0 };                      // sHandles.size() + sHandleQueue.size(), for the hook's fast path
     std::unordered_map<U32, std::vector<HandleRequest>> sHandleQueue;   // by texture GL name; changed on the main thread only
     U32 sHandleQueueFrame = 0;                                  // the frame the queue was last worked off
+
+    // Handles being made on the render thread (FSGLStream::recordCall, in stream order, no wait), taken in at
+    // a later frame's first lookup. The main thread owns a batch; the render thread only fills mHandles and
+    // then sets mDone. A request unlocked meanwhile is cancelled and its sampler deleted right away, which in
+    // stream order comes after its handle was made, so the texture is mutable again before it is changed.
+    struct HandleBatch
+    {
+        std::vector<HandleRequest> mRequests;
+        std::vector<GLuint64> mHandles;
+        std::vector<U8> mCancelled;                             // main thread
+        std::atomic<bool> mDone{ false };
+    };
+    std::vector<HandleBatch*> sHandleBatches;                   // oldest first; sHandleMutex held
+    std::unordered_map<U32, std::vector<SamplerState>> sHandlesInFlight;    // by texture GL name; sHandleMutex held
     U32 sResident = 0;
     U32 sStatHandlesMade = 0;
     U32 sStatHandleFailures = 0;
@@ -376,7 +392,74 @@ namespace
     // sHandleMutex held
     void update_handle_count()
     {
-        sHandleTextures.store((U32)(sHandles.size() + sHandleQueue.size()), std::memory_order_relaxed);
+        sHandleTextures.store((U32)(sHandles.size() + sHandleQueue.size() + sHandlesInFlight.size()), std::memory_order_relaxed);
+    }
+
+    // sHandleMutex held
+    bool handle_in_flight(U32 name, const SamplerState& state)
+    {
+        auto it = sHandlesInFlight.find(name);
+        if (it == sHandlesInFlight.end())
+        {
+            return false;
+        }
+        for (const SamplerState& in_flight : it->second)
+        {
+            if (in_flight == state)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // sHandleMutex held
+    void forget_in_flight(U32 name, const SamplerState& state)
+    {
+        auto it = sHandlesInFlight.find(name);
+        if (it == sHandlesInFlight.end())
+        {
+            return;
+        }
+        std::vector<SamplerState>& states = it->second;
+        for (size_t i = 0; i < states.size(); ++i)
+        {
+            if (states[i] == state)
+            {
+                states.erase(states.begin() + i);
+                break;
+            }
+        }
+        if (states.empty())
+        {
+            sHandlesInFlight.erase(it);
+        }
+    }
+
+    // Cancels the requests of tex_name (of every texture with 0) still being made: their samplers are
+    // deleted, which deletes the handles once made. sHandleMutex held, main thread.
+    void cancel_in_flight(U32 tex_name)
+    {
+#if FS_GDD_BINDLESS_API
+        if (sHandlesInFlight.empty())
+        {
+            return;
+        }
+        for (HandleBatch* batch : sHandleBatches)
+        {
+            for (size_t i = 0; i < batch->mRequests.size(); ++i)
+            {
+                HandleRequest& request = batch->mRequests[i];
+                if (batch->mCancelled[i] || (tex_name && request.mName != tex_name))
+                {
+                    continue;
+                }
+                batch->mCancelled[i] = 1;
+                glDeleteSamplers(1, &request.mSampler);
+                forget_in_flight(request.mName, request.mState);
+            }
+        }
+#endif
     }
 
     // LLImageGL::sFSTextureUnlock: tex_name is about to be respecified or get new parameters.
@@ -407,6 +490,11 @@ namespace
             sHandleQueue.erase(queued);
             update_handle_count();
         }
+        if (sHandlesInFlight.count(tex_name))
+        {   // respecified or deleted while its handle is being made
+            cancel_in_flight(tex_name);
+            update_handle_count();
+        }
         if (it == sHandles.end())
         {
             return;
@@ -420,8 +508,22 @@ namespace
     void release_handles()
     {
         std::unordered_map<U32, std::vector<HandleRequest>> queue;  // released after the lock (unlock_texture)
+        std::vector<std::unique_ptr<HandleBatch>> finished;         // as queue
         std::lock_guard<std::mutex> lock(sHandleMutex);
         queue.swap(sHandleQueue);
+        cancel_in_flight(0);
+        for (auto it = sHandleBatches.begin(); it != sHandleBatches.end(); )
+        {   // a batch the render thread hasn't got to yet stays until it has
+            if ((*it)->mDone.load(std::memory_order_acquire))
+            {
+                finished.emplace_back(*it);
+                it = sHandleBatches.erase(it);
+            }
+            else
+            {
+                ++it;
+            }
+        }
         for (auto& texture : sHandles)
         {
             drop_slots(texture.second);
@@ -528,8 +630,69 @@ namespace
         sHandles[name].push_back(slot);
     }
 
+    // Render thread (directly when not recording), in stream order: makes the handles of a batch.
+    void make_handles_gl(U64 ptr)
+    {
+        HandleBatch* batch = reinterpret_cast<HandleBatch*>((uintptr_t)ptr);
+        for (size_t i = 0; i < batch->mRequests.size(); ++i)
+        {
+            // 0 (and GL_INVALID_OPERATION) for a texture that isn't complete with this sampler
+            batch->mHandles[i] = sGetTextureSamplerHandle(batch->mRequests[i].mName, batch->mRequests[i].mSampler);
+            if (!batch->mHandles[i])
+            {
+                for (U32 j = 0; j < 4 && glGetError() != GL_NO_ERROR; ++j)
+                {
+                }
+            }
+        }
+        batch->mDone.store(true, std::memory_order_release);
+    }
+
+    // Files the handles of the batches the render thread has made, oldest first, of the textures still as
+    // they were asked for. The batches go to finished, to be deleted after the lock: dropping the last
+    // reference to a texture deletes it, which calls unlock_texture. sHandleMutex held, main thread.
+    void take_made_handles(U32 frame, std::vector<std::unique_ptr<HandleBatch>>& finished)
+    {
+        while (!sHandleBatches.empty() && sHandleBatches.front()->mDone.load(std::memory_order_acquire))
+        {
+            HandleBatch* batch = sHandleBatches.front();
+            sHandleBatches.erase(sHandleBatches.begin());
+            for (size_t i = 0; i < batch->mRequests.size(); ++i)
+            {
+                if (batch->mCancelled[i])
+                {   // its sampler is already deleted
+                    continue;
+                }
+                HandleRequest& request = batch->mRequests[i];
+                forget_in_flight(request.mName, request.mState);
+                LLImageGL* gl = request.mTex->getGLTexture();
+                bool keep = gl && gl->getTexName() == request.mName && !gl->getFSTexOptionsDirty() &&
+                            sampler_state(gl) == request.mState;
+                auto it = sHandles.find(request.mName);
+                if (keep && it != sHandles.end())
+                {
+                    for (const HandleSlot& slot : it->second)
+                    {
+                        keep = keep && !(slot.mState == request.mState);
+                    }
+                }
+                if (keep)
+                {
+                    add_slot(request.mName, request.mState, request.mSampler, batch->mHandles[i], frame);
+                }
+                else
+                {   // changed since or made twice: deleting the sampler deletes the handle
+                    glDeleteSamplers(1, &request.mSampler);
+                }
+            }
+            finished.emplace_back(batch);
+        }
+    }
+
     // The handles asked for while the render thread recorded, of the textures still as they were then, all
-    // made in one wait for the render thread. Once per frame, at its first lookup or sweep. Main thread.
+    // made together on the render thread without waiting for it; they are filed at a later frame's first
+    // lookup (the batch takes bound textures meanwhile). Once per frame, at its first lookup or sweep. Main
+    // thread.
     void make_queued_handles(U32 frame)
     {
         if (frame == sHandleQueueFrame)
@@ -539,13 +702,16 @@ namespace
         sHandleQueueFrame = frame;
         // released after the lock: dropping the last reference to a texture deletes it, which calls unlock_texture
         std::unordered_map<U32, std::vector<HandleRequest>> queue;
-        std::vector<HandleRequest> requests;
+        std::vector<std::unique_ptr<HandleBatch>> finished;
         std::lock_guard<std::mutex> lock(sHandleMutex);
+        take_made_handles(frame, finished);
         if (sHandleQueue.empty())
         {
+            update_handle_count();
             return;
         }
         queue.swap(sHandleQueue);
+        HandleBatch* batch = new HandleBatch;
         for (auto& texture : queue)
         {
             for (HandleRequest& request : texture.second)
@@ -556,7 +722,7 @@ namespace
                 {   // changed since: asked for again if still wanted
                     continue;
                 }
-                bool made = false;
+                bool made = handle_in_flight(request.mName, request.mState);
                 auto it = sHandles.find(request.mName);
                 if (it != sHandles.end())
                 {
@@ -568,32 +734,24 @@ namespace
                 if (!made)
                 {
                     request.mSampler = make_sampler(request.mState);
-                    requests.push_back(request);
+                    sHandlesInFlight[request.mName].push_back(request.mState);
+                    batch->mRequests.push_back(request);
                 }
             }
         }
 
-        if (!requests.empty())
+        if (batch->mRequests.empty())
         {
-            std::vector<GLuint64> handles(requests.size(), 0);
-            FSGLStream::runSync([&]()
-                {
-                    for (size_t i = 0; i < requests.size(); ++i)
-                    {
-                        // 0 (and GL_INVALID_OPERATION) for a texture that isn't complete with this sampler
-                        handles[i] = sGetTextureSamplerHandle(requests[i].mName, requests[i].mSampler);
-                        if (!handles[i])
-                        {
-                            for (U32 j = 0; j < 4 && glGetError() != GL_NO_ERROR; ++j)
-                            {
-                            }
-                        }
-                    }
-                });
-            for (size_t i = 0; i < requests.size(); ++i)
-            {
-                add_slot(requests[i].mName, requests[i].mState, requests[i].mSampler, handles[i], frame);
-            }
+            delete batch;
+        }
+        else
+        {
+            batch->mHandles.assign(batch->mRequests.size(), 0);
+            batch->mCancelled.assign(batch->mRequests.size(), 0);
+            sHandleBatches.push_back(batch);
+            FSGLStream::recordCall(&make_handles_gl, (U64)(uintptr_t)batch);
+            // made right away when the render thread isn't recording
+            take_made_handles(frame, finished);
         }
         update_handle_count();
     }
@@ -676,6 +834,10 @@ namespace
             return handle;
         }
 
+        if (handle_in_flight(name, state))
+        {
+            return 0;
+        }
         std::vector<HandleRequest>& queued = sHandleQueue[name];
         for (const HandleRequest& request : queued)
         {

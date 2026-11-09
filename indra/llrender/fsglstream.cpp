@@ -209,8 +209,11 @@ namespace
     constexpr size_t CHUNK_SIZE = 64 * 1024;
     constexpr size_t SUBMIT_BYTES = 32 * 1024;   // hand chunks over early so replay overlaps recording
     constexpr size_t MAX_FREE_CHUNKS = 256;
-    constexpr size_t MAX_FREE_LARGE_CHUNKS = 4;
-    constexpr size_t MAX_FREE_LARGE_BYTES = 64 * 1024 * 1024;
+    // A geometry rebuild burst uploads dozens of vertex and index buffers over CHUNK_SIZE in one
+    // frame, each in a chunk of its own: with only a few kept, most were allocated, first touched
+    // and freed (large blocks go back to the OS) again every burst, several ms on the main thread.
+    constexpr size_t MAX_FREE_LARGE_CHUNKS = 64;
+    constexpr size_t MAX_FREE_LARGE_BYTES = 160 * 1024 * 1024;
 
     std::mutex sQueueMutex;
     std::condition_variable sQueueCond;
@@ -926,7 +929,17 @@ namespace
         GLuint mVAO = 0;
         // Element buffer of each VAO we know. The bound VAO's is held in mCurEBO instead (its map
         // entry is stale while mCurEBODirty), so draws and binds don't look it up.
-        std::unordered_map<GLuint, GLuint> mEBO;
+        // Each entry keeps the generation its buffer had when it was attached; deleting a buffer
+        // bumps its generation (mBufferGen), which makes every other VAO's entry for it unknown
+        // without walking the map for each deleted buffer (a burst of thousands of deletes over
+        // thousands of VAOs froze the main thread for seconds).
+        struct EBOEntry
+        {
+            GLuint mBuffer = 0;
+            U32 mGen = 0;
+        };
+        std::unordered_map<GLuint, EBOEntry> mEBO;
+        std::unordered_map<GLuint, U32> mBufferGen; // only buffers deleted at least once
         bool mCurEBOOk = false;
         bool mCurEBODirty = false;
         GLuint mCurEBO = 0;
@@ -935,6 +948,21 @@ namespace
     };
     Shadow sSh;     // main thread
     bool sCoreProfile = false;  // main thread: no client-side vertex arrays in this context
+
+    U32 bufferGen(GLuint buffer)
+    {
+        if (buffer == 0)
+        {
+            return 0;
+        }
+        auto it = sSh.mBufferGen.find(buffer);
+        return it == sSh.mBufferGen.end() ? 0 : it->second;
+    }
+
+    void setVAOEBO(GLuint vao, GLuint buffer)
+    {
+        sSh.mEBO[vao] = { buffer, bufferGen(buffer) };
+    }
 
     // The bound VAO's element buffer: set (known) or forget (unknown)
     void setCurEBO(GLuint buffer)
@@ -958,7 +986,7 @@ namespace
         {
             if (sSh.mCurEBOOk)
             {
-                sSh.mEBO[sSh.mVAO] = sSh.mCurEBO;
+                setVAOEBO(sSh.mVAO, sSh.mCurEBO);
             }
             else
             {
@@ -968,8 +996,9 @@ namespace
         sSh.mVAO = vao;
         sSh.mVAOOk = true;
         auto it = sSh.mEBO.find(vao);
-        sSh.mCurEBOOk = it != sSh.mEBO.end();
-        sSh.mCurEBO = sSh.mCurEBOOk ? it->second : 0;
+        // known only while its buffer hasn't been deleted since it was attached
+        sSh.mCurEBOOk = it != sSh.mEBO.end() && it->second.mGen == bufferGen(it->second.mBuffer);
+        sSh.mCurEBO = sSh.mCurEBOOk ? it->second.mBuffer : 0;
         sSh.mCurEBODirty = false;
     }
 
@@ -1576,7 +1605,7 @@ namespace
             }
             else
             {
-                sSh.mEBO[vao] = buffer;
+                setVAOEBO(vao, buffer);
             }
             P::record(vao, buffer);
         }
@@ -2364,6 +2393,35 @@ namespace
         static constexpr bool kHas = true;
         using P = Proxy<ID, PFN>;
         static std::vector<GLuint> sPool;   // main thread
+        static GLsizei sBatch;              // main thread
+        // Names made by an asynchronous refill on the render thread, taken by the main thread
+        static std::mutex sIncomingMutex;
+        static std::vector<GLuint> sIncoming;
+        static std::atomic<bool> sHasIncoming;
+        static bool sRefillQueued;          // main thread
+
+        // Render thread, in stream order
+        static void refill(U64 batch)
+        {
+            std::vector<GLuint> fresh((size_t)batch);
+            P::real()((GLsizei)batch, fresh.data());
+            std::lock_guard<std::mutex> lock(sIncomingMutex);
+            sIncoming.insert(sIncoming.end(), fresh.rbegin(), fresh.rend());
+            sHasIncoming.store(true, std::memory_order_release);
+        }
+
+        static void takeIncoming()
+        {
+            if (!sHasIncoming.load(std::memory_order_acquire))
+            {
+                return;
+            }
+            std::lock_guard<std::mutex> lock(sIncomingMutex);
+            sPool.insert(sPool.begin(), sIncoming.begin(), sIncoming.end());
+            sIncoming.clear();
+            sHasIncoming.store(false, std::memory_order_relaxed);
+            sRefillQueued = false;
+        }
 
         static void APIENTRY call(GLsizei n, GLuint* out)
         {
@@ -2379,17 +2437,19 @@ namespace
                 }
                 return;
             }
+            takeIncoming();
             if (sPool.size() < (size_t)n)
             {
-                // Each refill waits for the render thread to work through everything queued,
-                // which in a busy scene is tens of milliseconds: a pool that keeps running dry
-                // refills in growing batches (to MAX_BATCH names) so a burst costs a few waits
-                static GLsizei s_batch = std::min<GLsizei>(256, MAX_BATCH);
-                const GLsizei batch = std::max<GLsizei>(n, s_batch);
-                s_batch = std::min<GLsizei>(s_batch * 2, MAX_BATCH);
+                // Each synchronous refill waits for the render thread to work through everything
+                // queued, which in a busy scene is tens of milliseconds: a pool that runs dry
+                // before its asynchronous refill arrives refills in growing batches (to MAX_BATCH
+                // names) so a burst costs a few waits. The wait also runs a queued refill.
+                const GLsizei batch = std::max<GLsizei>(n, sBatch);
+                sBatch = std::min<GLsizei>(sBatch * 2, MAX_BATCH);
                 std::vector<GLuint> fresh((size_t)batch);
                 syncCall<void>(ID, [&]() { P::real()(batch, fresh.data()); });
                 sPool.insert(sPool.end(), fresh.rbegin(), fresh.rend());
+                takeIncoming();
             }
             for (GLsizei i = 0; i < n; ++i)
             {
@@ -2404,14 +2464,31 @@ namespace
                     }
                     else
                     {
-                        sSh.mEBO[out[i]] = 0;
+                        setVAOEBO(out[i], 0);
                     }
                 }
+            }
+            // Top up before running dry, without waiting: the render thread makes the names
+            // when it gets to this point of the stream
+            if (!sRefillQueued && sPool.size() < (size_t)sBatch / 2)
+            {
+                sRefillQueued = true;
+                FSGLStream::recordCall(&refill, (U64)sBatch);
             }
         }
     };
     template <int ID, typename PFN, bool VAO, GLsizei MAX_BATCH>
     std::vector<GLuint> PoolCall<ID, PFN, VAO, MAX_BATCH>::sPool;
+    template <int ID, typename PFN, bool VAO, GLsizei MAX_BATCH>
+    GLsizei PoolCall<ID, PFN, VAO, MAX_BATCH>::sBatch = std::min<GLsizei>(256, MAX_BATCH);
+    template <int ID, typename PFN, bool VAO, GLsizei MAX_BATCH>
+    std::mutex PoolCall<ID, PFN, VAO, MAX_BATCH>::sIncomingMutex;
+    template <int ID, typename PFN, bool VAO, GLsizei MAX_BATCH>
+    std::vector<GLuint> PoolCall<ID, PFN, VAO, MAX_BATCH>::sIncoming;
+    template <int ID, typename PFN, bool VAO, GLsizei MAX_BATCH>
+    std::atomic<bool> PoolCall<ID, PFN, VAO, MAX_BATCH>::sHasIncoming{ false };
+    template <int ID, typename PFN, bool VAO, GLsizei MAX_BATCH>
+    bool PoolCall<ID, PFN, VAO, MAX_BATCH>::sRefillQueued = false;
 
 #define FSGL_POOL(name, vao, max_batch) template <> struct Custom<FSGL_ID_##name> : PoolCall<FSGL_ID_##name, decltype(::name), vao, max_batch> {};
 
@@ -2435,6 +2512,45 @@ namespace
         static constexpr bool kHas = true;
         using P = Proxy<ID, PFN>;
         static std::unordered_map<GLenum, std::vector<GLuint>> sPools;  // main thread
+        static std::unordered_map<GLenum, GLsizei> sBatches;            // main thread
+        static std::unordered_map<GLenum, bool> sRefillQueued;          // main thread
+        // As PoolCall: names made by asynchronous refills, per target
+        static std::mutex sIncomingMutex;
+        static std::unordered_map<GLenum, std::vector<GLuint>> sIncoming;
+        static std::atomic<bool> sHasIncoming;
+
+        // Render thread, in stream order. Target in the high half, batch in the low half.
+        static void refill(U64 packed)
+        {
+            const GLenum target = (GLenum)(packed >> 32);
+            const GLsizei batch = (GLsizei)(packed & 0xffffffffu);
+            std::vector<GLuint> fresh((size_t)batch);
+            P::real()(target, batch, fresh.data());
+            std::lock_guard<std::mutex> lock(sIncomingMutex);
+            std::vector<GLuint>& incoming = sIncoming[target];
+            incoming.insert(incoming.end(), fresh.rbegin(), fresh.rend());
+            sHasIncoming.store(true, std::memory_order_release);
+        }
+
+        static void takeIncoming()
+        {
+            if (!sHasIncoming.load(std::memory_order_acquire))
+            {
+                return;
+            }
+            std::lock_guard<std::mutex> lock(sIncomingMutex);
+            for (auto& [target, incoming] : sIncoming)
+            {
+                if (!incoming.empty())
+                {
+                    std::vector<GLuint>& pool = sPools[target];
+                    pool.insert(pool.begin(), incoming.begin(), incoming.end());
+                    incoming.clear();
+                    sRefillQueued[target] = false;
+                }
+            }
+            sHasIncoming.store(false, std::memory_order_relaxed);
+        }
 
         static void APIENTRY call(GLenum target, GLsizei n, GLuint* out)
         {
@@ -2450,28 +2566,46 @@ namespace
                 }
                 return;
             }
+            takeIncoming();
             std::vector<GLuint>& pool = sPools[target];
+            GLsizei& next_batch = sBatches.emplace(target, 64).first->second;
             if (pool.size() < (size_t)n)
             {
                 // As PoolCall: batches grow while the pool keeps running dry (one per target), to
                 // OBJECT_BATCH_MAX as these are real objects
-                static std::unordered_map<GLenum, GLsizei> s_batches;
-                GLsizei& next_batch = s_batches.emplace(target, 64).first->second;
                 const GLsizei batch = std::max<GLsizei>(n, next_batch);
                 next_batch = std::min<GLsizei>(next_batch * 2, OBJECT_BATCH_MAX);
                 std::vector<GLuint> fresh((size_t)batch);
                 syncCall<void>(ID, [&]() { P::real()(target, batch, fresh.data()); });
                 pool.insert(pool.end(), fresh.rbegin(), fresh.rend());
+                takeIncoming();
             }
             for (GLsizei i = 0; i < n; ++i)
             {
                 out[i] = pool.back();
                 pool.pop_back();
             }
+            // As PoolCall: top up before running dry, without waiting
+            bool& queued = sRefillQueued[target];
+            if (!queued && pool.size() < (size_t)next_batch / 2)
+            {
+                queued = true;
+                FSGLStream::recordCall(&refill, ((U64)target << 32) | (U64)(U32)next_batch);
+            }
         }
     };
     template <int ID, typename PFN>
     std::unordered_map<GLenum, std::vector<GLuint>> TargetPoolCall<ID, PFN>::sPools;
+    template <int ID, typename PFN>
+    std::unordered_map<GLenum, GLsizei> TargetPoolCall<ID, PFN>::sBatches;
+    template <int ID, typename PFN>
+    std::unordered_map<GLenum, bool> TargetPoolCall<ID, PFN>::sRefillQueued;
+    template <int ID, typename PFN>
+    std::mutex TargetPoolCall<ID, PFN>::sIncomingMutex;
+    template <int ID, typename PFN>
+    std::unordered_map<GLenum, std::vector<GLuint>> TargetPoolCall<ID, PFN>::sIncoming;
+    template <int ID, typename PFN>
+    std::atomic<bool> TargetPoolCall<ID, PFN>::sHasIncoming{ false };
 
     template <> struct Custom<FSGL_ID_glCreateTextures> : TargetPoolCall<FSGL_ID_glCreateTextures, decltype(::glCreateTextures)> {};
     template <> struct Custom<FSGL_ID_glCreateQueries> : TargetPoolCall<FSGL_ID_glCreateQueries, decltype(::glCreateQueries)> {};
@@ -2520,18 +2654,9 @@ namespace
                     if (sSh.mBind[s] == id) sSh.mBind[s] = 0;
                 }
                 // GL detaches a deleted buffer only from the bound vertex array. The others keep
-                // the orphan attached under a name that is free again: what they hold is unknown.
-                for (auto it = sSh.mEBO.begin(); it != sSh.mEBO.end();)
-                {
-                    if (it->second == id && !(sSh.mVAOOk && it->first == sSh.mVAO))
-                    {
-                        it = sSh.mEBO.erase(it);
-                    }
-                    else
-                    {
-                        ++it;   // the bound VAO's entry is mCurEBO's business
-                    }
-                }
+                // the orphan attached under a name that is free again: what they hold is unknown,
+                // which the bumped generation says for every entry that recorded this buffer.
+                ++sSh.mBufferGen[id];
                 if (sSh.mVAOOk && sSh.mCurEBOOk && sSh.mCurEBO == id)
                 {
                     setCurEBO(0);
@@ -3447,6 +3572,8 @@ namespace
 
         bool flushed_for_queries = false;
         bool poll_pending = false;  // the poll hook has work left (readbacks waiting on fences)
+        constexpr U64 POLL_INTERVAL_NS = 500000;   // after replayed chunks, at most every 0.5 ms
+        U64 last_poll_ns = 0;
         for (;;)
         {
             Chunk* c = nullptr;
@@ -3507,8 +3634,20 @@ namespace
             {
                 LL_PROFILE_ZONE_NAMED_CATEGORY_DISPLAY("FSRT replay");
                 execChunk(c);
-                pollQueries();
-                poll_pending = runRenderPoll();
+                // Chunks come every 32 KB, about 150 a frame: polling queries and readbacks after
+                // each meant hundreds of availability calls into the driver per frame. Results only
+                // need to arrive within a frame or so; the idle wait above polls as well.
+                const U64 t_poll = nowNs();
+                if (t_poll - last_poll_ns >= POLL_INTERVAL_NS)
+                {
+                    last_poll_ns = t_poll;
+                    pollQueries();
+                    poll_pending = runRenderPoll();
+                }
+                else
+                {
+                    poll_pending = poll_pending || sRenderPoll.load(std::memory_order_relaxed) != nullptr;
+                }
             }
             flushed_for_queries = false;
             freeChunk(c);

@@ -127,14 +127,24 @@ namespace
         LL_PROFILE_ZONE_NAMED_CATEGORY_DISPLAY("FSRT start");
 
         // The shared-context texture and media workers run their GL right
-        // away while the main thread's GL runs later on the render thread; a
-        // worker could then touch a texture before the main thread's commands
-        // that create it have executed. Uploads go through the stream instead
-        // (they no longer cost the main thread anything but a copy).
+        // away (their calls bypass the stream), while the main thread's GL
+        // runs later on the render thread. They stay threaded: a worker never
+        // touches a texture the main thread made, it uploads into a new name
+        // of its own (LLImageGL::createGLTexture off the main thread, also
+        // for media updates), waits for the upload (NVIDIA) or has the main
+        // thread record a glWaitSync (others), and only then posts the name
+        // swap to the main thread, so everything the main thread records with
+        // the new name runs after the upload. Each thread has its own gGL, and
+        // the PBO upload ring is main thread only. Without the workers, every
+        // upload is copied into the stream inside the frame.
         sPrevThreadedTextures = LLImageGLThread::sEnabledTextures;
         sPrevThreadedMedia = LLImageGLThread::sEnabledMedia;
-        LLImageGLThread::sEnabledTextures = false;
-        LLImageGLThread::sEnabledMedia = false;
+        static LLCachedControl<bool> threaded_textures(gSavedSettings, "FSRenderThreadTextureThread", true);
+        if (!threaded_textures)
+        {
+            LLImageGLThread::sEnabledTextures = false;
+            LLImageGLThread::sEnabledMedia = false;
+        }
 
         FSGLStream::install();
 

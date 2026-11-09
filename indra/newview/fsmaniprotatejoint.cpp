@@ -116,11 +116,15 @@ static void renderPulsingSphere(const LLVector3& joint_world_position, const LLC
     }
     gGL.popMatrix();
 
-    // Check for OpenGL errors
-    GLenum err;
-    while ((err = glGetError()) != GL_NO_ERROR)
+    // Check for OpenGL errors. Debug GL only: glGetError makes the main thread wait for
+    // FSRenderThread, and this runs for every joint marker every frame.
+    if (gDebugGL)
     {
-        LL_INFOS() << "OpenGL Error: " << err << LL_ENDL;
+        GLenum err;
+        while ((err = glGetError()) != GL_NO_ERROR)
+        {
+            LL_INFOS() << "OpenGL Error: " << err << LL_ENDL;
+        }
     }
 }
 
@@ -161,11 +165,15 @@ static void renderStaticSphere(const LLVector3& joint_world_position, const LLCo
     }
     gGL.popMatrix();
 
-    // Check for OpenGL errors
-    GLenum err;
-    while ((err = glGetError()) != GL_NO_ERROR)
+    // Check for OpenGL errors. Debug GL only: glGetError makes the main thread wait for
+    // FSRenderThread, and this runs for every joint marker every frame.
+    if (gDebugGL)
     {
-        LL_INFOS() << "OpenGL Error: " << err << LL_ENDL;
+        GLenum err;
+        while ((err = glGetError()) != GL_NO_ERROR)
+        {
+            LL_INFOS() << "OpenGL Error: " << err << LL_ENDL;
+        }
     }
 }
 
@@ -333,7 +341,7 @@ void FSManipRotateJoint::highlightHoverSpheres(S32 mouseX, S32 mouseY)
     F32      nearest_hit_distance = 0.f;
     F32      nearest_ray_distance = 0.f;
     LLJoint* nearest_joint        = nullptr;
-    LLCachedControl<F32> target_radius(gSavedSettings, "FSManipRotateJointTargetSize", 0.03f);
+    static LLCachedControl<F32> target_radius(gSavedSettings, "FSManipRotateJointTargetSize", 0.03f);
 
     for (const auto& entry : getSelectableJoints())
     {
@@ -719,7 +727,7 @@ void FSManipRotateJoint::render()
     // Iterate through the avatar's joint map.
     // If a joint other than the currently selected is highlighted, render a pulsing sphere.
     // otherwise a small static sphere
-    LLCachedControl<bool> show_joint_markers(gSavedSettings, "FSManipShowJointMarkers", true);
+    static LLCachedControl<bool> show_joint_markers(gSavedSettings, "FSManipShowJointMarkers", true);
     LLVector3             jointLocation;
     for (const auto& entry : getSelectableJoints())
     {
@@ -759,7 +767,7 @@ void FSManipRotateJoint::render()
 
     const LLVector3 agent_space_center = mAvatar->getPosAgentFromGlobal(mRotationCenter);
 
-    LLCachedControl<bool> use_natural_direction(gSavedSettings, "FSManipRotateJointUseNaturalDirection", true);
+    static LLCachedControl<bool> use_natural_direction(gSavedSettings, "FSManipRotateJointUseNaturalDirection", true);
     LLQuaternion active_rotation = use_natural_direction ? final_world_alignment : joint_world_rotation;
     active_rotation.normalize();
 
@@ -1181,7 +1189,7 @@ void FSManipRotateJoint::highlightManipulators(S32 x, S32 y)
     }
 
     // Decide which rotation to use based on a user toggle.
-    LLCachedControl<bool> use_natural_direction(gSavedSettings, "FSManipRotateJointUseNaturalDirection", true);
+    static LLCachedControl<bool> use_natural_direction(gSavedSettings, "FSManipRotateJointUseNaturalDirection", true);
     // Compute the rotation center in agent space.
     LLVector3 agent_space_rotation_center = mAvatar->getPosAgentFromGlobal(mRotationCenter);
 
@@ -1539,7 +1547,7 @@ LLVector3 FSManipRotateJoint::setConstraintAxis()
         // Transform the local axis into world space using the joint's world rotation.
         if (mJoint)
         {
-            LLCachedControl<bool> use_natural_direction(gSavedSettings, "FSManipRotateJointUseNaturalDirection", true);
+            static LLCachedControl<bool> use_natural_direction(gSavedSettings, "FSManipRotateJointUseNaturalDirection", true);
             LLQuaternion active_rotation;
             if (use_natural_direction)
             {
