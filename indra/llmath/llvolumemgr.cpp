@@ -163,6 +163,7 @@ void LLVolumeMgr::unrefVolume(LLVolume *volumep)
         if (volgroupp->getNumRefs() == 0)
         {
             mVolumeLODGroups.erase(params);
+            volgroupp->fsReleaseVolumes(); // <FS:Trish/> FSPerfBackgroundVolumeFree
             delete volgroupp;
         }
     }
@@ -301,6 +302,16 @@ LLVolume* LLVolumeLODGroup::refLOD(const S32 lod)
     mLODRefs[lod]++;
     return mVolumeLODs[lod];
 }
+
+// <FS:Trish> FSPerfBackgroundVolumeFree: the LODs only this group holds go to a worker
+void LLVolumeLODGroup::fsReleaseVolumes()
+{
+    for (S32 i = 0; i < NUM_LODS; i++)
+    {
+        LLVolume::fsRelease(mVolumeLODs[i]);
+    }
+}
+// </FS:Trish>
 
 bool LLVolumeLODGroup::derefLOD(LLVolume *volumep)
 {

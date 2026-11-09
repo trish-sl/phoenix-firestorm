@@ -28,6 +28,7 @@
 #define LL_LLVOLUME_H
 
 #include <iostream>
+#include <atomic> // <FS:Trish/>
 
 class LLProfileParams;
 class LLPathParams;
@@ -1086,7 +1087,15 @@ public:
     LLFaceID generateFaceMask();
 
     bool isFaceMaskValid(LLFaceID face_mask);
-    static S32 sNumMeshPoints;
+    // <FS:Trish> Atomic: FSPerfBackgroundVolumeFree destroys volumes on a worker thread
+    //static S32 sNumMeshPoints;
+    static std::atomic<S32> sNumMeshPoints;
+
+    // FSPerfBackgroundVolumeFree: when p holds the last reference, the volume is destroyed (its
+    // faces, octrees and mesh freed) on a worker thread instead of here. Main thread.
+    static bool sFSBackgroundFree;
+    static void fsRelease(LLPointer<LLVolume>& p);
+    // </FS:Trish>
 
     friend std::ostream& operator<<(std::ostream &s, const LLVolume &volume);
     friend std::ostream& operator<<(std::ostream &s, const LLVolume *volumep);      // HACK to bypass Windoze confusion over

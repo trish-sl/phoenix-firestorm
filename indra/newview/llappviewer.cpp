@@ -30,6 +30,7 @@
 #include "fsrenderthread.h" // <FS:Trish/> FSRenderThread
 #include "fsdiskthread.h" // <FS:Trish/> FSPerfDiskThread
 #include "llkeyframemotion.h" // <FS:Trish/> FSPerfDiskThread
+#include "llvolume.h" // <FS:Trish/> FSPerfBackgroundVolumeFree
 #include "fsgputimers.h" // <FS:Trish/> FSRenderGPUTimings
 #include "fsnativepopout.h"
 
@@ -2733,6 +2734,13 @@ bool LLAppViewer::initThreads()
         LLKeyframeMotion::sFSDeferCacheRead = enabled;
     };
     apply_disk_thread(gSavedSettings.getBOOL("FSPerfDiskThread"));
+    // FSPerfBackgroundVolumeFree: free object geometry on a worker
+    LLVolume::sFSBackgroundFree = gSavedSettings.getBOOL("FSPerfBackgroundVolumeFree");
+    gSavedSettings.getControl("FSPerfBackgroundVolumeFree")->getSignal()->connect(
+        [](LLControlVariable*, const LLSD& new_val, const LLSD&)
+        {
+            LLVolume::sFSBackgroundFree = new_val.asBoolean();
+        });
     gSavedSettings.getControl("FSPerfDiskThread")->getSignal()->connect(
         [apply_disk_thread](LLControlVariable*, const LLSD& new_val, const LLSD&)
         {
