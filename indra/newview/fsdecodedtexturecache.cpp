@@ -966,7 +966,8 @@ private:
     {
         const bool gdd = gGLManager.mFSHasGPUDrivenDraws;
         const bool bindless = gdd && gGLManager.mFSBindlessProcs[0] != nullptr;
-        if (gGLManager.mIsAMD && setting.rfind("FSPerfGPUDriven", 0) == 0)
+        if (gGLManager.mIsAMD && !gGLManager.mFSAllowGPUDrivenOnAMD && setting.rfind("FSPerfGPUDriven", 0) == 0 &&
+            setting != "FSPerfGPUDrivenAllowAMD")
         {
             return "Off on AMD graphics: the GPU-driven draws render incorrectly with AMD's OpenGL driver "
                    "(black artefacts).";
