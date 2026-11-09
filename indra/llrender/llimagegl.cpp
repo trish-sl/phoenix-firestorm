@@ -191,6 +191,135 @@ F32 LLImageGL::sLastFrameTime           = 0.f;
 LLImageGL* LLImageGL::sDefaultGLTexture = NULL ;
 bool LLImageGL::sCompressTextures = false;
 LLImageGL::fs_texture_unlock_t LLImageGL::sFSTextureUnlock = nullptr; // <FS:Trish/> FSPerfGPUDrivenPBRBindless
+
+// <FS:Trish> FSPerfGPUDrivenPBRBindless: locked (immutable) GL textures, with the image holding each (null
+// once the image let go of it, until the name is actually deleted)
+namespace
+{
+    struct FSLocked
+    {
+        LLImageGL* mOwner;
+        // the parameters the texture had when it was locked (it is locked with its options applied)
+        S32 mAddressMode;
+        S32 mFilterOption;
+        bool mHasMipMaps;
+    };
+    LLMutex sFSLockedMutex;
+    std::unordered_map<U32, FSLocked> sFSLocked;
+    std::atomic<bool> sFSAnyLocked{ false };
+}
+
+//static
+void LLImageGL::fsLockTexture(U32 tex_name, LLImageGL* owner)
+{
+    if (!tex_name)
+    {
+        return;
+    }
+    LLMutexLock lock(&sFSLockedMutex);
+    FSLocked& entry = sFSLocked[tex_name];
+    entry.mOwner = owner;
+    entry.mAddressMode = owner ? (S32)owner->mAddressMode : -1;
+    entry.mFilterOption = owner ? (S32)owner->mFilterOption : -1;
+    entry.mHasMipMaps = owner && owner->mHasMipMaps;
+    sFSAnyLocked.store(true, std::memory_order_relaxed);
+}
+
+//static
+bool LLImageGL::fsIsTextureLocked(U32 tex_name)
+{
+    if (!tex_name || !sFSAnyLocked.load(std::memory_order_relaxed))
+    {
+        return false;
+    }
+    LLMutexLock lock(&sFSLockedMutex);
+    return sFSLocked.count(tex_name) != 0;
+}
+
+//static
+bool LLImageGL::fsMakeNameWritable(U32 tex_name, S32 bind_unit, S32 address_mode, S32 filter_option, bool has_mips)
+{
+    if (!tex_name || !sFSAnyLocked.load(std::memory_order_relaxed))
+    {
+        return false;
+    }
+    LLImageGL* owner = nullptr;
+    {
+        LLMutexLock lock(&sFSLockedMutex);
+        auto it = sFSLocked.find(tex_name);
+        if (it == sFSLocked.end())
+        {
+            return false;
+        }
+        const FSLocked& entry = it->second;
+        // The same value again (terrain sets its wrap mode every frame, binds reapply options) changes nothing
+        if ((address_mode < 0 || address_mode == entry.mAddressMode) &&
+            (filter_option < 0 || (filter_option == entry.mFilterOption && has_mips == entry.mHasMipMaps)))
+        {
+            return true;
+        }
+        owner = entry.mOwner;
+    }
+    if (owner && owner->getTexName() == tex_name && owner->fsMakeWritable(true, bind_unit))
+    {
+        return false;
+    }
+    LL_WARNS_ONCE("Rendering") << "FSPerfGPUDrivenPBRBindless: a locked texture without its image is being changed" << LL_ENDL;
+    return true; // it can't take the change
+}
+
+bool LLImageGL::fsMakeWritable(bool copy_contents, S32 bind_unit)
+{
+    if (!mTexName || !fsIsTextureLocked(mTexName) || !on_main_thread())
+    {
+        return false;
+    }
+    LL_PROFILE_ZONE_SCOPED_CATEGORY_TEXTURE;
+    const GLuint old_name = mTexName;
+    GLuint fresh = 0;
+    generateTextures(1, &fresh, mTarget);
+    gGL.getTexUnit(0)->bindManual(mBindTarget, fresh);
+
+    const S32 levels = (mHasMipMaps && mCurrentDiscardLevel >= 0) ? llmax(mMaxDiscardLevel - mCurrentDiscardLevel + 1, 1) : 1;
+    glTexParameteri(mTarget, GL_TEXTURE_BASE_LEVEL, 0);
+    glTexParameteri(mTarget, GL_TEXTURE_MAX_LEVEL, levels - 1);
+
+    if (copy_contents && mCurrentDiscardLevel >= 0 && mTarget == GL_TEXTURE_2D && !isCompressed())
+    {
+        // Same storage, then the levels copied on the GPU (in stream order, so after anything that used the
+        // old texture before now)
+        const S32 width = getWidth(mCurrentDiscardLevel);
+        const S32 height = getHeight(mCurrentDiscardLevel);
+        for (S32 level = 0; level < levels; ++level)
+        {
+            const S32 w = llmax(width >> level, 1);
+            const S32 h = llmax(height >> level, 1);
+            glTexImage2D(mTarget, level, mFormatInternal, w, h, 0, mFormatPrimary, mFormatType, nullptr);
+            glCopyImageSubData(old_name, mTarget, level, 0, 0, 0, fresh, mTarget, level, 0, 0, 0, w, h, 1);
+        }
+        alloc_tex_image(width, height, mFormatInternal, 1);
+        if (levels > 1)
+        {
+            alloc_tex_mips();
+        }
+    }
+
+    mTexName = fresh;
+    mTexOptionsDirty = true;    // filtering and wrapping go onto the new texture at its next bind
+    // No handle for 5 seconds, doubling each time it moves again up to 5 minutes
+    constexpr F32 NO_BINDLESS_FIRST = 5.f;
+    constexpr F32 NO_BINDLESS_MAX = 300.f;
+    mFSNoBindlessUntil = sLastFrameTime + llmin(NO_BINDLESS_FIRST * (F32)(1u << llmin((U32)mFSMoves, 6u)), NO_BINDLESS_MAX);
+    mFSMoves = (U8)llmin((U32)mFSMoves + 1, 255u);
+    // The old texture is deleted after the usual delay, as anything recorded before now may still use it
+    deleteTextures(1, &old_name);
+    if (bind_unit > 0)
+    {
+        gGL.getTexUnit(bind_unit)->bindManual(mBindTarget, fresh);
+    }
+    return true;
+}
+// </FS:Trish>
 std::unordered_set<LLImageGL*> LLImageGL::sImageList;
 
 
@@ -801,7 +930,13 @@ void LLImageGL::setImage(const LLImageRaw* imageraw)
 bool LLImageGL::setImage(const U8* data_in, bool data_hasmips /* = false */, S32 usename /* = 0 */)
 {
     LL_PROFILE_ZONE_SCOPED_CATEGORY_TEXTURE;
-    fsUnlockTexture(usename ? (U32)usename : mTexName); // <FS:Trish/> respecified below
+    // <FS:Trish> FSPerfGPUDrivenPBRBindless: respecified below, so a locked texture moves to a fresh one
+    //fsUnlockTexture(usename ? (U32)usename : mTexName);
+    if (!usename)
+    {
+        fsMakeWritable(false);
+    }
+    // </FS:Trish>
     FSTextureUpload::UploadScope pbo_upload_scope; // <FS:Trish/> FSPerfTextureUploadPBO: levels below may stream through the upload ring
 
     const bool is_compressed = isCompressed();
@@ -1188,7 +1323,14 @@ void sub_image_lines(U32 target, LLGLuint texname, S32 miplevel, S32 x_offset, S
 
 bool LLImageGL::setSubImage(const U8* datap, S32 data_width, S32 data_height, S32 x_pos, S32 y_pos, S32 width, S32 height, bool force_fast_update /* = false */, LLGLuint use_name)
 {
-    fsUnlockTexture(use_name ? (U32)use_name : mTexName); // <FS:Trish/> may rebuild mipmaps below
+    // <FS:Trish> FSPerfGPUDrivenPBRBindless: changes part of it and may rebuild mipmaps, so a locked texture
+    // moves to a copy first
+    //fsUnlockTexture(use_name ? (U32)use_name : mTexName);
+    if (!use_name)
+    {
+        fsMakeWritable(true);
+    }
+    // </FS:Trish>
     LL_PROFILE_ZONE_SCOPED_CATEGORY_TEXTURE;
     if (!width || !height)
     {
@@ -1382,6 +1524,15 @@ void LLImageGL::updateClass()
                 fsUnlockTexture(name);
             }
         }
+        if (sFSAnyLocked.load(std::memory_order_relaxed))
+        {
+            LLMutexLock lock(&sFSLockedMutex);
+            for (U32 name : sFreeList[idx])
+            {
+                sFSLocked.erase(name);
+            }
+            sFSAnyLocked.store(!sFSLocked.empty(), std::memory_order_relaxed);
+        }
         // </FS:Trish>
         free_tex_images((GLsizei) sFreeList[idx].size(), sFreeList[idx].data());
         glDeleteTextures((GLsizei)sFreeList[idx].size(), sFreeList[idx].data());
@@ -1404,6 +1555,20 @@ void LLImageGL::deleteTextures(S32 numTextures, const U32 *textures)
         {
             sFreeList[idx].push_back(textures[i]);
         }
+        // <FS:Trish> FSPerfGPUDrivenPBRBindless: no image holds these any more (still locked until deleted)
+        if (sFSAnyLocked.load(std::memory_order_relaxed))
+        {
+            LLMutexLock lock(&sFSLockedMutex);
+            for (S32 i = 0; i < numTextures; ++i)
+            {
+                auto it = sFSLocked.find(textures[i]);
+                if (it != sFSLocked.end())
+                {
+                    it->second.mOwner = nullptr;
+                }
+            }
+        }
+        // </FS:Trish>
     }
 }
 
@@ -1854,6 +2019,12 @@ bool LLImageGL::createGLTexture(S32 discard_level, const U8* data_in, bool data_
                 LLImageGL::deleteTextures(1, &old_texname);
             }
             mTexName = new_texname;
+            // <FS:Trish> FSPerfGPUDrivenPBRBindless: a fresh texture made the usual way can have a handle again
+            if (new_texname != old_texname)
+            {
+                mFSNoBindlessUntil = 0.f;
+            }
+            // </FS:Trish>
         }
     }
 
@@ -1929,6 +2100,7 @@ void LLImageGL::syncTexName(LLGLuint texname)
         if (mTexName != 0 && mTexName != texname)
         {
             LLImageGL::deleteTextures(1, &mTexName);
+            mFSNoBindlessUntil = 0.f; // <FS:Trish/> FSPerfGPUDrivenPBRBindless: a fresh texture can have a handle again
         }
         mTexName = texname;
     }
@@ -2906,7 +3078,9 @@ bool LLImageGL::scaleDown(S32 desired_discard)
 
     S32 mip = desired_discard - mCurrentDiscardLevel;
 
-    fsUnlockTexture(mTexName); // <FS:Trish/> respecified below
+    // <FS:Trish> FSPerfGPUDrivenPBRBindless: a locked texture moves to a fresh one below, once it was read
+    //fsUnlockTexture(mTexName);
+    // </FS:Trish>
 
     S32 desired_width = getWidth(desired_discard);
     S32 desired_height = getHeight(desired_discard);
@@ -2926,6 +3100,7 @@ bool LLImageGL::scaleDown(S32 desired_discard)
             glFlush();
 #endif
 
+            fsMakeWritable(false); // <FS:Trish/> drawn into the target above; the copy below goes to a fresh texture if locked
             free_tex_image(mTexName);
             glTexImage2D(mTarget, 0, mFormatInternal, desired_width, desired_height, 0, mFormatPrimary, mFormatType, nullptr);
             glCopyTexSubImage2D(mTarget, 0, 0, 0, 0, 0, desired_width, desired_height);
@@ -2970,6 +3145,7 @@ bool LLImageGL::scaleDown(S32 desired_discard)
 
         glGetTexImage(mTarget, mip, mFormatPrimary, mFormatType, nullptr);
 
+        fsMakeWritable(false); // <FS:Trish/> read into the buffer above; respecified below on a fresh texture if locked
         free_tex_image(mTexName);
 
         glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
