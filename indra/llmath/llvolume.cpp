@@ -1974,7 +1974,35 @@ LLProfile::~LLProfile()
 }
 
 
-S32 LLVolume::sNumMeshPoints = 0;
+// <FS:Trish> FSPerfBackgroundVolumeFree
+//S32 LLVolume::sNumMeshPoints = 0;
+std::atomic<S32> LLVolume::sNumMeshPoints{ 0 };
+bool LLVolume::sFSBackgroundFree = false;
+
+//static
+void LLVolume::fsRelease(LLPointer<LLVolume>& p)
+{
+    if (sFSBackgroundFree && p.notNull() && p->getNumRefs() == 1)
+    {
+        // A region going out of range frees thousands of volumes at once, a few hundred
+        // milliseconds of freeing memory on the main thread. Nothing else holds this one, so its
+        // destructor only touches its own data.
+        if (auto queue = LL::WorkQueue::getInstance("General"))
+        {
+            LLVolume* volume = p.get();
+            volume->ref();
+            p = nullptr;    // the worker's reference is the only one now
+            if (queue->post([volume]() { volume->unref(); }))
+            {
+                return;
+            }
+            volume->unref();
+            return;
+        }
+    }
+    p = nullptr;
+}
+// </FS:Trish>
 
 LLVolume::LLVolume(const LLVolumeParams &params, const F32 detail, const bool generate_single_face, const bool is_unique)
     : mParams(params)
@@ -2036,7 +2064,7 @@ void LLVolume::genTangents(S32 face)
 
 LLVolume::~LLVolume()
 {
-    sNumMeshPoints -= mMesh.size();
+    sNumMeshPoints -= (S32)mMesh.size(); // <FS:Trish/> atomic
     delete mPathp;
 
     delete mProfilep;
@@ -2105,9 +2133,9 @@ bool LLVolume::generate()
         S32 sizeS = mPathp->mPath.size();
         S32 sizeT = mProfilep->mProfile.size();
 
-        sNumMeshPoints -= mMesh.size();
+        sNumMeshPoints -= (S32)mMesh.size(); // <FS:Trish/> atomic
         mMesh.resize(sizeT * sizeS);
-        sNumMeshPoints += mMesh.size();
+        sNumMeshPoints += (S32)mMesh.size(); // <FS:Trish/> atomic
 
         //generate vertex positions
 
@@ -3385,9 +3413,9 @@ void LLVolume::sculpt(U16 sculpt_width, U16 sculpt_height, S8 sculpt_components,
         LL_WARNS() << "sculpt bad mesh size " << sizeS << " " << sizeT << LL_ENDL;
     }
 
-    sNumMeshPoints -= mMesh.size();
+    sNumMeshPoints -= (S32)mMesh.size(); // <FS:Trish/> atomic
     mMesh.resize(sizeS * sizeT);
-    sNumMeshPoints += mMesh.size();
+    sNumMeshPoints += (S32)mMesh.size(); // <FS:Trish/> atomic
 
     //generate vertex positions
     if (!data_is_empty)

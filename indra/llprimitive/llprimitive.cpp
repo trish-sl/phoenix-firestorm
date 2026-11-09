@@ -224,6 +224,7 @@ LLPrimitive::~LLPrimitive()
     {
         sVolumeManager->unrefVolume(mVolumep);
     }
+    LLVolume::fsRelease(mVolumep); // <FS:Trish/> FSPerfBackgroundVolumeFree
     mVolumep = NULL;
 }
 
@@ -876,6 +877,7 @@ bool LLPrimitive::setVolume(const LLVolumeParams &volume_params, const S32 detai
 
     // build the new object
     sVolumeManager->unrefVolume(mVolumep);
+    LLVolume::fsRelease(mVolumep); // <FS:Trish/> FSPerfBackgroundVolumeFree
     mVolumep = volumep;
 
     U32 new_face_mask = mVolumep->mFaceMask;
@@ -1039,6 +1041,7 @@ bool LLPrimitive::setVolume(const LLVolumeParams &volume_params, const S32 detai
 #else
     // build the new object
     sVolumeManager->unrefVolume(mVolumep);
+    LLVolume::fsRelease(mVolumep); // <FS:Trish/> FSPerfBackgroundVolumeFree
     mVolumep = volumep;
 
     setNumTEs(mVolumep->getNumFaces());

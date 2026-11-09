@@ -57,6 +57,7 @@ public:
 
     LLVolume* refLOD(const S32 detail);
     bool derefLOD(LLVolume *volumep);
+    void fsReleaseVolumes(); // <FS:Trish/> FSPerfBackgroundVolumeFree, before the group is deleted
     S32 getNumRefs() const { return mRefs; }
 
     const LLVolumeParams* getVolumeParams() const { return &mVolumeParams; };
