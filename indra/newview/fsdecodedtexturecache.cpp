@@ -867,6 +867,8 @@ void FSDecodedTextureCache::evictIfNeeded()
 #include "llsdserialize.h"
 #include "lltextbox.h"
 #include "lluri.h"
+#include "llgl.h"
+#include "lluictrl.h"
 
 #include <boost/algorithm/string.hpp>
 
@@ -902,6 +904,9 @@ public:
         mPresetLoadBtn = findChild<LLButton>("experimental_preset_load");
         mPresetDeleteBtn = findChild<LLButton>("experimental_preset_delete");
         refreshPresetList(LLStringUtil::null);
+
+        findUnsupportedControls(this);
+        applyUnsupported();
 
         return LLPanelPreference::postBuild();
     }
@@ -948,10 +953,109 @@ public:
             mCacheStats->setText(formatStats());
         }
         refreshSunRaysQuality();
+        applyUnsupported();
         LLPanelPreference::draw();
     }
 
 private:
+    // Options the graphics driver can't run (most need NVIDIA-only OpenGL extensions) are greyed
+    // out, with the reason in front of their tooltip. The code paths already switch themselves
+    // off without the extension; this only makes that visible. Re-applied every draw, as rows
+    // enabled by another setting (enabled_control) turn themselves back on when it changes.
+    static const char* unsupportedReason(const std::string& setting)
+    {
+        const bool gdd = gGLManager.mFSHasGPUDrivenDraws;
+        const bool bindless = gdd && gGLManager.mFSBindlessProcs[0] != nullptr;
+        static const std::string bindless_settings[] = {
+            "FSPerfGPUDrivenPBRBindless", "FSPerfGPUDrivenLegacy", "FSPerfGPUDrivenLegacyArenaMB",
+            "FSPerfGPUDrivenMaterials", "FSPerfGPUDrivenMaterialsArenaMB",
+            "FSPerfGPUDrivenShadowAlpha", "FSPerfGPUDrivenShadowAlphaArenaMB" };
+        static const std::string gdd_settings[] = {
+            "FSPerfGPUDrivenDraws", "FSPerfGPUDrivenDrawsArenaMB", "FSPerfGPUDrivenDrawsVerify",
+            "FSPerfGPUDrivenPBR", "FSPerfGPUDrivenPBRArenaMB", "FSPerfGPUDrivenPBRGroupRuns" };
+        for (const std::string& name : bindless_settings)
+        {
+            if (setting == name && !bindless)
+            {
+                return gdd ? "Not available on this graphics card or driver: needs bindless textures "
+                             "(GL_ARB_bindless_texture, NVIDIA GPUs)."
+                           : "Not available on this graphics card or driver: needs OpenGL 4.3 multi-draw "
+                             "indirect and bindless textures (NVIDIA GPUs).";
+            }
+        }
+        for (const std::string& name : gdd_settings)
+        {
+            if (setting == name && !gdd)
+            {
+                return "Not available on this graphics card or driver: needs OpenGL 4.3 multi-draw "
+                       "indirect and shader storage buffers.";
+            }
+        }
+        if ((setting == "FSRenderVRS" || setting == "FSRenderVRSPeriphery" || setting == "FSRenderVRSQuality") &&
+            !gGLManager.mHasNVShadingRateImage)
+        {
+            return "Not available on this graphics card or driver: needs GL_NV_shading_rate_image (NVIDIA GPUs).";
+        }
+        if (setting == "FSPerfRepresentativeFragmentTest" && !gGLManager.mHasNVRepresentativeFragmentTest)
+        {
+            return "Not available on this graphics card or driver: needs GL_NV_representative_fragment_test "
+                   "(NVIDIA GPUs).";
+        }
+        if (setting == "FSPerfShadowSinglePass" && gGLManager.mFSVertexViewportIndex <= 0)
+        {
+            return "Not available on this graphics card or driver: needs the viewport index in the vertex "
+                   "shader (GL_ARB_shader_viewport_layer_array, GL_NV_viewport_array2 or "
+                   "GL_AMD_vertex_shader_viewport_index).";
+        }
+        if (setting == "FSPerfParallelShaderCompile" && !gGLManager.mHasParallelShaderCompile)
+        {
+            return "Not available on this graphics card or driver: needs GL_KHR_parallel_shader_compile.";
+        }
+        if (setting == "FSTextureUseLiveVRAM" && !gGLManager.mHasNVXGpuMemoryInfo && !gGLManager.mHasATIMemInfo)
+        {
+            return "Not available on this graphics card or driver: it doesn't report its free video memory.";
+        }
+#if !LL_WINDOWS
+        if (setting == "FSRenderThread" || setting == "FSRenderThreadCheck")
+        {
+            return "Not available on this operating system: the render thread is Windows only.";
+        }
+#endif
+        return nullptr;
+    }
+
+    void findUnsupportedControls(LLView* view)
+    {
+        for (LLView* child : *view->getChildList())
+        {
+            if (LLUICtrl* ctrl = dynamic_cast<LLUICtrl*>(child))
+            {
+                LLControlVariable* control = ctrl->getControlVariable();
+                const char* reason = control ? unsupportedReason(control->getName()) : nullptr;
+                if (reason)
+                {
+                    const std::string tip = ctrl->getToolTip();
+                    ctrl->setToolTip(tip.empty() ? std::string(reason) : std::string(reason) + "\n\n" + tip);
+                    mUnsupported.push_back(ctrl->getHandle());
+                }
+            }
+            findUnsupportedControls(child);
+        }
+    }
+
+    void applyUnsupported()
+    {
+        for (const LLHandle<LLUICtrl>& handle : mUnsupported)
+        {
+            if (LLUICtrl* ctrl = handle.get(); ctrl && ctrl->getEnabled())
+            {
+                ctrl->setEnabled(false);
+            }
+        }
+    }
+
+    std::vector<LLHandle<LLUICtrl>> mUnsupported;
+
     // Sets the listed settings (comma separated) back to their defaults. Settings that rebuild
     // shaders when changed do so through their own listeners, and Cancel still restores the values
     // the floater was opened with.
