@@ -530,10 +530,20 @@ void LLTexUnit::setTextureAddressMode(eTextureAddressMode mode)
 
 void LLTexUnit::setTextureAddressModeFast(eTextureAddressMode mode, eTextureType tex_type)
 {
-    // <FS:Trish> FSPerfGPUDrivenPBRBindless: a texture with a bindless handle can't take new parameters
-    if (LLImageGL::sFSTextureUnlock)
+    // <FS:Trish> FSPerfGPUDrivenPBRBindless: a texture that had a bindless handle can't take new parameters,
+    // its image moves to a copy (bound here) first
+    //if (LLImageGL::sFSTextureUnlock)
+    //{
+    //    LLImageGL::fsUnlockTexture(gGL.getTexUnit(gGL.getCurrentTexUnitIndex())->mCurrTexture);
+    //}
+    // Only 2D textures get handles; one that is locked and already has this mode keeps it
+    if (tex_type == TT_TEXTURE)
     {
-        LLImageGL::fsUnlockTexture(gGL.getTexUnit(gGL.getCurrentTexUnitIndex())->mCurrTexture);
+        const S32 unit = gGL.getCurrentTexUnitIndex();
+        if (LLImageGL::fsMakeNameWritable(gGL.getTexUnit(unit)->mCurrTexture, unit, (S32)mode, -1, false))
+        {
+            return;
+        }
     }
     // </FS:Trish>
     glTexParameteri(sGLTextureType[tex_type], GL_TEXTURE_WRAP_S, sGLAddressMode[mode]);
@@ -555,10 +565,20 @@ void LLTexUnit::setTextureFilteringOption(LLTexUnit::eTextureFilterOptions optio
 
 void LLTexUnit::setTextureFilteringOptionFast(LLTexUnit::eTextureFilterOptions option, eTextureType tex_type)
 {
-    // <FS:Trish> FSPerfGPUDrivenPBRBindless: a texture with a bindless handle can't take new parameters
-    if (LLImageGL::sFSTextureUnlock)
+    // <FS:Trish> FSPerfGPUDrivenPBRBindless: a texture that had a bindless handle can't take new parameters,
+    // its image moves to a copy (bound here) first
+    //if (LLImageGL::sFSTextureUnlock)
+    //{
+    //    LLImageGL::fsUnlockTexture(gGL.getTexUnit(gGL.getCurrentTexUnitIndex())->mCurrTexture);
+    //}
+    // Only 2D textures get handles; one that is locked and already has this filtering keeps it
+    if (tex_type == TT_TEXTURE)
     {
-        LLImageGL::fsUnlockTexture(gGL.getTexUnit(gGL.getCurrentTexUnitIndex())->mCurrTexture);
+        const S32 unit = gGL.getCurrentTexUnitIndex();
+        if (LLImageGL::fsMakeNameWritable(gGL.getTexUnit(unit)->mCurrTexture, unit, -1, (S32)option, mHasMipMaps))
+        {
+            return;
+        }
     }
     // </FS:Trish>
     if (option == TFO_POINT)

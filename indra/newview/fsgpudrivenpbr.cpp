@@ -560,19 +560,41 @@ namespace
         glGenSamplers(1, &sampler);
         glSamplerParameteri(sampler, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         const GLuint64 handle = fsGetHandle(tex, sampler);
-        bool ok = handle != 0 && glGetError() == GL_NO_ERROR;
-        if (ok)
+        // <FS:Trish> Which step failed, with its GL error, logged below where it isn't filtered out.
+        // Textures stay immutable once they had a handle (LLImageGL moves to a copy before changing one),
+        // so only making, using and releasing handles is tested.
+        const char* failed_step = nullptr;
+        GLenum failed_error = glGetError();
+        bool ok = handle != 0 && failed_error == GL_NO_ERROR;
+        if (!ok)
+        {
+            failed_step = "making the handle";
+        }
+        else
         {
             fsMakeResident(handle);
             fsMakeNonResident(handle);
             glDeleteSamplers(1, &sampler);
             sampler = 0;
-            ok = glGetError() == GL_NO_ERROR;
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-            ok = ok && glGetError() == GL_NO_ERROR;
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 8, 8, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-            ok = ok && glGetError() == GL_NO_ERROR;
+            failed_error = glGetError();
+            if (failed_error != GL_NO_ERROR)
+            {
+                failed_step = "residency or deleting the sampler";
+            }
+            ok = !failed_step;
         }
+        if (failed_step)
+        {
+            LL_WARNS("Rendering") << "Bindless texture self test failed at " << failed_step << " (GL error 0x"
+                                  << std::hex << failed_error << std::dec << ", handle " << handle
+                                  << "); GPU-driven passes bind textures instead. Driver: " << gGLManager.mDriverVersionVendorString
+                                  << LL_ENDL;
+        }
+        else
+        {
+            LL_INFOS("Rendering") << "Bindless texture self test passed" << LL_ENDL;
+        }
+        // </FS:Trish>
         if (sampler)
         {
             glDeleteSamplers(1, &sampler);
@@ -733,6 +755,7 @@ namespace
                 }
                 if (!made)
                 {
+                    LLImageGL::fsLockTexture(request.mName, gl); // <FS:Trish/> immutable once the render thread makes the handle
                     request.mSampler = make_sampler(request.mState);
                     sHandlesInFlight[request.mName].push_back(request.mState);
                     batch->mRequests.push_back(request);
@@ -774,7 +797,11 @@ namespace
             return 0;
         }
         const U32 name = gl->getTexName();
-        if (!name || gl->getTarget() != LLTexUnit::TT_TEXTURE || gl->getComponents() < 3 || gl->getFSTexOptionsDirty())
+        // <FS:Trish> nor for a texture that moved off a locked one (it keeps changing), nor a compressed one
+        //if (!name || gl->getTarget() != LLTexUnit::TT_TEXTURE || gl->getComponents() < 3 || gl->getFSTexOptionsDirty())
+        if (!name || gl->getTarget() != LLTexUnit::TT_TEXTURE || gl->getComponents() < 3 || gl->getFSTexOptionsDirty() ||
+            gl->getFSNoBindless() || gl->fsIsCompressed())
+        // </FS:Trish>
         {   // a texture with pending options gets them at its next bind, which would drop its handle mid pass
             return 0;
         }
@@ -820,6 +847,7 @@ namespace
 
         if (!FSGLStream::isRecording())
         {   // GL is on this thread: made right away, nothing to wait for
+            LLImageGL::fsLockTexture(name, gl); // <FS:Trish/> immutable from the handle on
             const GLuint sampler = make_sampler(state);
             // 0 (and GL_INVALID_OPERATION) for a texture that isn't complete with this sampler
             const GLuint64 handle = sGetTextureSamplerHandle(name, sampler);

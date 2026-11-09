@@ -104,15 +104,34 @@ public:
 
     static bool checkSize(S32 width, S32 height);
 
-    // <FS:Trish> Bindless textures (FSPerfGPUDrivenPBRBindless, newview/fsgpudrivenpbr.cpp). A texture with a
-    // bindless handle may not be respecified or have its parameters changed; while set, this is called with a
-    // texture's GL name right before LLImageGL or LLTexUnit does either, and drops the texture's handles so it
-    // becomes mutable again. Null while the feature is off.
+    // <FS:Trish> Bindless textures (FSPerfGPUDrivenPBRBindless, newview/fsgpudrivenpbr.cpp). Once a texture has
+    // had a bindless handle it is immutable for good (drivers don't make it mutable again when the handle goes):
+    // no glTexImage, no glTexParameter. Such a texture is "locked" from the moment its handle is asked for, and
+    // before LLImageGL or LLTexUnit would change it, the image moves to a fresh GL texture instead (copying its
+    // levels when the change keeps them), and the locked one is deleted after the usual delay, which also ends
+    // its handles. A texture that moved gets no handle for a while (see getFSNoBindless).
+    // sFSTextureUnlock is called with a GL name when it is actually deleted, to drop its handles.
     typedef void (*fs_texture_unlock_t)(U32 tex_name);
     static fs_texture_unlock_t sFSTextureUnlock;
     static void fsUnlockTexture(U32 tex_name)   { if (sFSTextureUnlock && tex_name) sFSTextureUnlock(tex_name); }
     bool getFSHasMipMaps() const                { return mHasMipMaps; }
     bool getFSTexOptionsDirty() const           { return mTexOptionsDirty; }
+    // Main thread. The bindless code locks a texture before it asks for its handle.
+    static void fsLockTexture(U32 tex_name, LLImageGL* owner);
+    static bool fsIsTextureLocked(U32 tex_name);
+    // Before changing this image's texture in place: if it is locked, move to a fresh texture (a copy of the
+    // current levels when copy_contents), bound on unit 0 and then on bind_unit. True when it moved.
+    bool fsMakeWritable(bool copy_contents, S32 bind_unit = 0);
+    // As fsMakeWritable for the image that owns tex_name (parameter changes through LLTexUnit only know the name),
+    // before setting address_mode or filter_option (-1 for the one not set). A locked texture that already has
+    // that value doesn't move: true then, and the caller skips setting it (the locked texture can't take it).
+    static bool fsMakeNameWritable(U32 tex_name, S32 bind_unit, S32 address_mode, S32 filter_option, bool has_mips);
+    // A texture that moved gets no handle for a while, longer each time it moves again (one that keeps changing
+    // is copied rarely), and again right away once it gets a fresh texture the usual way
+    bool getFSNoBindless() const                { return sLastFrameTime < mFSNoBindlessUntil; }
+    bool fsIsCompressed()                       { return isCompressed(); }
+    F32 mFSNoBindlessUntil = 0.f;               // sLastFrameTime until which it gets no handle
+    U8 mFSMoves = 0;                            // times it moved off a locked texture
     // </FS:Trish>
 
     //for server side use only.
