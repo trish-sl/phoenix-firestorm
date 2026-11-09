@@ -3255,6 +3255,17 @@ void LLPipeline::rebuildPriorityGroups()
 
     // <FS:Trish> Keep groups that are out of view queued until they come into view
     static LLCachedControl<bool> rebuild_budget(gSavedSettings, "FSPerfRebuildTimeBudget", false);
+    // postSort runs this for the camera and again for every shadow pass. Once a frame's scan left only
+    // deferred groups, the next passes would scan the same list again: skip that until something new is
+    // queued. A group comes into view in the camera cull, which runs before the shadow passes and so
+    // before the frame's first scan, and the groups a shadow pass sees are rebuilt by its own postSort loop.
+    static U32 s_fs_scan_frame = U32_MAX;
+    static size_t s_fs_left_queued = 0;
+    const U32 fs_frame = LLFrameTimer::getFrameCount();
+    if (rebuild_budget && fs_frame == s_fs_scan_frame && mGroupQ1.size() == s_fs_left_queued)
+    {
+        return;
+    }
     LLSpatialGroup::sg_vector_t deferred_groups;
     // </FS:Trish>
 
@@ -3282,6 +3293,10 @@ void LLPipeline::rebuildPriorityGroups()
     mGroupQ1.clear();
     mGroupQ1.swap(deferred_groups); // <FS:Trish/>
     mGroupQ1Locked = false;
+    // <FS:Trish> what is left queued now is all deferred
+    s_fs_scan_frame = fs_frame;
+    s_fs_left_queued = mGroupQ1.size();
+    // </FS:Trish>
 
 }
 
