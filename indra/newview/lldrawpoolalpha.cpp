@@ -53,6 +53,7 @@
 
 #include "llenvironment.h"
 #include "fsfoginterior.h" // <FS:Trish/> height fog kept out of interiors
+#include <optional> // <FS:Trish/>
 
 bool LLDrawPoolAlpha::sShowDebugAlpha = false;
 bool LLDrawPoolAlpha::sShowDebugAlphaRigged = false;
@@ -710,10 +711,26 @@ void LLDrawPoolAlpha::renderPbrEmissives(std::vector<LLDrawInfo*>& emissives)
 {
     pbr_emissive_shader->bind();
 
+    std::optional<LLGLDisable> double_sided_cull; // <FS:Trish/>
+
     for (LLDrawInfo* draw : emissives)
     {
         llassert(draw->mGLTFMaterial);
-        LLGLDisable cull_face(draw->mGLTFMaterial->mDoubleSided ? GL_CULL_FACE : 0);
+        // <FS:Trish> Face culling stays off across consecutive double sided draws instead of
+        // being switched off and back on around each of them
+        //LLGLDisable cull_face(draw->mGLTFMaterial->mDoubleSided ? GL_CULL_FACE : 0);
+        if (draw->mGLTFMaterial->mDoubleSided != double_sided_cull.has_value())
+        {
+            if (draw->mGLTFMaterial->mDoubleSided)
+            {
+                double_sided_cull.emplace(GL_CULL_FACE);
+            }
+            else
+            {
+                double_sided_cull.reset();
+            }
+        }
+        // </FS:Trish>
         draw->mGLTFMaterial->bind(draw->mTexture);
         draw->mVertexBuffer->setBuffer();
         draw->mVertexBuffer->drawRange(LLRender::TRIANGLES, draw->mStart, draw->mEnd, draw->mCount, draw->mOffset);
@@ -753,6 +770,8 @@ void LLDrawPoolAlpha::renderRiggedPbrEmissives(std::vector<LLDrawInfo*>& emissiv
     U64 lastMeshId = 0;
     bool skipLastSkin = false;
 
+    std::optional<LLGLDisable> double_sided_cull; // <FS:Trish/>
+
     for (LLDrawInfo* draw : emissives)
     {
         if (!uploadMatrixPalette(draw->mAvatar, draw->mSkinInfo, lastAvatar, lastMeshId, skipLastSkin))
@@ -760,7 +779,20 @@ void LLDrawPoolAlpha::renderRiggedPbrEmissives(std::vector<LLDrawInfo*>& emissiv
             continue;
         }
 
-        LLGLDisable cull_face(draw->mGLTFMaterial->mDoubleSided ? GL_CULL_FACE : 0);
+        // <FS:Trish> Face culling stays off across consecutive double sided draws
+        //LLGLDisable cull_face(draw->mGLTFMaterial->mDoubleSided ? GL_CULL_FACE : 0);
+        if (draw->mGLTFMaterial->mDoubleSided != double_sided_cull.has_value())
+        {
+            if (draw->mGLTFMaterial->mDoubleSided)
+            {
+                double_sided_cull.emplace(GL_CULL_FACE);
+            }
+            else
+            {
+                double_sided_cull.reset();
+            }
+        }
+        // </FS:Trish>
         draw->mGLTFMaterial->bind(draw->mTexture);
         draw->mVertexBuffer->setBuffer();
         draw->mVertexBuffer->drawRange(LLRender::TRIANGLES, draw->mStart, draw->mEnd, draw->mCount, draw->mOffset);
@@ -864,6 +896,12 @@ void LLDrawPoolAlpha::renderAlpha(U32 mask, bool depth_only, bool rigged, EWBOIT
 
             LLSpatialGroup::drawmap_elem_t& draw_info = rigged ? group->mDrawMap[LLRenderPass::PASS_ALPHA_RIGGED] : group->mDrawMap[LLRenderPass::PASS_ALPHA];
 
+            // <FS:Trish> Face culling stays off across consecutive double sided draws instead of
+            // being switched off and back on around each of them. Nothing is drawn between two
+            // draws, and culling is back on before the glow pass.
+            std::optional<LLGLDisable> double_sided_cull;
+            // </FS:Trish>
+
             for (LLSpatialGroup::drawmap_elem_t::iterator k = draw_info.begin(); k != draw_info.end(); ++k)
             {
                 LLDrawInfo& params = **k;
@@ -911,7 +949,21 @@ void LLDrawPoolAlpha::renderAlpha(U32 mask, bool depth_only, bool rigged, EWBOIT
                 LLMaterial* mat = NULL;
                 LLGLTFMaterial *gltf_mat = params.mGLTFMaterial;
 
-                LLGLDisable cull_face(gltf_mat && gltf_mat->mDoubleSided ? GL_CULL_FACE : 0);
+                // <FS:Trish> Kept across draws, see double_sided_cull
+                //LLGLDisable cull_face(gltf_mat && gltf_mat->mDoubleSided ? GL_CULL_FACE : 0);
+                const bool double_sided = gltf_mat && gltf_mat->mDoubleSided;
+                if (double_sided != double_sided_cull.has_value())
+                {
+                    if (double_sided)
+                    {
+                        double_sided_cull.emplace(GL_CULL_FACE);
+                    }
+                    else
+                    {
+                        double_sided_cull.reset();
+                    }
+                }
+                // </FS:Trish>
 
                 if (gltf_mat && gltf_mat->mAlphaMode == LLGLTFMaterial::ALPHA_MODE_BLEND)
                 {
@@ -985,7 +1037,9 @@ void LLDrawPoolAlpha::renderAlpha(U32 mask, bool depth_only, bool rigged, EWBOIT
 
                         if (params.mFullbright)
                         { // make sure the bind the exposure map for fullbright shaders so they can cancel out exposure
+                            LLGLSLShader::sFSLazyTextureEnable = true; // <FS:Trish/> the bind below activates the unit if it binds
                             S32 channel = target_shader->enableTexture(LLShaderMgr::EXPOSURE_MAP);
+                            LLGLSLShader::sFSLazyTextureEnable = false; // <FS:Trish/>
                             if (channel > -1)
                             {
                                 gGL.getTexUnit(channel)->bind(&gPipeline.mExposureMap);
@@ -1116,6 +1170,8 @@ void LLDrawPoolAlpha::renderAlpha(U32 mask, bool depth_only, bool rigged, EWBOIT
                 }
             }
 
+            double_sided_cull.reset(); // <FS:Trish/> culling back on for the glow pass
+
             // render emissive faces into alpha channel for bloom effects
             // <FS:Trish> WBOIT: not into the accumulation targets
             //if (!depth_only)
@@ -1124,6 +1180,12 @@ void LLDrawPoolAlpha::renderAlpha(U32 mask, bool depth_only, bool rigged, EWBOIT
             {
                 gPipeline.enableLightsDynamic();
 
+                // <FS:Trish> Without glow draws in this group, switching to the glow blend and
+                // back is two blend calls for nothing: every draw sets its own blend, and the
+                // scene blend is set again after the loop
+                if (!emissives.empty() || !pbr_emissives.empty() || !rigged_emissives.empty() || !pbr_rigged_emissives.empty())
+                {
+                // </FS:Trish>
                 // install glow-accumulating blend mode
                 // don't touch color, add to alpha (glow)
                 gGL.blendFunc(LLRender::BF_ZERO, LLRender::BF_ONE, LLRender::BF_ONE, LLRender::BF_ONE);
@@ -1165,6 +1227,7 @@ void LLDrawPoolAlpha::renderAlpha(U32 mask, bool depth_only, bool rigged, EWBOIT
                 {
                     lastShader->bind();
                 }
+                } // <FS:Trish/>
             }
         }
     }
