@@ -66,6 +66,58 @@ bool check_write(LLAPRFile* apr_file, void* src, S32 n_bytes)
     return apr_file->write(src, n_bytes) == n_bytes ;
 }
 
+// <FS:Trish> FSPerfDiskThread: a region's object cache file is put together in memory on the main thread
+// and written on the disk thread, into a temporary file renamed over the old one, as its extras are.
+// Opening and writing it on the main thread was most of the 60 ms "Save Region Cache" when a region
+// went out of range. A read or removal of a region's file whose write is still running waits for it.
+namespace
+{
+    std::map<U64, std::shared_ptr<std::atomic<bool>>> sFSObjectCacheWrites;   // by handle, main thread
+
+    void fs_wait_for_object_cache_write(U64 handle)
+    {
+        auto it = sFSObjectCacheWrites.find(handle);
+        if (it == sFSObjectCacheWrites.end())
+        {
+            return;
+        }
+        LL_PROFILE_ZONE_NAMED("fs wait for object cache write");
+        while (!it->second->load(std::memory_order_acquire))
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+    }
+
+    // Disk thread. True when the whole file was written and moved into place.
+    bool fs_write_object_cache_file(const std::string& filename, const std::vector<U8>& contents)
+    {
+        const std::string temp = filename + ".fstmp";
+        {
+            llofstream out(temp, std::ios::out | std::ios::binary | std::ios::trunc);
+            if (!out.good())
+            {
+                return false;
+            }
+            out.write((const char*)contents.data(), (std::streamsize)contents.size());
+            out.close();
+            if (out.fail())
+            {
+                LLFile::remove(temp);
+                return false;
+            }
+        }
+        std::error_code ec;
+        std::filesystem::rename(fsyspath(temp), fsyspath(filename), ec);
+        if (ec)
+        {
+            LLFile::remove(temp);
+            return false;
+        }
+        return true;
+    }
+}
+// </FS:Trish>
+
 // Material Override Cache needs a version label, so we can upgrade this later.
 const std::string LLGLTFOverrideCacheEntry::VERSION_LABEL = {"GLTFCacheVer"};
 const int LLGLTFOverrideCacheEntry::VERSION = 1;
@@ -1422,6 +1474,7 @@ void LLVOCache::removeFromCache(HeaderEntryInfo* entry)
     std::string filename;
     getObjectCacheFilename(entry->mHandle, filename);
     LL_WARNS("GLTF", "VOCache") << "Removing object cache for handle " << entry->mHandle << "Filename: " << filename << LL_ENDL;
+    fs_wait_for_object_cache_write(entry->mHandle); // <FS:Trish/> FSPerfDiskThread
     LLFile::remove(filename);
 
     // Note: `removeFromCache` should take responsibility for cleaning up all cache artefacts specfic to the handle/entry.
@@ -1605,6 +1658,7 @@ bool LLVOCache::readFromCache(U64 handle, const LLUUID& id, LLVOCacheEntry::voca
 		LL_PROFILE_ZONE_NAMED_CATEGORY_NETWORK("VOCache:loadRegionObjectCache");        
         LLUUID cache_id;
         getObjectCacheFilename(handle, filename);
+        fs_wait_for_object_cache_write(handle); // <FS:Trish/> FSPerfDiskThread
         // <FS:Trish> Buffered, every entry is two small reads and this runs on the main thread for each region connected
         //LLAPRFile apr_file(filename, APR_READ|APR_BINARY, mLocalAPRFilePoolp);
         LLAPRFile apr_file(filename, APR_READ|APR_BINARY|APR_BUFFERED, mLocalAPRFilePoolp);
@@ -1944,6 +1998,80 @@ void LLVOCache::writeToCache(U64 handle, const LLUUID& id, const LLVOCacheEntry:
         }
         return ; //nothing changed, no need to update.
     }
+
+    // <FS:Trish> FSPerfDiskThread: the file's bytes put together here, written on the disk thread
+    if (FSDiskThread::isEnabled())
+    {
+        LL_PROFILE_ZONE_NAMED("fs collect object cache");
+        LLTimer collect_timer;
+        auto contents = std::make_shared<std::vector<U8>>();
+        bool built = true;
+        S32 num_entries = 0;
+        for (const auto& cache_entry : cache_entry_map)
+        {
+            if (!removal_enabled || cache_entry.second->isValid())
+            {
+                ++num_entries;
+            }
+        }
+        contents->reserve(UUID_BYTES + sizeof(S32) + (size_t)num_entries * 256);
+        contents->insert(contents->end(), id.mData, id.mData + UUID_BYTES);
+        const U8* count_bytes = (const U8*)&num_entries;
+        contents->insert(contents->end(), count_bytes, count_bytes + sizeof(S32));
+        std::vector<U8> entry_buffer(MAX_ENTRY_BODY_SIZE + ENTRY_HEADER_SIZE);
+        for (const auto& cache_entry : cache_entry_map)
+        {
+            if (!removal_enabled || cache_entry.second->isValid())
+            {
+                const S32 size = cache_entry.second->writeToBuffer(entry_buffer.data());
+                if (size <= ENTRY_HEADER_SIZE) // body is minimum of 1
+                {
+                    LL_WARNS() << "Failed to write cache entry to buffer for " << filename << ", entry number " << cache_entry.second->getLocalID() << LL_ENDL;
+                    built = false;
+                    break;
+                }
+                contents->insert(contents->end(), entry_buffer.data(), entry_buffer.data() + size);
+            }
+        }
+        if (!built)
+        {
+            removeEntry(entry);
+            return;
+        }
+        LL_INFOS("VOCache") << "Object cache for region " << handle << ": " << num_entries << " objects, "
+                            << (S32)(contents->size() / 1024) << " KB, put together in "
+                            << llformat("%.1f", collect_timer.getElapsedTimeF32().value() * 1000.f) << " ms, written in the background" << LL_ENDL;
+
+        fs_wait_for_object_cache_write(handle);   // one write per file at a time
+        auto finished = std::make_shared<std::atomic<bool>>(false);
+        auto ok = std::make_shared<bool>(false);
+        sFSObjectCacheWrites[handle] = finished;
+        const bool posted = FSDiskThread::post(
+            [filename, contents, finished, ok]()
+            {
+                *ok = fs_write_object_cache_file(filename, *contents);
+                finished->store(true, std::memory_order_release);
+            },
+            [handle, filename, finished, ok]()
+            {
+                auto it = sFSObjectCacheWrites.find(handle);
+                if (it != sFSObjectCacheWrites.end() && it->second == finished)
+                {
+                    sFSObjectCacheWrites.erase(it);
+                }
+                if (!*ok && LLVOCache::instanceExists())
+                {
+                    LL_WARNS() << "Failed to write cache to disk " << filename << LL_ENDL;
+                    LLVOCache::instance().removeEntry(handle);
+                }
+            });
+        if (posted)
+        {
+            return;
+        }
+        sFSObjectCacheWrites.erase(handle);
+    }
+    // </FS:Trish>
 
     //write to cache file
     bool success = true ;

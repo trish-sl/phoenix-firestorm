@@ -34,6 +34,7 @@
 // <FS:CR>
 #include "llviewercontrol.h"
 #include "fsfloaterim.h"
+#include "fsasyncfilewriter.h" // <FS:Trish/>
 // </FS:CR>
 
 #include "boost/lexical_cast.hpp"
@@ -530,12 +531,16 @@ bool LLConversationLog::saveToFile(const std::string& filename)
         return false;
     }
 
-    LLFILE* fp = LLFile::fopen(filename, LLFILE_MODE("wb"));
-    if (!fp)
-    {
-        LL_WARNS() << "Couldn't open call log list" << filename << LL_ENDL;
-        return false;
-    }
+    // <FS:Trish> Rewritten on every IM, and opening the file can block for seconds: build the
+    // contents here and write them on the file writer thread when possible
+    //LLFILE* fp = LLFile::fopen(filename, LLFILE_MODE("wb"));
+    //if (!fp)
+    //{
+    //    LL_WARNS() << "Couldn't open call log list" << filename << LL_ENDL;
+    //    return false;
+    //}
+    std::string contents;
+    // </FS:Trish>
 
     std::string participant_id;
     std::string conversation_id;
@@ -553,7 +558,8 @@ bool LLConversationLog::saveToFile(const std::string& filename)
         // examples of two file entries
         // [1343221177] 0 1 0 John Doe| 7e4ec5be-783f-49f5-71dz-16c58c64c145 4ec62a74-c246-0d25-2af6-846beac2aa55 john.doe|
         // [1343222639] 2 0 0 Ad-hoc Conference| c3g67c89-c479-4c97-b21d-32869bcfe8rc 68f1c33e-4135-3e3e-a897-8c9b23115c09 Ad-hoc Conference hash597394a0-9982-766d-27b8-c75560213b9a|
-        fprintf(fp, "[%lld] %d %d %d %s| %s %s %s|\n",
+        //fprintf(fp, "[%lld] %d %d %d %s| %s %s %s|\n",
+        contents += llformat("[%lld] %d %d %d %s| %s %s %s|\n", // <FS:Trish/>
                 (S64)conv_it->getTime().value(),
                 (S32)conv_it->getConversationType(),
                 (S32)0,
@@ -563,7 +569,21 @@ bool LLConversationLog::saveToFile(const std::string& filename)
                 conversation_id.c_str(),
                 file_name.c_str());
     }
+    // <FS:Trish>
+    //fclose(fp);
+    if (FSAsyncFileWriter::replace(filename, contents))
+    {
+        return true;
+    }
+    LLFILE* fp = LLFile::fopen(filename, LLFILE_MODE("wb"));
+    if (!fp)
+    {
+        LL_WARNS() << "Couldn't open call log list" << filename << LL_ENDL;
+        return false;
+    }
+    fwrite(contents.data(), 1, contents.size(), fp);
     fclose(fp);
+    // </FS:Trish>
     return true;
 }
 bool LLConversationLog::loadFromFile(const std::string& filename)

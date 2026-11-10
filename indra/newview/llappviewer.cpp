@@ -199,6 +199,7 @@
 #include "lltexturefetch.h"
 #include "fsdecodedtexturecache.h" // <FS:Trish/>
 #include "fsstallwatch.h" // <FS:Trish/>
+#include "fsasyncfilewriter.h" // <FS:Trish/>
 #include "llimageworker.h"
 #include "llevents.h"
 
@@ -2569,6 +2570,7 @@ bool LLAppViewer::cleanup()
     sImageDecodeThread->shutdown();
     FSDecodedTextureCache::instance().shutdown(); // <FS:Trish/>
     FSStallWatch::shutdown(); // <FS:Trish/>
+    FSAsyncFileWriter::shutdown(); // <FS:Trish/>
     sPurgeDiskCacheThread->shutdown();
     if (mGeneralThreadPool)
     {
