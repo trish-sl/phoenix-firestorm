@@ -33,6 +33,7 @@
 #include "llinventorymodel.h"
 #include "llstartup.h"
 #include "lltooldraganddrop.h" // pack_permissions_slam
+#include "llviewercontrol.h" // <FS:Trish/>
 #include "llviewerinventory.h"
 #include "llviewerregion.h"
 #include "message.h"
@@ -65,6 +66,98 @@ LLAttachmentsMgr::LLAttachmentsMgr():
 LLAttachmentsMgr::~LLAttachmentsMgr()
 {
 }
+
+// <FS:Trish> FSFastSelfRez: when each attachment worn at login was requested, sent and arrived,
+// in seconds from the first idle with a region, logged once all requested ones are in or after
+// two minutes. Shows how much of the half loaded time is the viewer and how much the region.
+namespace
+{
+struct FSLoginAttachment
+{
+    F64 mRequested = -1.0;
+    F64 mSent = -1.0;
+    F64 mArrived = -1.0;
+};
+std::map<LLUUID, FSLoginAttachment> sFSLoginAttachments;
+LLTimer sFSLoginTimer;
+bool sFSLoginTracking = false;
+bool sFSLoginReported = false;
+const F64 FS_LOGIN_REPORT_TIMEOUT = 120.0;
+
+bool fs_login_tracking()
+{
+    return sFSLoginTracking && !sFSLoginReported;
+}
+
+void fs_login_report()
+{
+    sFSLoginReported = true;
+    std::vector<std::pair<LLUUID, FSLoginAttachment>> items(sFSLoginAttachments.begin(), sFSLoginAttachments.end());
+    std::sort(items.begin(), items.end(), [](const auto& a, const auto& b)
+        {
+            const F64 ta = a.second.mArrived < 0.0 ? 1e9 : a.second.mArrived;
+            const F64 tb = b.second.mArrived < 0.0 ? 1e9 : b.second.mArrived;
+            return ta < tb;
+        });
+    F64 first_request = -1.0, last_sent = -1.0, last_arrived = -1.0;
+    S32 unrequested = 0, missing = 0;
+    for (const auto& [id, a] : items)
+    {
+        if (a.mRequested >= 0.0 && (first_request < 0.0 || a.mRequested < first_request))
+        {
+            first_request = a.mRequested;
+        }
+        last_sent = llmax(last_sent, a.mSent);
+        last_arrived = llmax(last_arrived, a.mArrived);
+        unrequested += (a.mArrived >= 0.0 && (a.mSent < 0.0 || a.mArrived < a.mSent)) ? 1 : 0;
+        missing += a.mArrived < 0.0 ? 1 : 0;
+    }
+    std::ostringstream out;
+    out << llformat("Login attachments (seconds since arriving): %d, first requested %.1f, last request sent %.1f, last arrived %.1f; "
+                    "%d arrived before their request went out (restored by the region), %d did not arrive",
+                    (S32)items.size(), first_request, last_sent, last_arrived, unrequested, missing);
+    for (const auto& [id, a] : items)
+    {
+        const LLInventoryItem* item = gInventory.getItem(id);
+        out << "\n    " << (item ? item->getName() : id.asString())
+            << llformat(": requested %.1f, sent %.1f, arrived %.1f", a.mRequested, a.mSent, a.mArrived);
+    }
+    LL_INFOS("Avatar") << out.str() << LL_ENDL;
+    sFSLoginAttachments.clear();
+}
+
+void fs_login_idle()
+{
+    if (sFSLoginReported)
+    {
+        return;
+    }
+    static LLCachedControl<bool> fast_self_rez(gSavedSettings, "FSFastSelfRez", true);
+    if (!sFSLoginTracking)
+    {
+        if (!fast_self_rez)
+        {
+            sFSLoginReported = true; // only ever for the login
+            return;
+        }
+        sFSLoginTracking = true;
+        sFSLoginTimer.reset();
+        return;
+    }
+    bool requested = false;
+    bool all_in = true;
+    for (const auto& [id, a] : sFSLoginAttachments)
+    {
+        requested |= a.mRequested >= 0.0;
+        all_in &= a.mRequested < 0.0 || a.mArrived >= 0.0;
+    }
+    if ((requested && all_in) || sFSLoginTimer.getElapsedTimeF64() > FS_LOGIN_REPORT_TIMEOUT)
+    {
+        fs_login_report();
+    }
+}
+}
+// </FS:Trish>
 
 //void LLAttachmentsMgr::addAttachmentRequest(const LLUUID& item_id,
 //                                            const U8 attachment_pt,
@@ -119,6 +212,13 @@ void LLAttachmentsMgr::addAttachmentRequest(const LLUUID& item_id,
     mPendingAttachments.push_back(attachment);
 
     mAttachmentRequests.addTime(item_id);
+
+    // <FS:Trish> FSFastSelfRez login timeline
+    if (fs_login_tracking() && sFSLoginAttachments[item_id].mRequested < 0.0)
+    {
+        sFSLoginAttachments[item_id].mRequested = sFSLoginTimer.getElapsedTimeF64();
+    }
+    // </FS:Trish>
 }
 
 void LLAttachmentsMgr::onAttachmentRequested(const LLUUID& item_id)
@@ -150,6 +250,8 @@ void LLAttachmentsMgr::onIdle()
     {
         return;
     }
+
+    fs_login_idle(); // <FS:Trish/> FSFastSelfRez
 
     requestPendingAttachments();
 
@@ -188,7 +290,25 @@ void LLAttachmentsMgr::requestAttachments(attachments_vec_t& attachment_requests
     // <FS:Ansariel> FIRE-6070: Batching attachment requests is most-likely causing issues
     //               when replacing already worn attachments
     //const S32 max_objects_per_request = 5;
-    const S32 max_objects_per_request = 1;
+    //const S32 max_objects_per_request = 1;
+    // <FS:Trish> FSFastSelfRez: adding attachments (not replacing what is worn, the FIRE-6070
+    // case) goes out a packet's worth at a time; at login that is every attachment worn
+    S32 max_objects_per_request = 1;
+    static LLCachedControl<bool> fast_self_rez(gSavedSettings, "FSFastSelfRez", true);
+    if (fast_self_rez)
+    {
+        S32 adds = 0;
+        for (const AttachmentsInfo& info : attachment_requests)
+        {
+            if (!info.mAdd || adds >= 4)
+            {
+                break;
+            }
+            ++adds;
+        }
+        max_objects_per_request = llmax(1, adds);
+    }
+    // </FS:Trish>
     S32 obj_count = llmin((S32)attachment_requests.size(),max_objects_per_request);
     if (obj_count == 0)
     {
@@ -250,6 +370,16 @@ void LLAttachmentsMgr::requestAttachments(attachments_vec_t& attachment_requests
             pack_permissions_slam(msg, item->getFlags(), item->getPermissions());
             msg->addStringFast(_PREHASH_Name, item->getName());
             msg->addStringFast(_PREHASH_Description, item->getDescription());
+            // <FS:Trish> FSFastSelfRez login timeline
+            if (fs_login_tracking())
+            {
+                auto it = sFSLoginAttachments.find(attachment.mItemID);
+                if (it != sFSLoginAttachments.end() && it->second.mSent < 0.0)
+                {
+                    it->second.mSent = sFSLoginTimer.getElapsedTimeF64();
+                }
+            }
+            // </FS:Trish>
         }
         else
         {
@@ -471,6 +601,12 @@ void LLAttachmentsMgr::onAttachmentArrived(const LLUUID& inv_item_id)
                    << (item ? item->getName() : "UNKNOWN") << " id " << inv_item_id << LL_ENDL;
     }
     mAttachmentRequests.removeTime(inv_item_id);
+    // <FS:Trish> FSFastSelfRez login timeline
+    if (fs_login_tracking() && sFSLoginAttachments[inv_item_id].mArrived < 0.0)
+    {
+        sFSLoginAttachments[inv_item_id].mArrived = sFSLoginTimer.getElapsedTimeF64();
+    }
+    // </FS:Trish>
     if (expected && mAttachmentRequests.empty())
     {
         // mAttachmentRequests just emptied out
