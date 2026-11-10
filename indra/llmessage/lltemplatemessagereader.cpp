@@ -39,6 +39,7 @@
 #include "v4math.h"
 
 #include "nd/ndexceptions.h" // <FS:ND/> For ndxran
+#include <chrono> // <FS:Trish/>
 
 LLTemplateMessageReader::LLTemplateMessageReader(message_template_number_map_t&
                                                  number_template_map) :
@@ -734,10 +735,21 @@ bool LLTemplateMessageReader::decodeData(const U8* buffer, const LLHost& sender 
             decode_timer.reset();
         }
 
+        // <FS:Trish> Name the message whose handler held up a frame, the timers can't tell them apart
+        const auto fs_handler_start = std::chrono::steady_clock::now();
+        // </FS:Trish>
         if( !mCurrentRMessageTemplate->callHandlerFunc(gMessageSystem) )
         {
             LL_WARNS() << "Message from " << sender << " with no handler function received: " << mCurrentRMessageTemplate->mName << LL_ENDL;
         }
+        // <FS:Trish>
+        const F64 fs_handler_ms = std::chrono::duration<F64, std::milli>(std::chrono::steady_clock::now() - fs_handler_start).count();
+        if (fs_handler_ms >= 100.0)
+        {
+            LL_WARNS("FSHitch") << "Handling message " << mCurrentRMessageTemplate->mName << " from " << sender << " took "
+                                << llformat("%.0f", fs_handler_ms) << " ms" << LL_ENDL;
+        }
+        // </FS:Trish>
 
         if(LLMessageReader::getTimeDecodes() || gMessageSystem->getTimingCallback())
         {
