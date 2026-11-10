@@ -28839,6 +28839,28 @@ Change of this parameter will affect the layout of buttons in notification toast
       <key>Value</key>
       <real>0.25</real>
     </map>
+    <key>FSHitchLogThresholdMs</key>
+    <map>
+      <key>Comment</key>
+      <string>Diagnostics: a frame in world longer than this many milliseconds logs (FSHitch) the timers that took the most time in it, at most once a second. 0 is off.</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>F32</string>
+      <key>Value</key>
+      <real>250.0</real>
+    </map>
+    <key>FSHitchStackMs</key>
+    <map>
+      <key>Comment</key>
+      <string>Diagnostics: when a frame in world is still running after this many milliseconds, log (FSHitch) where the main thread is, again at 3x and 8x that. 0 is off.</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>F32</string>
+      <key>Value</key>
+      <real>1000.0</real>
+    </map>
     <key>FSRenderShadowFarCascadeResolution</key>
     <map>
       <key>Comment</key>

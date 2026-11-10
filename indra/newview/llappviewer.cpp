@@ -198,6 +198,7 @@
 #include "lltexturecache.h"
 #include "lltexturefetch.h"
 #include "fsdecodedtexturecache.h" // <FS:Trish/>
+#include "fsstallwatch.h" // <FS:Trish/>
 #include "llimageworker.h"
 #include "llevents.h"
 
@@ -1563,6 +1564,75 @@ void LLAppViewer::initMaxHeapSize()
 // externally visible timers
 LLTrace::BlockTimerStatHandle FTM_FRAME("Frame");
 
+// <FS:Trish> FSHitchLogThresholdMs: a frame longer than this (wall clock, in world) logs the timers
+// that took the most time in it, by their own time, so a hitch can be traced from the log. The
+// timers record whether or not the Fast Timers floater is open; nothing is walked unless the
+// frame was long. At most one line a second.
+static void fs_log_hitch()
+{
+    static LLTimer frame_timer;
+    static F64 last_log = 0.0;
+    static size_t last_avatars = 0;
+    const F64 frame_ms = frame_timer.getElapsedTimeF64() * 1000.0;
+    frame_timer.reset();
+    const size_t avatars = LLCharacter::sInstances.size();
+    const size_t prev_avatars = last_avatars;
+    last_avatars = avatars;
+
+    static LLCachedControl<F32> threshold(gSavedSettings, "FSHitchLogThresholdMs", 250.f);
+    static LLCachedControl<F32> stack_ms(gSavedSettings, "FSHitchStackMs", 1000.f);
+    const bool in_world = LLStartUp::getStartupState() >= STATE_STARTED && !gTeleportDisplay &&
+                          !LLAppViewer::instance()->logoutRequestSent() && !LLApp::isExiting();
+    FSStallWatch::frameMark(in_world, stack_ms);
+    if (threshold <= 0.f || frame_ms < (F64)threshold || !in_world)
+    {
+        return;
+    }
+    const F64 now = LLTimer::getTotalSeconds();
+    if (now - last_log < 1.0)
+    {
+        return;
+    }
+    last_log = now;
+
+    struct Entry
+    {
+        F64 mSelf;
+        F64 mTotal;
+        S32 mCalls;
+        std::string mName;
+    };
+    std::vector<Entry> entries;
+    LLTrace::Recording& rec = LLTrace::get_frame_recording().getLastRecording();
+    for (auto& base : LLTrace::BlockTimerStatHandle::instance_snapshot())
+    {
+        LLTrace::BlockTimerStatHandle& timer = static_cast<LLTrace::BlockTimerStatHandle&>(base);
+        const F64 self_ms = F64Milliseconds(rec.getSum(timer.selfTime())).value();
+        if (self_ms >= 1.0)
+        {
+            entries.push_back({ self_ms, F64Milliseconds(rec.getSum(timer)).value(), (S32)rec.getSum(timer.callCount()), timer.getName() });
+        }
+    }
+    std::sort(entries.begin(), entries.end(), [](const Entry& a, const Entry& b) { return a.mSelf > b.mSelf; });
+    if (entries.size() > 10)
+    {
+        entries.resize(10);
+    }
+    std::string line = llformat("Long frame %.0f ms, avatars %d -> %d; most time spent in (own ms / with children ms, calls):",
+                                frame_ms, (S32)prev_avatars, (S32)avatars);
+    for (const Entry& e : entries)
+    {
+        line += llformat(" %s %.1f / %.1f x%d;", e.mName.c_str(), e.mSelf, e.mTotal, e.mCalls);
+    }
+    const std::string costs = FSStallWatch::lastFrameCosts();
+    if (!costs.empty())
+    {
+        line += " " + costs;
+    }
+    LL_WARNS("FSHitch") << line << LL_ENDL;
+}
+// </FS:Trish>
+
 bool LLAppViewer::frame()
 {
     bool ret = false;
@@ -1691,6 +1761,7 @@ bool LLAppViewer::doFrame()
             }
 
             LLTrace::get_frame_recording().nextPeriod();
+            fs_log_hitch(); // <FS:Trish/> FSHitchLogThresholdMs
             LLTrace::BlockTimer::logStats();
         }
 
@@ -2497,6 +2568,7 @@ bool LLAppViewer::cleanup()
     sTextureCache->shutdown();
     sImageDecodeThread->shutdown();
     FSDecodedTextureCache::instance().shutdown(); // <FS:Trish/>
+    FSStallWatch::shutdown(); // <FS:Trish/>
     sPurgeDiskCacheThread->shutdown();
     if (mGeneralThreadPool)
     {
