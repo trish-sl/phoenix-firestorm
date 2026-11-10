@@ -2593,6 +2593,28 @@ namespace
                 FSGLStream::recordCall(&refill, ((U64)target << 32) | (U64)(U32)next_batch);
             }
         }
+
+        // Main thread while recording: whether n objects of target can be made now without
+        // waiting. When not, a refill (growing as call's) is queued so they can be shortly after.
+        static bool reserve(GLenum target, GLsizei n)
+        {
+            takeIncoming();
+            std::vector<GLuint>& pool = sPools[target];
+            if (pool.size() >= (size_t)n)
+            {
+                return true;
+            }
+            bool& queued = sRefillQueued[target];
+            if (!queued)
+            {
+                GLsizei& next_batch = sBatches.emplace(target, 64).first->second;
+                const GLsizei batch = std::max<GLsizei>(n, next_batch);
+                next_batch = std::min<GLsizei>(next_batch * 2, OBJECT_BATCH_MAX);
+                queued = true;
+                FSGLStream::recordCall(&refill, ((U64)target << 32) | (U64)(U32)batch);
+            }
+            return false;
+        }
     };
     template <int ID, typename PFN>
     std::unordered_map<GLenum, std::vector<GLuint>> TargetPoolCall<ID, PFN>::sPools;
@@ -3802,6 +3824,15 @@ namespace FSGLStream
         commitRecord();
     }
 
+    bool reserveTextures(U32 target, U32 count)
+    {
+        if (!tRecording || count == 0)
+        {
+            return true;
+        }
+        return Custom<FSGL_ID_glCreateTextures>::reserve((GLenum)target, (GLsizei)count);
+    }
+
     void setRenderPoll(bool (*fn)(bool finish))
     {
         sRenderPoll.store(fn, std::memory_order_release);
@@ -3985,6 +4016,7 @@ namespace FSGLStream
     void setCheck(bool) {}
     Stats takeStats() { return Stats(); }
     void recordCall(void (*fn)(U64), U64 value) { fn(value); }
+    bool reserveTextures(U32, U32) { return true; }
     void setRenderPoll(bool (*)(bool)) {}
     void setFilter(bool) {}
     void clearErrors()

@@ -40,6 +40,7 @@ LLImageJ2CImpl* fallbackCreateLLImageJ2CImpl();
 
 // Test data gathering handle
 LLImageCompressionTester* LLImageJ2C::sTesterp = NULL ;
+std::atomic<U32> LLImageJ2C::sFSOpenJPEGBufferCacheMB{ 64 }; // <FS:Trish/>
 const std::string sTesterName("ImageCompressionTester");
 
 //static

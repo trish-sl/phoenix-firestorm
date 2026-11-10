@@ -246,6 +246,9 @@ public:
     // the screen, which then came back full size and was uploaded again, continuously.
     static bool fsUnderDownscalePressure();
     static bool fsMayDownscale(const LLImageGL* gl);
+    // Memory is short now (soft zone, over target, low system memory or backgrounded), as
+    // opposed to the bias only being held up after it was
+    static bool sFSVRAMTight;
     // </FS:Trish>
     static S32 sSnapshotDiscardBoost; // <FS:Trish/> Discard levels sharper than the screen needs, while a larger snapshot waits for textures
     static U32 sBiasTexturesUpdated;

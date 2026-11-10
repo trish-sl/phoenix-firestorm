@@ -26,6 +26,7 @@
 
 #include "linden_common.h"
 #include "llimagej2coj.h"
+#include "fsopjheap.h" // <FS:Trish/> FSPerfOpenJPEGBufferCacheMB
 
 // this is defined so that we get static linking.
 #include "openjpeg.h"
@@ -104,7 +105,13 @@ int ceildivpow2(int a, int b)
 class JPEG2KBase
 {
 public:
-    JPEG2KBase() = default;
+    // <FS:Trish> FSPerfOpenJPEGBufferCacheMB: OpenJPEG's large buffers are reused from the first call on
+    //JPEG2KBase() = default;
+    JPEG2KBase()
+    {
+        FSOpjHeap::install();
+    }
+    // </FS:Trish>
 
     U8*        buffer = nullptr;
     OPJ_SIZE_T size = 0;
@@ -908,29 +915,104 @@ bool LLImageJ2COJ::decodeImpl(LLImageJ2C &base, LLImageRaw &raw_image, F32 decod
     // first_channel is what channel to start copying from
     // dest is what channel to copy to.  first_channel comes from the
     // argument, dest always starts writing at channel zero.
-    for (S32 comp = first_channel, dest = 0; comp < first_channel + channels; comp++, dest++)
+    // <FS:Trish> One pass over the image, writing each output row whole, instead of one strided pass per
+    // channel; rows still go bottom up
+    //for (S32 comp = first_channel, dest = 0; comp < first_channel + channels; comp++, dest++)
+    //{
+    //    llassert(image->comps[comp].data);
+    //    if (image->comps[comp].data)
+    //    {
+    //        S32 offset = dest;
+    //        for (S32 y = (height - 1); y >= 0; y--)
+    //        {
+    //            for (U32 x = 0; x < width; x++)
+    //            {
+    //                rawp[offset] = image->comps[comp].data[y*comp_width + x];
+    //                offset += channels;
+    //            }
+    //        }
+    //    }
+    //    else // Some rare OpenJPEG versions have this bug.
+    //    {
+    //        LL_DEBUGS("Texture") << "ERROR -> decodeImpl: failed! (OpenJPEG bug)" << LL_ENDL;
+    //        // [SL:KB] - Patch: Viewer-OpenJPEG2 | Checked: Catznip-5.3
+    //        base.decodeFailed();
+    //        // [SL:KB]
+    //    }
+    //}
+    std::vector<const OPJ_INT32*> sources(channels > 0 ? channels : 0);
+    bool sources_ok = true;
+    for (S32 dest = 0; dest < channels; ++dest)
     {
-        llassert(image->comps[comp].data);
-        if (image->comps[comp].data)
+        sources[dest] = image->comps[first_channel + dest].data;
+        llassert(sources[dest]);
+        sources_ok = sources_ok && sources[dest];
+    }
+    if (!sources_ok) // Some rare OpenJPEG versions have this bug.
+    {
+        LL_DEBUGS("Texture") << "ERROR -> decodeImpl: failed! (OpenJPEG bug)" << LL_ENDL;
+        // [SL:KB] - Patch: Viewer-OpenJPEG2 | Checked: Catznip-5.3
+        base.decodeFailed();
+        // [SL:KB]
+    }
+    else
+    {
+        U8* out = rawp;
+        for (S32 y = (S32)height - 1; y >= 0; --y)
         {
-            S32 offset = dest;
-            for (S32 y = (height - 1); y >= 0; y--)
+            const size_t row = (size_t)y * comp_width;
+            switch (channels)
             {
-                for (U32 x = 0; x < width; x++)
+                case 4:
                 {
-                    rawp[offset] = image->comps[comp].data[y*comp_width + x];
-                    offset += channels;
+                    const OPJ_INT32* c0 = sources[0] + row;
+                    const OPJ_INT32* c1 = sources[1] + row;
+                    const OPJ_INT32* c2 = sources[2] + row;
+                    const OPJ_INT32* c3 = sources[3] + row;
+                    for (U32 x = 0; x < width; ++x, out += 4)
+                    {
+                        out[0] = (U8)c0[x];
+                        out[1] = (U8)c1[x];
+                        out[2] = (U8)c2[x];
+                        out[3] = (U8)c3[x];
+                    }
+                    break;
                 }
+                case 3:
+                {
+                    const OPJ_INT32* c0 = sources[0] + row;
+                    const OPJ_INT32* c1 = sources[1] + row;
+                    const OPJ_INT32* c2 = sources[2] + row;
+                    for (U32 x = 0; x < width; ++x, out += 3)
+                    {
+                        out[0] = (U8)c0[x];
+                        out[1] = (U8)c1[x];
+                        out[2] = (U8)c2[x];
+                    }
+                    break;
+                }
+                case 1:
+                {
+                    const OPJ_INT32* c0 = sources[0] + row;
+                    for (U32 x = 0; x < width; ++x)
+                    {
+                        *out++ = (U8)c0[x];
+                    }
+                    break;
+                }
+                default:
+                    for (U32 x = 0; x < width; ++x)
+                    {
+                        for (S32 c = 0; c < channels; ++c)
+                        {
+                            *out++ = (U8)sources[c][row + x];
+                        }
+                    }
+                    break;
             }
         }
-        else // Some rare OpenJPEG versions have this bug.
-        {
-            LL_DEBUGS("Texture") << "ERROR -> decodeImpl: failed! (OpenJPEG bug)" << LL_ENDL;
-            // [SL:KB] - Patch: Viewer-OpenJPEG2 | Checked: Catznip-5.3
-            base.decodeFailed();
-            // [SL:KB]
-        }
     }
+    // </FS:Trish>
 
     base.setDiscardLevel(f);
 

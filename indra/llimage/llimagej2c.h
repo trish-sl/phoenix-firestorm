@@ -30,6 +30,7 @@
 #include "llimage.h"
 #include "llassettype.h"
 #include "llmetricperformancetester.h"
+#include <atomic> // <FS:Trish/>
 
 // JPEG2000 : compression rate used in j2c conversion.
 const F32 DEFAULT_COMPRESSION_RATE = 1.f/8.f;
@@ -77,6 +78,11 @@ public:
     static S32 calcDataSizeJ2C(S32 w, S32 h, S32 comp, S32 discard_level, F32 rate = DEFAULT_COMPRESSION_RATE);
 
     static std::string getEngineInfo();
+
+    // <FS:Trish> FSPerfOpenJPEGBufferCacheMB: how much of its large buffers the OpenJPEG decoder keeps per
+    // thread for the next decode, in MB (0 off). Read once, at the first decode.
+    static std::atomic<U32> sFSOpenJPEGBufferCacheMB;
+    // </FS:Trish>
 
 protected:
     friend class LLImageJ2CImpl;

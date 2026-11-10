@@ -2668,6 +2668,7 @@ bool LLAppViewer::initThreads()
     static const bool enable_threads = true;
 
     LLImage::initClass(gSavedSettings.getBOOL("TextureNewByteRange"),gSavedSettings.getS32("TextureReverseByteRange"));
+    LLImageJ2C::sFSOpenJPEGBufferCacheMB = gSavedSettings.getU32("FSPerfOpenJPEGBufferCacheMB"); // <FS:Trish/> before the first decode
 
     LLLFSThread::initClass(enable_threads && true); // TODO: fix crashes associated with this shutdo
 
