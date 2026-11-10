@@ -41,6 +41,7 @@
 #include "workqueue.h"
 #include <unordered_set>
 #include <memory> // <FS:Trish/>
+#include "fstextureupload.h" // <FS:Trish/> FSTextureUpload::Staged
 
 #define LL_IMAGEGL_THREAD_CHECK 0 //set to 1 to enable thread debugging for ImageGL
 
@@ -125,6 +126,16 @@ public:
     // Whether a change in place could go ahead now without waiting for the render thread: false when this
     // texture is locked and no fresh texture is ready for it to move to (one is requested; try a frame later)
     bool fsCanMoveNow() const;
+    // FSRenderThread: texture creation without the texture thread's GL context. On the texture thread,
+    // fsPrepareUpload() does the CPU side of createGLTexture() (size, format, alpha analysis, pick mask) and
+    // stages the pixels in the upload ring; false when this texture can't go that way (the caller then does
+    // the usual createGLTexture()). On the main thread, fsCommitPreparedUpload() records the GL side, which
+    // the render thread runs: the only context that touches the driver. False when nothing usable was
+    // prepared (the caller then does the usual createGLTexture() there).
+    bool fsPrepareUpload(S32 discard_level, const LLImageRaw* imageraw, S32 category);
+    bool fsHasPreparedUpload() const            { return mFSStaged.mSeq != 0; }
+    bool fsCommitPreparedUpload();
+    void fsDropPreparedUpload();
     // As fsMakeWritable for the image that owns tex_name (parameter changes through LLTexUnit only know the name),
     // before setting address_mode or filter_option (-1 for the one not set). A locked texture that already has
     // that value doesn't move: true then, and the caller skips setting it (the locked texture can't take it).
@@ -135,6 +146,8 @@ public:
     bool fsIsCompressed()                       { return isCompressed(); }
     F32 mFSNoBindlessUntil = 0.f;               // sLastFrameTime until which it gets no handle
     U8 mFSMoves = 0;                            // times it moved off a locked texture
+    FSTextureUpload::Staged mFSStaged;          // fsPrepareUpload(): the pixels waiting in the upload ring
+    S32 mFSStagedDiscard = -1;                  // and the discard level they are for
     // </FS:Trish>
 
     //for server side use only.

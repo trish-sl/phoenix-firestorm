@@ -1341,6 +1341,8 @@ namespace
                                 << " thread_uploads=" << thread_uploads
                                 << " thread_mb=" << (F64)thread_bytes / MB
                                 << " thread_skipped=" << thread_skipped
+                                << " thread_staged=" << pbo.mStaged
+                                << " thread_stage_full=" << pbo.mStageFull
                                 << LL_ENDL;
         }
         log_timer.reset();
