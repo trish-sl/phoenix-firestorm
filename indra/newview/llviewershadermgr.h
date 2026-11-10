@@ -277,6 +277,7 @@ extern LLGLSLShader         gFSDustMotesProgram; // <FS:Trish/> Dust motes
 extern LLGLSLShader         gFSBloomPrefilterProgram;
 extern LLGLSLShader         gFSBloomDownProgram;
 extern LLGLSLShader         gFSBloomUpProgram;
+extern LLGLSLShader         gFSBloomStreakProgram; // <FS:Trish/> Anamorphic streaks
 extern LLGLSLShader         gFSLensDirtProgram;
 extern LLGLSLShader         gFSLensEffectsProgram;
 extern LLGLSLShader         gFSAvatarMatteProgram;

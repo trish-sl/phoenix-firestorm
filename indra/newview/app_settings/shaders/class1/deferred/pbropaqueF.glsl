@@ -162,7 +162,7 @@ void main()
     // Geometric normal in place of environment intensity: PBR never reads the latter, and
     // the deferred passes have no other way to know where the surface actually faces once a
     // normal map has moved tnorm.
-    frag_data[2] = encodeNormalGeo(tnorm, normalize(vary_normal) * (gl_FrontFacing ? 1.0 : -1.0), GBUFFER_FLAG_HAS_PBR);
+    frag_data[2] = encodeNormalGeo(tnorm, normalize(vary_normal) * (gl_FrontFacing ? 1.0 : -1.0), FS_MASK_FLAG(GBUFFER_FLAG_HAS_PBR, minimum_alpha > 0.0));
 
 #if defined(HAS_EMISSIVE)
     frag_data[3] = max(vec4(emissive,0), vec4(0));                                                // PBR sRGB Emissive

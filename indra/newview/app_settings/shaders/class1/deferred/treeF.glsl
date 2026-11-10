@@ -51,7 +51,7 @@ void main()
     frag_data[0] = vec4(vertex_color.rgb*col.rgb, 0.0);
     frag_data[1] = vec4(0,0,0,0);
     vec3 nvn = normalize(vary_normal);
-    frag_data[2] = encodeNormal(nvn.xyz, 0, GBUFFER_FLAG_HAS_ATMOS);
+    frag_data[2] = encodeNormal(nvn.xyz, 0, FS_MASK_FLAG(GBUFFER_FLAG_HAS_ATMOS, minimum_alpha > 0.0));
 
 #if defined(HAS_EMISSIVE)
     frag_data[3] = vec4(0);

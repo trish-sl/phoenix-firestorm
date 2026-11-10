@@ -1135,6 +1135,16 @@ bool LLVOSky::updateHeavenlyBodyGeometry(LLDrawable *drawable, F32 scale, const 
     const F32 enlargm_factor = ( 1 - to_dir.mV[2] );
     F32 horiz_enlargement = 1 + enlargm_factor * 0.3f;
     F32 vert_enlargement = 1 + enlargm_factor * 0.2f;
+    // <FS:Trish> Right at the horizon the air bends the light of the disc's lower edge up more
+    // than its upper edge, squashing the sun or moon: about a fifth at the horizon, gone a few
+    // degrees above it
+    static LLCachedControl<bool> fs_disc_detail(gSavedSettings, "FSRenderSunDiscDetail", true);
+    if (fs_disc_detail)
+    {
+        const F32 elevation_deg = llmax(asinf(llclamp(to_dir.mV[VZ], -1.f, 1.f)) * RAD_TO_DEG, 0.f);
+        vert_enlargement *= 1.f - 0.18f * expf(-elevation_deg / 1.5f);
+    }
+    // </FS:Trish>
 
     const LLVector3 scaled_right = horiz_enlargement * scale * HEAVENLY_BODY_DIST * HEAVENLY_BODY_FACTOR * hb.getDiskRadius() * hb_right;
     const LLVector3 scaled_up    = vert_enlargement  * scale * HEAVENLY_BODY_DIST * HEAVENLY_BODY_FACTOR * hb.getDiskRadius() * hb_up;

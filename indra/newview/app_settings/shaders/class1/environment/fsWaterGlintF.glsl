@@ -12,6 +12,7 @@
 
 uniform vec3 eyeVec;            // camera position, agent space
 uniform vec4 fs_glint_params;   // x intensity (0 = off), y density, z animation phase (s), w pixel angle (rad)
+uniform float fs_glint_glade;   // strength of the moon's glade, 0 unless the moon is the light
 
 uvec3 fsGlintHash(uvec3 v)
 {
@@ -71,7 +72,7 @@ float fsWaterGlint(vec3 pos, vec3 n, vec3 up, vec3 v, vec3 l, vec2 view_offset)
 {
     float intensity = fs_glint_params.x;
     float nl = dot(up, l);
-    if (intensity <= 0.0 || nl <= 0.0)
+    if ((intensity <= 0.0 && fs_glint_glade <= 0.0) || nl <= 0.0)
     {
         return 0.0;
     }
@@ -116,6 +117,11 @@ float fsWaterGlint(vec3 pos, vec3 n, vec3 up, vec3 v, vec3 l, vec2 view_offset)
     float vdh = clamp(dot(v, h), 0.0, 1.0);
     float fresnel = 0.02 + 0.98 * pow(1.0 - vdh, 5.0);
 
+    // The moon's glade: at night the glitter path reads as one band of light, the moon
+    // reflected in every facet tilted its way, so the facet spread itself is the light. It
+    // follows the waves through the wave normal, and the glints flicker on top of it.
+    float glade = lobe * fs_glint_glade * 0.6;
+
     // Faded in as the sun clears the horizon
-    return glint * intensity * 6.0 * (0.25 + 0.75 * fresnel) * smoothstep(0.0, 0.1, nl);
+    return (glint * intensity * 6.0 + glade) * (0.25 + 0.75 * fresnel) * smoothstep(0.0, 0.1, nl);
 }

@@ -30,11 +30,13 @@ out vec4 frag_data[4];
 in vec4 vertex_color;
 in vec2 vary_texcoord0;
 in vec2 screenpos;
+in float star_elevation;
 
 uniform sampler2D diffuseMap;
 uniform float blend_factor;
 uniform float custom_alpha;
 uniform float time;
+uniform vec2 fs_star_params;   // x extinction per air mass (0 = off), y share washed out by moonlight
 
 float twinkle(){
     float d = fract(screenpos.x + screenpos.y);
@@ -57,6 +59,12 @@ void main()
 
     col.a = (col.a * factor) * 32.0f;
     col.a *= twinkle();
+
+    // Extinction: toward the horizon a star's light crosses more air (about 1 / sin of its
+    // height), so it dims and the last few degrees fade out. Bright moonlight lifts the sky
+    // and hides the fainter ones.
+    float air = 1.0 / max(star_elevation, 0.02) - 1.0;
+    col.a *= exp(-fs_star_params.x * air) * (1.0 - fs_star_params.y);
 
     frag_data[1] = vec4(0.0f);
     frag_data[2] = vec4(0.0, 1.0, 0.0, GBUFFER_FLAG_SKIP_ATMOS);

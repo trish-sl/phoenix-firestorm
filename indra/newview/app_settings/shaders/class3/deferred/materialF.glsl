@@ -517,6 +517,9 @@ void main()
     // deferred path               // See: C++: addDeferredAttachment(), shader: softenLightF.glsl
 
     float flag = GBUFFER_FLAG_HAS_ATMOS;
+#if (DIFFUSE_ALPHA_MODE == DIFFUSE_ALPHA_MODE_MASK)
+    flag = FS_MASK_FLAG(flag, minimum_alpha > 0.0); // backlit foliage, see softenLightF.glsl
+#endif
 
     frag_data[0] = max(vec4(diffcol.rgb, emissive), vec4(0));        // gbuffer is sRGB for legacy materials
     frag_data[1] = max(vec4(spec.rgb, glossiness), vec4(0));           // XYZ = Specular color. W = Specular exponent.

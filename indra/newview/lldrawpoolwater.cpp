@@ -274,6 +274,18 @@ static void fs_bind_water_glints(LLGLSLShader* shader)
     // Wrapped so the phase keeps its precision; the pattern jumps once an hour
     const F32 phase = (F32)fmod(LLFrameTimer::getElapsedSeconds(), 3600.0);
     shader->uniform4f(s_params, llclamp((F32)intensity, 0.f, 4.f), llclamp((F32)density, 0.1f, 4.f), phase, pixel_angle);
+
+    // The moon's glade, only while the moon is the light
+    static LLCachedControl<F32> glade(gSavedSettings, "FSRenderMoonGlade", 1.f);
+    static LLStaticHashedString s_glade("fs_glint_glade");
+    LLEnvironment& environment = LLEnvironment::instance();
+    F32 glade_strength = 0.f;
+    if (glade > 0.f && !environment.getIsSunUp() && environment.getIsMoonUp())
+    {
+        LLSettingsSky::ptr_t psky = environment.getCurrentSky();
+        glade_strength = llclamp((F32)glade, 0.f, 4.f) * (psky ? llclamp((F32)psky->getMoonBrightness(), 0.f, 1.f) : 1.f);
+    }
+    shader->uniform1f(s_glade, glade_strength);
 }
 // </FS:Trish>
 
@@ -505,6 +517,11 @@ void LLDrawPoolWater::renderPostDeferred(S32 pass)
     const S32 fs_foam_unit = fs_bind_water_foam(shader, water_dis); // <FS:Trish/>
     sFSFoamDepthValid = false; // <FS:Trish/> one view per capture
     fs_bind_water_glints(shader); // <FS:Trish/>
+    // <FS:Trish> Snell's window, seen from below the surface
+    static LLCachedControl<F32> fs_snell_window(gSavedSettings, "FSRenderSnellsWindow", 1.f);
+    static LLStaticHashedString s_snell_window("fs_snell_window");
+    shader->uniform1f(s_snell_window, llclamp((F32)fs_snell_window, 0.f, 1.f));
+    // </FS:Trish>
 
     LLGLDisable cullface(GL_CULL_FACE);
 

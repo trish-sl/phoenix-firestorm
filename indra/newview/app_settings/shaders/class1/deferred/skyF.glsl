@@ -66,6 +66,10 @@ uniform float sun_moon_glow_factor;
 
 uniform int cube_snapshot;
 
+uniform float fs_moon_corona;   // strength, 0 when off or while the moon isn't the light
+uniform vec4 fs_twilight;       // xyz the sun's direction (sky space, y up), w strength through twilight, 0 otherwise
+uniform vec4 fs_sea_horizon;    // rgb the water fog colour, w 1 to draw the sea below the horizon, 0 otherwise
+
 vec3 srgb_to_linear(vec3 c);
 vec3 linear_to_srgb(vec3 c);
 
@@ -102,10 +106,59 @@ vec3 halo22(float d)
     return texture(halo_map, vec2(0, v)).rgb * ice_level;
 }
 
+// The moon's aureole and corona. The sky's haze glow is turned off for the moon (SL-13768), which
+// left it hanging in a black sky. Haze and thin cloud scatter its light forward into a soft glow,
+// and cloud droplets diffract it into a faint ring, blue inside and red outside. cos_a is the
+// cosine of the angle from the moon.
+vec3 fsMoonCorona(float cos_a)
+{
+    float a = sqrt(max(2.0 * (1.0 - cos_a), 0.0));  // the angle, close enough this near the moon
+    float wet = clamp(cloud_shadow * 1.5 + haze_density * 0.3, 0.0, 1.0);
+    float aureole = exp(-a / 0.035) * 0.3 + exp(-a / 0.15) * 0.05;
+    vec3 d = (vec3(a) - vec3(0.075, 0.068, 0.06)) / 0.012;
+    vec3 ring = exp(-d * d);
+    return moonlight_color * (aureole * (0.4 + 0.6 * wet) + ring * (0.12 * wet)) * fs_moon_corona;
+}
+
+// Twilight bands: around sunset, the Earth's own shadow rises in the sky opposite the sun as a
+// blue-grey band on the horizon, and above it the Belt of Venus, a pink band lit by the reddened
+// sun through the air. The shadow climbs as the sun sinks. Tints the sky's colour, so it never
+// lights a sky that is dark.
+vec3 fsTwilight(vec3 dir, vec3 color)
+{
+    vec2 sun_h = fs_twilight.xz;
+    vec2 dir_h = dir.xz;
+    if (dot(sun_h, sun_h) < 1e-6 || dot(dir_h, dir_h) < 1e-6)
+    {
+        return color;
+    }
+    float opposite = max(dot(normalize(dir_h), -normalize(sun_h)), 0.0);
+    opposite *= opposite;
+    float top = clamp(0.02 - fs_twilight.y * 0.8, 0.01, 0.15);   // the shadow's upper edge
+    float h = dir.y;
+    float shadow = opposite * (1.0 - smoothstep(top * 0.7, top, h));
+    float belt = opposite * smoothstep(top * 0.8, top * 1.1, h) * (1.0 - smoothstep(top * 1.4, top * 2.6, h));
+    color *= mix(vec3(1.0), vec3(0.6, 0.66, 0.85), shadow * fs_twilight.w);
+    color *= mix(vec3(1.0), vec3(1.3, 0.95, 1.05), belt * fs_twilight.w);
+    return color;
+}
+
 void main()
 {
     // Get relative position
     vec3 rel_pos = pos.xyz - camPosLocal.xyz + vec3(0, 50, 0);
+
+    // The sea to the horizon: below the horizon, what the distant sea shows at that angle is the sky
+    // mirrored in it, so the sky is worked out for the mirrored direction and then dimmed and tinted
+    // by how much of it the water reflects (Fresnel, about all of it at grazing angles).
+    float sea_reflect = 1.0;
+    bool sea = fs_sea_horizon.w > 0.0 && rel_pos.y < 0.0;
+    if (sea)
+    {
+        float cos_v = clamp(-rel_pos.y / max(length(rel_pos), 1e-4), 0.0, 1.0);
+        sea_reflect = 0.02 + 0.98 * pow(1.0 - cos_v, 5.0);
+        rel_pos.y = -rel_pos.y;
+    }
 
     // Adj position vector to clamp altitude
     if (rel_pos.y > 0.)
@@ -201,6 +254,11 @@ void main()
         // At horizon, blend high altitude sky color towards the darker color below the clouds
         color += (add_below_cloud - color) * (1. - sqrt(combined_haze));
 
+        if (fs_twilight.w > 0.0)
+        {
+            color = fsTwilight(rel_pos_norm, color);
+        }
+
         float optic_d = rel_pos_lightnorm_dot;
         // Both terms are scaled by their sky setting, which is zero for most skies. The
         // conditions are uniform, so skipping the fetches (and the rainbow's pow) leaves
@@ -213,7 +271,17 @@ void main()
         {
             color.rgb += halo22(optic_d);
         }
+        if (fs_moon_corona > 0.0)
+        {
+            color.rgb += fsMoonCorona(optic_d);
+        }
         color.rgb *= 2.;
+        // the sea: what it doesn't reflect is the water's own colour, lit like the sky
+        if (sea)
+        {
+            vec3 body = fs_sea_horizon.rgb * (ambient_color + sunlight * 0.5);
+            color.rgb = mix(body, color.rgb, sea_reflect);
+        }
         color.rgb = clamp(color.rgb, vec3(0), vec3(5));
 
         frag_data[2] = vec4(0.0,0.0,0.0,GBUFFER_FLAG_SKIP_ATMOS);

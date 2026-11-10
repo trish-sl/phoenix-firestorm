@@ -908,6 +908,7 @@ public:
     static constexpr U32    FS_BLOOM_MAX_LEVELS = 8;
     LLRenderTarget          mBloomLevels[FS_BLOOM_MAX_LEVELS];
     U32                     mBloomLevelCount = 0;       // levels drawn this frame, 0 when bloom is off
+    LLRenderTarget          mBloomStreak[2];            // anamorphic streaks, ping-pong at the second bloom level's size
     bool                    mFSNoPost = false;          // tonemap runs the no-post programs this frame (set in renderFinalize)
     LLPointer<LLImageGL>    mColorGradeLUT;
     std::string             mColorGradeLUTName;

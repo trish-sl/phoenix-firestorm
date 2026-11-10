@@ -27339,6 +27339,17 @@ Change of this parameter will affect the layout of buttons in notification toast
       <key>Value</key>
       <real>0.05</real>
     </map>
+    <key>FSRenderSpotVolumetricNearRange</key>
+    <map>
+      <key>Comment</key>
+      <string>EXPERIMENTAL. Projectors without a shadow map closer than this many metres also get a volumetric cone, even with FSRenderSpotVolumetricUnshadowed off. Their light passes through objects in the beam. 0 is off.</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>F32</string>
+      <key>Value</key>
+      <real>20.0</real>
+    </map>
     <key>FSRenderSpotVolumetricMaxLights</key>
     <map>
       <key>Comment</key>
@@ -29349,6 +29360,149 @@ Change of this parameter will affect the layout of buttons in notification toast
       <key>Value</key>
       <real>0.0</real>
     </map>
+    <key>FSRenderTwilightBands</key>
+    <map>
+      <key>Comment</key>
+      <string>EXPERIMENTAL. Sky: around sunset, the Earth's shadow rises opposite the sun as a blue-grey band, with the pink Belt of Venus above it. 0 is off.</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>F32</string>
+      <key>Value</key>
+      <real>1.0</real>
+    </map>
+    <key>FSRenderSnellsWindow</key>
+    <map>
+      <key>Comment</key>
+      <string>EXPERIMENTAL. Water: seen from below, the surface is only clear within a cone about 97 degrees wide overhead; outside it, it mirrors the depths. 0 is off.</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>F32</string>
+      <key>Value</key>
+      <real>1.0</real>
+    </map>
+    <key>FSRenderHalation</key>
+    <map>
+      <key>Comment</key>
+      <string>EXPERIMENTAL. Lens: warm glow close around bright highlights, as on film, as a share of the bloom. Needs bloom on. 0 is off.</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>F32</string>
+      <key>Value</key>
+      <real>0.5</real>
+    </map>
+    <key>FSRenderFoliage</key>
+    <map>
+      <key>Comment</key>
+      <string>EXPERIMENTAL. Lighting: alpha masked leaves and grass glow with the sunlight coming through them when the sun is behind them. Changing it reloads the shaders.</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>Boolean</string>
+      <key>Value</key>
+      <integer>1</integer>
+    </map>
+    <key>FSRenderFoliageStrength</key>
+    <map>
+      <key>Comment</key>
+      <string>EXPERIMENTAL. Lighting: strength of the sunlight seen through backlit leaves and grass (0 to 4).</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>F32</string>
+      <key>Value</key>
+      <real>1.0</real>
+    </map>
+    <key>FSRenderAnamorphicStreaks</key>
+    <map>
+      <key>Comment</key>
+      <string>EXPERIMENTAL. Post: strength of the horizontal blue streaks bright lights leave, as through an anamorphic cinema lens (0 off, up to 4). Needs bloom (FSRenderBloom).</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>F32</string>
+      <key>Value</key>
+      <real>0.3</real>
+    </map>
+    <key>FSRenderLensFlareMoon</key>
+    <map>
+      <key>Comment</key>
+      <string>EXPERIMENTAL. Lens: strength of the moon's lens flare relative to the sun's, also scaled by the sky's moon brightness. The moon gets a soft glow and few ghosts. 0 turns the moon's flare off.</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>F32</string>
+      <key>Value</key>
+      <real>0.15</real>
+    </map>
+    <key>FSRenderNightVision</key>
+    <map>
+      <key>Comment</key>
+      <string>EXPERIMENTAL. Sky: at night, dark parts of the image lose their colour and shift toward blue, as the eye does in the dark. Lit parts keep their colour. 0 is off.</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>F32</string>
+      <key>Value</key>
+      <real>0.5</real>
+    </map>
+    <key>FSRenderMoonCorona</key>
+    <map>
+      <key>Comment</key>
+      <string>EXPERIMENTAL. Sky: soft glow around the moon, with a faint coloured ring through haze and thin cloud. 0 is off.</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>F32</string>
+      <key>Value</key>
+      <real>1.0</real>
+    </map>
+    <key>FSRenderMoonGlade</key>
+    <map>
+      <key>Comment</key>
+      <string>EXPERIMENTAL. Water: the moon's silver path on the water at night. Needs sun glints on. 0 is off.</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>F32</string>
+      <key>Value</key>
+      <real>1.0</real>
+    </map>
+    <key>FSRenderCloudSilverLining</key>
+    <map>
+      <key>Comment</key>
+      <string>EXPERIMENTAL. Sky: thin cloud edges near the sun or moon light up from behind. 0 is off.</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>F32</string>
+      <key>Value</key>
+      <real>1.0</real>
+    </map>
+    <key>FSRenderSunDiscDetail</key>
+    <map>
+      <key>Comment</key>
+      <string>EXPERIMENTAL. Sky: the sun's disc is darker toward its edge, and the sun and moon flatten slightly right at the horizon.</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>Boolean</string>
+      <key>Value</key>
+      <integer>1</integer>
+    </map>
+    <key>FSRenderStarExtinction</key>
+    <map>
+      <key>Comment</key>
+      <string>EXPERIMENTAL. Sky: stars dim toward the horizon, where their light crosses more air, and fade a little in bright moonlight.</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>Boolean</string>
+      <key>Value</key>
+      <integer>1</integer>
+    </map>
     <key>FSRenderFilmGrain</key>
     <map>
       <key>Comment</key>
@@ -29425,6 +29579,17 @@ Change of this parameter will affect the layout of buttons in notification toast
       <string>U32</string>
       <key>Value</key>
       <integer>64</integer>
+    </map>
+    <key>FSRenderSeaHorizon</key>
+    <map>
+      <key>Comment</key>
+      <string>With the camera above water and not on mainland, draw the sky below the horizon as the distant sea, the sky mirrored in it, so the sea meets the horizon instead of ending at the draw distance with sky showing below the horizon.</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>Boolean</string>
+      <key>Value</key>
+      <integer>1</integer>
     </map>
     <key>FSLowPriorityTextureThreads</key>
     <map>
