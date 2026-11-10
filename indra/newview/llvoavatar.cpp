@@ -12764,7 +12764,20 @@ void LLVOAvatar::updateImpostors()
 {
     LLViewerCamera::sCurCameraID = LLViewerCamera::CAMERA_WORLD;
 
-    for (LLCharacter* character : LLCharacter::sInstances)
+    // <FS:Trish> Impostor update budget. In a crowd, animated impostors are redrawn many times a second
+    // (their animated extents, the view angle and the distance all drift), and each redraw renders
+    // the full avatar into its texture. The redraws motion asks for (reasons 2 to 5, and the
+    // maximum age, 11) are limited to FSImpostorUpdateBudget a frame, no avatar more often than
+    // every FSImpostorMinInterval seconds; until then it keeps showing its current impostor. A
+    // missing impostor or an appearance change still redraws at once. The scan starts one avatar
+    // further each frame so none waits behind the others for long. Budget 0: as before.
+    static LLCachedControl<U32> fs_budget(gSavedSettings, "FSImpostorUpdateBudget", 1);
+    static LLCachedControl<F32> fs_min_interval(gSavedSettings, "FSImpostorMinInterval", 0.25f);
+    static size_t fs_start = 0;
+    const size_t fs_count = LLCharacter::sInstances.size();
+    const size_t fs_first = fs_count ? fs_start % fs_count : 0;
+    U32 fs_done = 0;
+    auto fs_visit = [&](LLCharacter* character)
     {
         LLVOAvatar* avatar = (LLVOAvatar*)character;
         if (!avatar->isDead()
@@ -12772,10 +12785,53 @@ void LLVOAvatar::updateImpostors()
             && avatar->isImpostor()
             && avatar->needsImpostorUpdate())
         {
+            const U32 reason = avatar->mLastImpostorUpdateReason;
+            const bool from_motion = (reason >= 2 && reason <= 5) || reason == 11;
+            const bool urgent = !avatar->mImpostor.isComplete() || !from_motion;
+            if (!urgent && fs_budget > 0)
+            {
+                if (fs_done >= fs_budget ||
+                    gFrameTimeSeconds - avatar->mLastImpostorUpdateFrameTime < llclamp((F32)fs_min_interval, 0.f, 5.f))
+                {
+                    return; // stays dirty, redrawn on a later frame
+                }
+                ++fs_done;
+            }
             avatar->calcMutedAVColor();
             gPipeline.generateImpostor(avatar);
         }
+    };
+    size_t fs_index = 0;
+    for (LLCharacter* character : LLCharacter::sInstances)   // from fs_first to the end
+    {
+        if (fs_index++ >= fs_first)
+        {
+            fs_visit(character);
+        }
     }
+    fs_index = 0;
+    for (LLCharacter* character : LLCharacter::sInstances)   // then the ones before it
+    {
+        if (fs_index++ >= fs_first)
+        {
+            break;
+        }
+        fs_visit(character);
+    }
+    ++fs_start;
+    //for (LLCharacter* character : LLCharacter::sInstances)
+    //{
+    //    LLVOAvatar* avatar = (LLVOAvatar*)character;
+    //    if (!avatar->isDead()
+    //        && avatar->isVisible()
+    //        && avatar->isImpostor()
+    //        && avatar->needsImpostorUpdate())
+    //    {
+    //        avatar->calcMutedAVColor();
+    //        gPipeline.generateImpostor(avatar);
+    //    }
+    //}
+    // </FS:Trish>
 
     LLCharacter::sAllowInstancesChange = true;
 }

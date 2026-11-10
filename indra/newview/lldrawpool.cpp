@@ -694,6 +694,10 @@ bool LLRenderPass::uploadMatrixPalette(LLVOAvatar* avatar, const LLMeshSkinInfo*
     {
         return false;
     }
+    if (LLPipeline::fsShadowSkipsAvatar(avatar)) // <FS:Trish/> FSRenderAvatarShadowCascades: no draw
+    {
+        return false;
+    }
     const LLVOAvatar::MatrixPaletteCache& mpc = avatar->updateSkinInfoMatrixPalette(skinInfo);
     U32 count = static_cast<U32>(mpc.mMatrixPalette.size());
 
@@ -732,6 +736,10 @@ bool LLRenderPass::uploadMatrixPalette(LLVOAvatar* avatar, const LLMeshSkinInfo*
     //if (!avatar)
     if (!avatar || !skinInfo)
     // </FS:Trish>
+    {
+        return false;
+    }
+    if (LLPipeline::fsShadowSkipsAvatar(avatar)) // <FS:Trish/> FSRenderAvatarShadowCascades: no draw
     {
         return false;
     }
@@ -780,6 +788,10 @@ bool LLRenderPass::uploadMatrixPalette(LLVOAvatar* avatar, const LLMeshSkinInfo*
     //if (!avatar)
     if (!avatar || !skinInfo)
     // </FS:Trish>
+    {
+        return false;
+    }
+    if (LLPipeline::fsShadowSkipsAvatar(avatar)) // <FS:Trish/> FSRenderAvatarShadowCascades: no draw
     {
         return false;
     }

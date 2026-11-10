@@ -482,6 +482,10 @@ bool LLPipeline::fsShadowSinglePassRecord(U32 kind, bool rigged, const U32* type
             {
                 continue;
             }
+            if (rigged && fsShadowSkipsAvatar(params->mAvatar)) // FSRenderAvatarShadowCascades
+            {
+                continue;
+            }
             if (filter != FS_SHADOW_ALL && fsIsStaticShadowBatch(params) != (filter == FS_SHADOW_STATIC))
             {
                 continue;
