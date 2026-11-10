@@ -990,6 +990,7 @@ public:
     U32                     mColoredShadowDepth[FS_COLORED_SHADOW_CASCADES] = {};   // shadow depth texture shared into it
     U32                     mColoredShadowFrame[FS_COLORED_SHADOW_CASCADES] = {};   // frame its map was last drawn
     S32                     mColoredShadowCascade = -1;     // cascade whose casters renderShadow draws, -1 for none
+    S32                     mFSSunShadowCascade = -1;       // sun cascade renderShadow is drawing, -1 for any other shadow (FSRenderShadowAlphaCascades)
     bool                    prepareColoredShadowCascade(U32 cascade);   // generateSunShadow: target ready for this cascade
     void                    renderColoredShadowCasters();               // renderShadow: draw the translucent casters
     void                    bindColoredShadowMaps(LLGLSLShader& shader);
@@ -998,6 +999,7 @@ public:
 
     // Shadow performance
     static bool             isBeyondAvatarShadowDistance(const LLVOAvatar* avatar);
+    static bool             fsShadowSkipsAvatar(const LLVOAvatar* avatar); // <FS:Trish/> FSRenderAvatarShadowCascades
     U32                     mShadowFrame = 0;               // main view shadow updates so far
     bool                    mFarCascadeValid[4] = {};       // the map holds a render the throttle can reuse
     U32                     mFarCascadeTex[4] = {};         // ...in this depth texture

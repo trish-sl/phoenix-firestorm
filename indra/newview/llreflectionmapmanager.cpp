@@ -491,7 +491,11 @@ void LLReflectionMapManager::update()
         // incomplete probes, the default probe and dynamic ones keep one face per frame.
         //doProbeUpdate();
         static LLCachedControl<U32> refresh_interval(gSavedSettings, "RenderReflectionProbeRefreshFrameInterval", 3);
-        const bool refreshing = mUpdatingProbe->mComplete && mUpdatingProbe != mDefaultProbe && !mUpdatingProbe->getIsDynamic();
+        // The default (sky) probe and dynamic ones on moving objects refresh the same way once their
+        // map is complete: the sky changes slowly, and a moving probe's cube still turns over every
+        // 6 x interval frames. A probe still filling its first map keeps one face a frame.
+        //const bool refreshing = mUpdatingProbe->mComplete && mUpdatingProbe != mDefaultProbe && !mUpdatingProbe->getIsDynamic();
+        const bool refreshing = mUpdatingProbe->mComplete;
         if (!refreshing || refresh_interval <= 1 || (LLFrameTimer::getFrameCount() % refresh_interval) == 0)
         {
             doProbeUpdate();
@@ -1371,7 +1375,23 @@ void LLReflectionMapManager::updateProbeFace(LLReflectionMap* probe, U32 face)
     else
     {
         llassert(mRenderReflectionProbeLevel > 0); // should never update a probe that's not the default probe if reflection coverage is none
-        probe->update(mRenderTarget.getWidth(), face);
+        // <FS:Trish> FSRenderProbeAvatars off: probe captures leave out avatars and animesh, with their
+        // attachments. Every face redrew the whole crowd, and as a probe refreshes every few
+        // seconds the avatars in it were wherever they stood then.
+        //probe->update(mRenderTarget.getWidth(), face);
+        static LLCachedControl<bool> probe_avatars(gSavedSettings, "FSRenderProbeAvatars", false);
+        if (!probe_avatars)
+        {
+            gPipeline.pushRenderTypeMask();
+            gPipeline.clearRenderTypeMask(LLPipeline::RENDER_TYPE_AVATAR, LLPipeline::RENDER_TYPE_CONTROL_AV, LLPipeline::END_RENDER_TYPES);
+            probe->update(mRenderTarget.getWidth(), face);
+            gPipeline.popRenderTypeMask();
+        }
+        else
+        {
+            probe->update(mRenderTarget.getWidth(), face);
+        }
+        // </FS:Trish>
     }
 
     gPipeline.mRT = &gPipeline.mMainRT;

@@ -28806,6 +28806,39 @@ Change of this parameter will affect the layout of buttons in notification toast
       <key>Value</key>
       <integer>1</integer>
     </map>
+    <key>FSRenderShadowAlphaCascades</key>
+    <map>
+      <key>Comment</key>
+      <string>EXPERIMENTAL. Shadows: how many sun shadow maps, nearest first, draw alpha tested casters (leaves, grass, fences, alpha masked materials). Their shadows in the far maps are a few texels and cost a large share of the shadow pass. 4: all, as before.</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>U32</string>
+      <key>Value</key>
+      <integer>3</integer>
+    </map>
+    <key>FSImpostorUpdateBudget</key>
+    <map>
+      <key>Comment</key>
+      <string>EXPERIMENTAL. Avatars: how many impostors may be redrawn per frame because the avatar moved or animated. Missing impostors and appearance changes are redrawn at once. 0: no limit, as before.</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>U32</string>
+      <key>Value</key>
+      <integer>1</integer>
+    </map>
+    <key>FSImpostorMinInterval</key>
+    <map>
+      <key>Comment</key>
+      <string>EXPERIMENTAL. Avatars: shortest time in seconds between redraws of the same impostor for movement or animation; it keeps showing its current impostor until then.</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>F32</string>
+      <key>Value</key>
+      <real>0.25</real>
+    </map>
     <key>FSRenderShadowFarCascadeResolution</key>
     <map>
       <key>Comment</key>
@@ -28838,6 +28871,28 @@ Change of this parameter will affect the layout of buttons in notification toast
       <string>F32</string>
       <key>Value</key>
       <real>0.0</real>
+    </map>
+    <key>FSRenderAvatarShadowCascades</key>
+    <map>
+      <key>Comment</key>
+      <string>EXPERIMENTAL. Shadows: how many sun shadow maps, nearest first, other avatars and animesh (with their rigged attachments) cast into. The far maps draw every rigged mesh again for shadows a few texels across. Your own avatar always casts. 4: all, as before.</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>U32</string>
+      <key>Value</key>
+      <integer>2</integer>
+    </map>
+    <key>FSRenderProbeAvatars</key>
+    <map>
+      <key>Comment</key>
+      <string>EXPERIMENTAL. Reflection probes capture avatars and animesh too. Off, they leave them out: every probe face redrew the whole crowd, and a probe only refreshes every few seconds, so the reflected avatars stood where they were then.</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>Boolean</string>
+      <key>Value</key>
+      <integer>0</integer>
     </map>
     <key>FSRenderShadowFastFilter</key>
     <map>

@@ -12689,6 +12689,14 @@ void LLPipeline::renderShadow(const glm::mat4& view, const glm::mat4& proj, LLCa
         renderGeomShadow(shadow_cam);
     }
 
+    // <FS:Trish> FSRenderShadowAlphaCascades: alpha tested casters (leaves, grass, fences, alpha
+    // masked materials) only in the nearer sun cascades. In the far ones their shadows are a few
+    // texels of a large map, and they are a large share of the shadow pass.
+    static LLCachedControl<U32> alpha_cascades(gSavedSettings, "FSRenderShadowAlphaCascades", 3);
+    const bool fs_alpha_casters = gCubeSnapshot || mFSSunShadowCascade < 0 ||
+                                  mFSSunShadowCascade < (S32)alpha_cascades || mFSSunShadowCascade == mColoredShadowCascade;
+    if (fs_alpha_casters)
+    // </FS:Trish>
     {
         LL_PROFILE_ZONE_NAMED_CATEGORY_PIPELINE("shadow alpha");
         LL_PROFILE_GPU_ZONE("shadow alpha");
@@ -13272,6 +13280,7 @@ void LLPipeline::fsShadowCacheSnapDepth(S32 cascade, F32 grid_z, F32& znear, F32
 
 void LLPipeline::fsShadowCacheBeginCascade(S32 cascade, const glm::mat4& proj, const glm::mat4& view)
 {
+    mFSSunShadowCascade = cascade; // FSRenderShadowAlphaCascades, see renderShadow
     mFSShadowCacheCascade = -1;
     if (!mFSShadowCacheInUse || gCubeSnapshot || cascade < 2 || cascade > 3 || cascade > RenderShadowSplits)
     {
@@ -13337,6 +13346,7 @@ void LLPipeline::fsUpdateShadowStaticMatrices()
 
 void LLPipeline::fsShadowCacheEndCascade()
 {
+    mFSSunShadowCascade = -1;
     mFSShadowCacheCascade = -1;
     mFSShadowCasterFilter = FS_SHADOW_ALL;
 }
@@ -18844,12 +18854,32 @@ bool LLPipeline::isBeyondAvatarShadowDistance(const LLVOAvatar* avatar)
 {
     static LLCachedControl<F32> avatar_shadow_distance(gSavedSettings, "FSRenderAvatarShadowDistance", 0.f);
     const F32 max_dist = avatar_shadow_distance;
+    if (fsShadowSkipsAvatar(avatar))
+    {
+        return true;
+    }
     if (max_dist <= 0.f || !avatar || avatar->isSelf())
     {
         return false;
     }
     // LLViewerCamera is the probe origin during probe captures; use the main camera, cached each frame
     return dist_vec_squared(avatar->getPositionAgent(), sShadowDistanceOrigin) > max_dist * max_dist;
+}
+
+// FSRenderAvatarShadowCascades: other avatars and animesh, with their rigged attachments, cast only
+// into the nearest sun cascades. Each cascade draws every rigged mesh again, so in a crowd the far
+// cascades were most of the avatars' shadow cost, for shadows a few texels across. Checked where the
+// cascade is known: the avatar's own shadow draw, every rigged draw (LLRenderPass::uploadMatrixPalette)
+// and the single pass shadow recording. Your own avatar always casts.
+//static
+bool LLPipeline::fsShadowSkipsAvatar(const LLVOAvatar* avatar)
+{
+    if (!sShadowRender || gCubeSnapshot || !avatar || gPipeline.mFSSunShadowCascade < 0 || avatar->isSelf())
+    {
+        return false;
+    }
+    static LLCachedControl<U32> cascades(gSavedSettings, "FSRenderAvatarShadowCascades", 2);
+    return gPipeline.mFSSunShadowCascade >= (S32)cascades;
 }
 
 //static
