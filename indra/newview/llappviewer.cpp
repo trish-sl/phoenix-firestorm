@@ -1977,6 +1977,25 @@ bool LLAppViewer::doFrame()
                     ms_sleep(milliseconds_to_sleep);
                 }
             }
+            // <FS:Trish> FSMenuFPSLimit: the startup, login, loading, teleport and logout screens
+            // have nothing worth hundreds of frames a second. Uncapped, the world drawn behind the
+            // loading screen kept the GPU near full, and the desktop sharing it froze.
+            else if (!gHeadlessClient && (LLStartUp::getStartupState() != STATE_STARTED || gTeleportDisplay || logoutRequestSent() ||
+                     (gViewerWindow && gViewerWindow->getShowProgress())))
+            {
+                static LLCachedControl<U32> menu_fps(gSavedSettings, "FSMenuFPSLimit", 60);
+                if (menu_fps > 0)
+                {
+                    const F64 min_frame_time = 1.0 / (F64)llmax((U32)menu_fps, 5u);
+                    const S32 milliseconds_to_sleep = llclamp((S32)((min_frame_time - frameTimer.getElapsedTimeF64()) * 1000.0), 0, 200);
+                    if (milliseconds_to_sleep > 0)
+                    {
+                        LL_PROFILE_ZONE_NAMED_CATEGORY_APP("sleep menu fps");
+                        ms_sleep(milliseconds_to_sleep);
+                    }
+                }
+            }
+            // </FS:Trish>
             frameTimer.reset();
             // </FS:Ansariel>
             {

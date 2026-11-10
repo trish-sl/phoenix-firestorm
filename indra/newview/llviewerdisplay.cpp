@@ -1995,9 +1995,23 @@ namespace
         return since >= 1.0 / (F64)llclamp((F32)idle_rate, 0.5f, 120.f);
     }
 
+    // LLView::drawChildren skips views outside LLView::sDirtyRect. Without a UI buffer it only ever
+    // grows (sIsRectDirty is never cleared), so it soon covers the screen; this path clears
+    // sIsRectDirty on each redraw, after which dirtyRect() starts it over at the one view that
+    // changed, and the next draw left everything else out: parts of the UI blinked away until a
+    // later redraw. Every draw here is of the whole UI, so the whole screen is dirty.
+    void fs_ui_dirty_all()
+    {
+        if (LLView* root = LLUI::getInstance()->getRootView())
+        {
+            LLView::sDirtyRect = root->getLocalRect();
+        }
+    }
+
     void fs_render_ui_cached()
     {
         LL_PROFILE_ZONE_SCOPED_CATEGORY_UI;
+        fs_ui_dirty_all();
         // Redrawn every frame anyway: the buffer saves nothing then, so draw straight to the frame
         // as with the cap off (going through the buffer made the whole UI blink while the colour
         // picker was dragged). The buffer is stale afterwards: redraw it once the UI is idle.
