@@ -51,6 +51,7 @@
 #include <boost/date_time/posix_time/posix_time.hpp>
 #include <boost/date_time/local_time_adjustor.hpp>
 #include "llstartup.h"
+#include "fsasyncfilewriter.h" // <FS:Trish/>
 
 const S32 LOG_RECALL_SIZE = 20480;
 
@@ -433,12 +434,14 @@ void LLLogChat::saveHistory(const std::string& filename,
         return;
     }
 
-    llofstream file(LLLogChat::makeLogFileName(filename).c_str(), std::ios_base::app);
-    if (!file.is_open())
-    {
-        LL_WARNS() << "Couldn't open chat history log! - " + filename << LL_ENDL;
-        return;
-    }
+    // <FS:Trish> Opened below, after the line is built, on the file writer thread when possible
+    //llofstream file(LLLogChat::makeLogFileName(filename).c_str(), std::ios_base::app);
+    //if (!file.is_open())
+    //{
+    //    LL_WARNS() << "Couldn't open chat history log! - " + filename << LL_ENDL;
+    //    return;
+    //}
+    // </FS:Trish>
 
     std::string altered_line = line;
 
@@ -474,11 +477,32 @@ void LLLogChat::saveHistory(const std::string& filename,
         item["from"] = from;
     }
 
-    file << LLChatLogFormatter(item) << std::endl;
-
+    // <FS:Trish> Opening the file can block for seconds (busy disk, scanners) and this runs from
+    // the message handlers: append on the file writer thread, in order, and tell the history
+    // listeners once it is written.
+    //file << LLChatLogFormatter(item) << std::endl;
+    //
+    //file.close();
+    //
+    //LLLogChat::getInstance()->triggerHistorySignal();
+    std::ostringstream formatted;
+    formatted << LLChatLogFormatter(item) << std::endl;
+    const std::string log_file_name = LLLogChat::makeLogFileName(filename);
+    if (FSAsyncFileWriter::append(log_file_name, formatted.str(), []() { LLLogChat::getInstance()->triggerHistorySignal(); }))
+    {
+        return;
+    }
+    llofstream file(log_file_name.c_str(), std::ios_base::app);
+    if (!file.is_open())
+    {
+        LL_WARNS() << "Couldn't open chat history log! - " + filename << LL_ENDL;
+        return;
+    }
+    file << formatted.str();
     file.close();
 
     LLLogChat::getInstance()->triggerHistorySignal();
+    // </FS:Trish>
 }
 
 // static
