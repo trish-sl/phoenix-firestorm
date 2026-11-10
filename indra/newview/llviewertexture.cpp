@@ -2363,7 +2363,17 @@ void LLViewerFetchedTexture::scheduleCreateTexture()
                         }
                         // </FS:Trish>
                         //actually create the texture on a background thread
-                        createTexture();
+                        // <FS:Trish> FSRenderThread: without this thread's GL context when it can. A second
+                        // context shares the driver's lock with the render thread, and each upload here held
+                        // it while the render thread waited. The pixels go into the upload ring instead and the
+                        // main thread records the upload (see below).
+                        //createTexture();
+                        if (!mNeedsCreateTexture || mGLTexturep.isNull() ||
+                            !mGLTexturep->fsPrepareUpload(mRawDiscardLevel, mRawImage, mBoostLevel))
+                        {
+                            createTexture();
+                        }
+                        // </FS:Trish>
 
 #if LL_IMAGEGL_THREAD_CHECK
                         //verify data is unmodified
@@ -2385,6 +2395,20 @@ void LLViewerFetchedTexture::scheduleCreateTexture()
                         [this]()
                         {
 #endif
+                        // <FS:Trish> FSRenderThread: record the upload the texture thread staged (the usual
+                        // way here, if the ring dropped it in between)
+                        if (mGLTexturep.notNull() && mGLTexturep->fsHasPreparedUpload())
+                        {
+                            if (!mNeedsCreateTexture)
+                            {
+                                mGLTexturep->fsDropPreparedUpload();
+                            }
+                            else if (!mGLTexturep->fsCommitPreparedUpload())
+                            {
+                                createTexture();
+                            }
+                        }
+                        // </FS:Trish>
                         //finalize on main thread
                         postCreateTexture();
                         unref();

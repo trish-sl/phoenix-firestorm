@@ -134,9 +134,14 @@ namespace
         // for media updates), waits for the upload (NVIDIA) or has the main
         // thread record a glWaitSync (others), and only then posts the name
         // swap to the main thread, so everything the main thread records with
-        // the new name runs after the upload. Each thread has its own gGL, and
-        // the PBO upload ring is main thread only. Without the workers, every
-        // upload is copied into the stream inside the frame.
+        // the new name runs after the upload. Each thread has its own gGL.
+        // With the PBO upload ring (FSPerfTextureUploadPBO) the texture worker
+        // doesn't use its context for most textures: it stages the pixels in
+        // the ring and the main thread records the upload from there
+        // (LLImageGL::fsPrepareUpload), so the driver lock the contexts share
+        // is no longer held by uploads while the render thread waits for it.
+        // Without the workers, every upload is copied into the stream (or the
+        // ring) inside the frame.
         sPrevThreadedTextures = LLImageGLThread::sEnabledTextures;
         sPrevThreadedMedia = LLImageGLThread::sEnabledMedia;
         static LLCachedControl<bool> threaded_textures(gSavedSettings, "FSRenderThreadTextureThread", true);
