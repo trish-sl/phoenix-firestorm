@@ -2988,6 +2988,23 @@ bool idle_startup()
         LLMessageSystem* msg = gMessageSystem;
         LL_INFOS() << " Inventory" << LL_ENDL;
         LLInventoryModel::registerCallbacks(msg);
+        // <FS:Trish> FSFastSelfRez: the COF id is known and the inventory callbacks are in, start
+        // loading the outfit now rather than in STATE_PRECACHE (after the inventory views are
+        // built and more), so attachments are requested and the region rezzes them sooner. Others
+        // see the avatar half loaded until then. Same steps as there, which then find it started.
+        static LLCachedControl<bool> fast_self_rez(gSavedSettings, "FSFastSelfRez", true);
+        if (fast_self_rez && isAgentAvatarValid() && !gAgent.isFirstLogin() && !gAgent.isOutfitChosen())
+        {
+            LL_INFOS("Avatar") << "Starting the outfit load early (FSFastSelfRez)" << LL_ENDL;
+            gAgentWearables.notifyLoadingStarted();
+            gAgent.setOutfitChosen(true);
+            if (LLGridManager::getInstance()->isInSecondLife())
+            {
+                gAgentWearables.sendDummyAgentWearablesUpdate();
+            }
+            callAfterCOFFetch(set_flags_and_update_appearance);
+        }
+        // </FS:Trish>
         // <FS:Trish> Registered with the viewer callbacks instead: the favorites and landmarks
         // panels load cached landmark assets earlier in this state and send RegionHandleRequest
         // before this point, so their replies came in with no handler and were dropped

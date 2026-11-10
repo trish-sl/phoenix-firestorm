@@ -6151,7 +6151,7 @@
              bottom="-1">
                 <panel
                  follows="left|top"
-                 height="2066"
+                 height="2120"
                  layout="topleft"
                  left="0"
                  name="experimental_performance_settings"
@@ -7362,6 +7362,42 @@
                      tool_tip="EXPERIMENTAL. With the redraw cap on, how often the interface is redrawn while nothing uses it. Most changes (text, counters, chat) show up at this rate."
                      top="2024"
                      width="100" />
+                    <text
+                     follows="left|top"
+                     font="SansSerifBold"
+                     height="18"
+                     layout="topleft"
+                     left="15"
+                     name="fs_heading_login"
+                     top="2064"
+                     width="340">
+                        Login
+                    </text>
+                    <button
+                     follows="left|top"
+                     height="19"
+                     label="Reset to default"
+                     layout="topleft"
+                     left="370"
+                     name="reset_fs_heading_login"
+                     tool_tip="Set every option in &quot;Login&quot; back to its default value."
+                     top="2063"
+                     width="120">
+                        <button.commit_callback
+                         function="FSExperimental.ResetSection"
+                         parameter="FSFastSelfRez" />
+                    </button>
+                    <check_box
+                     control_name="FSFastSelfRez"
+                     follows="left|top"
+                     height="20"
+                     label="Load my outfit and attachments sooner after login"
+                     layout="topleft"
+                     left="35"
+                     name="fs_fsfastselfrez"
+                     tool_tip="Shortens the time other people see your avatar half loaded after you log in. The viewer starts loading your outfit as soon as your inventory list arrives instead of after the loading screen's wait, and asks the region for up to four attachments at a time instead of one. Attachments that take a long time to rez on the region side are not affected. The log gets a list of when each attachment was requested and arrived."
+                     top="2087"
+                     width="455" />
                 </panel>
             </scroll_container>
         </panel>
