@@ -29,6 +29,7 @@ uniform float max_cof;
 uniform float flare_strength;
 uniform vec3 flare_color;
 uniform vec3 sun_screen;        // xy in 0..1, z 1 when the sun is in front of the camera
+uniform float flare_ghosts;     // 1 for the sun; the moon is mostly glow, too dim for ghosts
 
 // Film grain
 uniform float grain_strength;
@@ -119,7 +120,7 @@ vec3 lensFlare(vec2 tc)
     float ang = atan(to_px.y, to_px.x);
     float spikes = pow(abs(cos(ang * 3.0)), 60.0) * exp(-d_sun * 6.0) * 0.25;
 
-    vec3 flare = vec3(glare + spikes);
+    vec3 flare = vec3(glare + spikes * flare_ghosts);
 
     // Ghosts: reflections between lens elements land on the line from the sun through the
     // centre of the frame, on both sides of it, each a soft disc with its own coating tint
@@ -134,14 +135,14 @@ vec3 lensFlare(vec2 tc)
         vec2 center = sun + axis * positions[i];
         float d = length((tc - center) * vec2(aspect, 1.0));
         float disc = 1.0 - smoothstep(radii[i] * 0.7, radii[i], d);
-        flare += tints[i] * disc * 0.07;
+        flare += tints[i] * disc * (0.07 * flare_ghosts);
     }
 
     // A faint ring around the centre of the frame, on the side facing the sun
     float ring_d = length((tc - 0.5) * vec2(aspect, 1.0));
     float ring = smoothstep(0.02, 0.0, abs(ring_d - 0.42));
     float facing = max(dot(normalize((tc - 0.5) * vec2(aspect, 1.0) + 1e-5), normalize(-axis * vec2(aspect, 1.0) + 1e-5)), 0.0);
-    flare += vec3(0.7, 0.85, 1.0) * ring * facing * 0.04;
+    flare += vec3(0.7, 0.85, 1.0) * ring * facing * (0.04 * flare_ghosts);
 
     return flare * flare_color * vis * flare_strength;
 }

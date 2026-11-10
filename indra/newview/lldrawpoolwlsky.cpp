@@ -44,6 +44,7 @@
 #include "llvowlsky.h"
 #include "llsettingsvo.h"
 #include "llviewercontrol.h"
+#include "llagent.h" // <FS:Trish/> FSRenderSeaHorizon
 
 extern bool gCubeSnapshot;
 
@@ -56,6 +57,21 @@ static LLGLSLShader* sun_shader   = NULL;
 static LLGLSLShader* moon_shader  = NULL;
 
 static float sStarTime;
+
+// <FS:Trish> Moonlight for the sky's night touches: how bright the sky sets the moon, faded in
+// over its first few degrees above the horizon. 0 while the sun is up or the moon is down.
+static F32 fs_moonlight_share()
+{
+    LLEnvironment& environment = LLEnvironment::instance();
+    LLSettingsSky::ptr_t psky = environment.getCurrentSky();
+    if (!psky || environment.getIsSunUp() || !environment.getIsMoonUp())
+    {
+        return 0.f;
+    }
+    const F32 t = llclamp(environment.getMoonDirection().mV[VZ] / 0.08f, 0.f, 1.f);
+    return llclamp((F32)psky->getMoonBrightness(), 0.f, 1.f) * t * t * (3.f - 2.f * t);
+}
+// </FS:Trish>
 
 LLDrawPoolWLSky::LLDrawPoolWLSky(void) :
     LLDrawPool(POOL_WL_SKY)
@@ -209,6 +225,43 @@ void LLDrawPoolWLSky::renderSkyHazeDeferred(const LLVector3& camPosLocal, F32 ca
 
         sky_shader->uniform1i(LLShaderMgr::SUN_UP_FACTOR, psky->getIsSunUp() ? 1 : 0);
 
+        // <FS:Trish> The moon's aureole and corona
+        static LLCachedControl<F32> moon_corona(gSavedSettings, "FSRenderMoonCorona", 1.f);
+        static LLStaticHashedString s_moon_corona("fs_moon_corona");
+        sky_shader->uniform1f(s_moon_corona, moon_corona > 0.f ? llmin((F32)moon_corona, 4.f) * fs_moonlight_share() : 0.f);
+        // The twilight bands, from just before sunset to about nine degrees below the horizon
+        static LLCachedControl<F32> twilight(gSavedSettings, "FSRenderTwilightBands", 1.f);
+        static LLStaticHashedString s_twilight("fs_twilight");
+        {
+            LLEnvironment& environment = LLEnvironment::instance();
+            const LLVector3 sun = environment.getSunDirection();
+            const F32 set = llclamp((0.12f - sun.mV[VZ]) / 0.12f, 0.f, 1.f);          // 1 once the sun is down
+            const F32 dark = llclamp((sun.mV[VZ] + 0.22f) / 0.1f, 0.f, 1.f);         // 0 once it's night
+            const F32 strength = twilight > 0.f ? llmin((F32)twilight, 2.f) * set * set * (3.f - 2.f * set) * dark * dark * (3.f - 2.f * dark) : 0.f;
+            // Agent space (z up) to the sky's (y up), as LLEnvironment::toLightNorm does it
+            sky_shader->uniform4f(s_twilight, sun.mV[VY], sun.mV[VZ], sun.mV[VX], strength);
+        }
+        // The sea to the horizon: the water ends at the draw distance, and from a camera above it the
+        // sky showed below the horizon between the water's edge and the horizon. Below the horizon the
+        // sky is drawn as the distant sea looks instead, the sky mirrored in it. Not on mainland, where
+        // land beyond the draw distance would turn into sea.
+        static LLCachedControl<bool> sea_horizon(gSavedSettings, "FSRenderSeaHorizon", true);
+        static LLStaticHashedString s_sea_horizon("fs_sea_horizon");
+        {
+            LLVector4 sea(0.f, 0.f, 0.f, 0.f);
+            LLViewerRegion* region = gAgent.getRegion();
+            LLEnvironment& environment = LLEnvironment::instance();
+            LLSettingsWater::ptr_t pwater = environment.getCurrentWater();
+            if (sea_horizon && region && pwater && region->getOwner() != GOVERNOR_LINDEN_ID &&
+                origin.mV[VZ] > environment.getWaterHeight())
+            {
+                const LLColor3 fog = pwater->getWaterFogColor();
+                sea.set(fog.mV[VRED], fog.mV[VGREEN], fog.mV[VBLUE], 1.f);
+            }
+            sky_shader->uniform4f(s_sea_horizon, sea.mV[VX], sea.mV[VY], sea.mV[VZ], sea.mV[VW]);
+        }
+        // </FS:Trish>
+
         /// Render the skydome
         renderDome(origin, camHeightLocal, sky_shader);
 
@@ -277,6 +330,14 @@ void LLDrawPoolWLSky::renderStarsDeferred(const LLVector3& camPosLocal) const
 
     gDeferredStarProgram.uniform1f(LLShaderMgr::WATER_TIME, sStarTime);
 
+    // <FS:Trish> Stars dim toward the horizon and in bright moonlight. Not in reflections,
+    // which show them at full brightness anyway.
+    static LLCachedControl<bool> star_extinction(gSavedSettings, "FSRenderStarExtinction", true);
+    static LLStaticHashedString s_star_params("fs_star_params");
+    const bool extinction = star_extinction && !LLPipeline::sReflectionRender;
+    gDeferredStarProgram.uniform2f(s_star_params, extinction ? 0.08f : 0.f, extinction ? 0.5f * fs_moonlight_share() : 0.f);
+    // </FS:Trish>
+
     gSky.mVOWLSkyp->drawStars();
 
     gGL.getTexUnit(0)->unbind(LLTexUnit::TT_TEXTURE);
@@ -340,6 +401,16 @@ void LLDrawPoolWLSky::renderSkyCloudsDeferred(const LLVector3& camPosLocal, F32 
         cloudshader->uniform1f(LLShaderMgr::BLEND_FACTOR, blend_factor);
         cloudshader->uniform1f(LLShaderMgr::CLOUD_VARIANCE, cloud_variance);
         cloudshader->uniform1f(LLShaderMgr::SUN_MOON_GLOW_FACTOR, psky->getSunMoonGlowFactor());
+        // <FS:Trish> Silver lining, with the moon's as bright as the sky sets it
+        static LLCachedControl<F32> silver_lining(gSavedSettings, "FSRenderCloudSilverLining", 1.f);
+        static LLStaticHashedString s_silver_lining("fs_silver_lining");
+        F32 lining = llclamp((F32)silver_lining, 0.f, 4.f);
+        if (!psky->getIsSunUp())
+        {
+            lining *= fs_moonlight_share();
+        }
+        cloudshader->uniform1f(s_silver_lining, lining);
+        // </FS:Trish>
 
         /// Render the skydome
         renderDome(camPosLocal, camHeightLocal, cloudshader);
@@ -405,6 +476,11 @@ void LLDrawPoolWLSky::renderHeavenlyBodies()
 
                 sun_shader->uniform4fv(LLShaderMgr::DIFFUSE_COLOR, 1, color.mV);
                 sun_shader->uniform1f(LLShaderMgr::BLEND_FACTOR, blend_factor);
+                // <FS:Trish> Limb darkening
+                static LLCachedControl<bool> sun_detail(gSavedSettings, "FSRenderSunDiscDetail", true);
+                static LLStaticHashedString s_sun_limb("fs_sun_limb");
+                sun_shader->uniform1f(s_sun_limb, sun_detail ? 0.4f : 0.f);
+                // </FS:Trish>
 
                 face->renderIndexed();
 

@@ -9237,6 +9237,9 @@ void LLPipeline::tonemap(LLRenderTarget* src, LLRenderTarget* dst, bool gamma_co
                 shader->bindTexture(LLShaderMgr::DEFERRED_BLOOM, &mBloomLevels[0], false, LLTexUnit::TFO_BILINEAR);
                 shader->uniform1f(s_bloom_strength, llmax((F32)bloom_strength, 0.f));
                 shader->uniform1f(s_bloom_levels, (F32)mBloomLevelCount);
+                static LLCachedControl<F32> halation(gSavedSettings, "FSRenderHalation", 0.5f);
+                static LLStaticHashedString s_halation("fs_halation");
+                shader->uniform1f(s_halation, llclamp((F32)halation, 0.f, 2.f));
             }
             else
             {
@@ -9245,6 +9248,18 @@ void LLPipeline::tonemap(LLRenderTarget* src, LLRenderTarget* dst, bool gamma_co
 
             bindColorGrading(shader);
             bindLocalTonemap(shader, local_tonemap);
+
+            // Night vision: fades in through twilight, from the sun a little above the horizon
+            // to about six degrees below it
+            static LLCachedControl<F32> night_vision(gSavedSettings, "FSRenderNightVision", 0.5f);
+            static LLStaticHashedString s_night_vision("fs_night_vision");
+            F32 night = 0.f;
+            if (night_vision > 0.f)
+            {
+                const F32 t = llclamp((0.05f - LLEnvironment::instance().getSunDirection().mV[VZ]) / 0.15f, 0.f, 1.f);
+                night = llmin((F32)night_vision, 1.f) * t * t * (3.f - 2.f * t);
+            }
+            shader->uniform1f(s_night_vision, night);
         }
         // </FS:Trish>
         fs_set_deband(*shader, gamma_correct && dst == &mPostPingMap && fs_post_chain_8bit() && !isAvatarOnlyRender()); // <FS:Trish/> Debanding dither, not under the avatars only matte
@@ -10977,6 +10992,16 @@ static void fs_bind_water_caustics(LLGLSLShader& shader)
 }
 // </FS:Trish>
 
+// <FS:Trish> Backlit foliage: strength of the sunlight seen through alpha masked leaves, for
+// softenLightF.glsl. Programs built without FS_FOLIAGE have no such uniform.
+static void fs_bind_foliage(LLGLSLShader& shader)
+{
+    static LLCachedControl<F32> strength(gSavedSettings, "FSRenderFoliageStrength", 1.f);
+    static LLStaticHashedString s_foliage("fs_foliage");
+    shader.uniform1f(s_foliage, llclamp((F32)strength, 0.f, 4.f));
+}
+// </FS:Trish>
+
 // <FS:Trish> Wet shoreline band: uniforms for fsWetShoreF.glsl in the sun light pass. The swells
 // stand still in reflection probe captures, which keep one frame of them.
 static void fs_bind_wet_shore(LLGLSLShader& shader)
@@ -11594,6 +11619,7 @@ void LLPipeline::renderDeferredLighting()
             soften_shader.uniform4fv(LLShaderMgr::WATER_WATERPLANE, 1, LLDrawPoolAlpha::sWaterPlane.mV);
             fs_bind_water_caustics(soften_shader); // <FS:Trish/>
             fs_bind_wet_shore(soften_shader); // <FS:Trish/>
+            fs_bind_foliage(soften_shader); // <FS:Trish/>
 
             {
                 LLGLDepthTest depth(GL_FALSE);
@@ -15220,15 +15246,17 @@ void LLPipeline::renderSpotVolumetrics()
         return;
     }
 
-    // The projectors to march, nearest first: those holding a shadow slot, then, if asked for,
-    // the other projectors near the camera
+    // The projectors to march, nearest first: those holding a shadow slot, then the other
+    // projectors near the camera (all of them, if asked for, else those within the near range)
     struct VolumeLight
     {
         LLDrawable* mDrawable;
         F32 mDistance;
         S32 mSlot;      // shadow slot, -1 for none
+        F32 mWeight;    // fade in and out, 0 to 1
     };
     std::vector<VolumeLight> lights;
+    static LLCachedControl<F32> near_range(gSavedSettings, "FSRenderSpotVolumetricNearRange", 20.f);
 
     LLViewerCamera* camera = LLViewerCamera::getInstance();
     const LLVector3 eye = camera->getOrigin();
@@ -15257,10 +15285,11 @@ void LLPipeline::renderSpotVolumetrics()
         LLDrawable* drawable = mShadowSpotLight[slot];
         if (usable(drawable) && mSpotShadow[slot].isComplete())
         {
-            lights.push_back({ drawable, dist_vec(eye, drawable->getPositionAgent()), (S32)slot });
+            lights.push_back({ drawable, dist_vec(eye, drawable->getPositionAgent()), (S32)slot, 0.f });
         }
     }
-    if (unshadowed)
+    const F32 near_limit = llmax((F32)near_range, 0.f);
+    if (unshadowed || near_limit > 0.f)
     {
         for (const Light& light : mNearbyLights)
         {
@@ -15272,16 +15301,43 @@ void LLPipeline::renderSpotVolumetrics()
             }
             if (!listed && usable(drawable))
             {
-                lights.push_back({ drawable, dist_vec(eye, drawable->getPositionAgent()), -1 });
+                const F32 distance = dist_vec(eye, drawable->getPositionAgent());
+                if (unshadowed || distance < near_limit)
+                {
+                    lights.push_back({ drawable, distance, -1, 0.f });
+                }
             }
         }
     }
+    std::sort(lights.begin(), lights.end(), [](const VolumeLight& a, const VolumeLight& b) { return a.mDistance < b.mDistance; });
+
+    // The nearest max_lights are wanted. A light fades in when it becomes one of them and out
+    // when it stops being one, rather than popping, and goes on being drawn while it fades out.
+    // The weights live as long as the light stays a candidate: one that leaves the frustum or
+    // the nearby lights is dropped at once. The pointers are only compared, never followed.
+    static std::unordered_map<const LLDrawable*, F32> s_weights;
+    std::unordered_map<const LLDrawable*, F32> weights;
+    const size_t wanted = (size_t)llclamp((S32)max_lights, 1, 16);
+    const F32 step = llclamp(gFrameIntervalSeconds.value(), 0.f, 0.1f) / 0.35f;
+    std::vector<VolumeLight> drawn;
+    for (size_t i = 0; i < lights.size(); ++i)
+    {
+        auto it = s_weights.find(lights[i].mDrawable);
+        F32 w = it != s_weights.end() ? it->second : 0.f;
+        w = i < wanted ? llmin(w + step, 1.f) : llmax(w - step, 0.f);
+        if (w > 0.f && drawn.size() < wanted + 4)
+        {
+            weights[lights[i].mDrawable] = w;
+            drawn.push_back(lights[i]);
+            drawn.back().mWeight = w;
+        }
+    }
+    s_weights.swap(weights);
+    lights.swap(drawn);
     if (lights.empty())
     {
         return;
     }
-    std::sort(lights.begin(), lights.end(), [](const VolumeLight& a, const VolumeLight& b) { return a.mDistance < b.mDistance; });
-    lights.resize(llmin(lights.size(), (size_t)llclamp((S32)max_lights, 1, 8)));
 
     LL_PROFILE_GPU_ZONE("spot volumetrics");
 
@@ -15375,7 +15431,7 @@ void LLPipeline::renderSpotVolumetrics()
             shader.uniform3fv(LLShaderMgr::LIGHT_CENTER, 1, glm::value_ptr(center));
             shader.uniform1f(LLShaderMgr::LIGHT_SIZE, s);
             shader.uniform1f(LLShaderMgr::LIGHT_FALLOFF, volume->getLightFalloff(DEFERRED_LIGHT_FALLOFF));
-            LLColor3 col = volume->getLightLinearColor();
+            LLColor3 col = volume->getLightLinearColor() * light.mWeight;
             shader.uniform3fv(LLShaderMgr::DIFFUSE_COLOR, 1, col.mV);
 
             LLViewerTexture* img = volume->getLightTexture();
@@ -15427,10 +15483,60 @@ void LLPipeline::renderSpotVolumetrics()
             }
             // </FS:Trish>
 
-            // The first light also writes the distances into alpha, the others add colour only
+            // The first light also writes the distances into alpha, the others add colour only,
+            // so the others only need the pixels their light's sphere covers: a scissor around
+            // its projected bounds, unless the camera is in or near it
             gGL.setColorMask(true, first);
+            bool scissored = false;
+            S32 scissor_rect[4] = { 0, 0, 0, 0 };
+            if (!first)
+            {
+                const glm::mat4 view_proj = get_current_projection() * modelview;
+                F32 min_x = 1.f, min_y = 1.f, max_x = -1.f, max_y = -1.f;
+                bool behind = false;
+                for (S32 corner = 0; corner < 8 && !behind; ++corner)
+                {
+                    const glm::vec4 c = view_proj * glm::vec4(pos.mV[VX] + ((corner & 1) ? s : -s),
+                                                               pos.mV[VY] + ((corner & 2) ? s : -s),
+                                                               pos.mV[VZ] + ((corner & 4) ? s : -s), 1.f);
+                    if (c.w < 0.1f)
+                    {
+                        behind = true; // a corner at or behind the camera: the bounds are the screen
+                        break;
+                    }
+                    min_x = llmin(min_x, c.x / c.w);
+                    max_x = llmax(max_x, c.x / c.w);
+                    min_y = llmin(min_y, c.y / c.w);
+                    max_y = llmax(max_y, c.y / c.w);
+                }
+                if (!behind)
+                {
+                    const S32 x0 = llclamp((S32)floorf((min_x * 0.5f + 0.5f) * width) - 2, 0, (S32)width);
+                    const S32 x1 = llclamp((S32)ceilf((max_x * 0.5f + 0.5f) * width) + 2, 0, (S32)width);
+                    const S32 y0 = llclamp((S32)floorf((min_y * 0.5f + 0.5f) * height) - 2, 0, (S32)height);
+                    const S32 y1 = llclamp((S32)ceilf((max_y * 0.5f + 0.5f) * height) + 2, 0, (S32)height);
+                    if (x1 <= x0 || y1 <= y0)
+                    {
+                        continue; // off screen
+                    }
+                    scissor_rect[0] = x0;
+                    scissor_rect[1] = y0;
+                    scissor_rect[2] = x1 - x0;
+                    scissor_rect[3] = y1 - y0;
+                    scissored = true;
+                }
+            }
             first = false;
-            fs_draw_screen_triangle(mScreenTriangleVB);
+            if (scissored)
+            {
+                LLGLEnable scissor_test(GL_SCISSOR_TEST);
+                glScissor(scissor_rect[0], scissor_rect[1], scissor_rect[2], scissor_rect[3]);
+                fs_draw_screen_triangle(mScreenTriangleVB);
+            }
+            else
+            {
+                fs_draw_screen_triangle(mScreenTriangleVB);
+            }
         }
 
         shader.disableTexture(LLShaderMgr::DEFERRED_PROJECTION);
@@ -15745,6 +15851,8 @@ void LLPipeline::renderBloom()
         {
             level.release(); // a no-op on a released target
         }
+        mBloomStreak[0].release();
+        mBloomStreak[1].release();
         return;
     }
     // the tonemap pass only reads bloom when it runs the post programs
@@ -15814,6 +15922,46 @@ void LLPipeline::renderBloom()
         gFSBloomDownProgram.unbind();
     }
 
+    // Anamorphic streaks: blur the second level sideways before the up pass adds the smaller levels
+    // into it, so only its own bright parts streak
+    static LLCachedControl<F32> streaks(gSavedSettings, "FSRenderAnamorphicStreaks", 0.3f);
+    static LLStaticHashedString s_streak_step("streak_step");
+    static LLStaticHashedString s_streak_gain("streak_gain");
+    const F32 streak_strength = llclamp((F32)streaks, 0.f, 4.f);
+    bool streaked = false;
+    if (streak_strength > 0.f && count >= 2 && gFSBloomStreakProgram.isComplete())
+    {
+        LLRenderTarget& src = mBloomLevels[1];
+        if (fs_ensure_target(mBloomStreak[0], src.getWidth(), src.getHeight(), GL_RGBA16F) &&
+            fs_ensure_target(mBloomStreak[1], src.getWidth(), src.getHeight(), GL_RGBA16F))
+        {
+            LL_PROFILE_GPU_ZONE("bloom streaks");
+            LLGLDisable blend(GL_BLEND);
+            gFSBloomStreakProgram.bind();
+            gFSBloomStreakProgram.uniform2f(s_src_texel, 1.f / (F32)src.getWidth(), 1.f / (F32)src.getHeight());
+            gFSBloomStreakProgram.uniform3f(s_streak_gain, 1.f, 1.f, 1.f);
+            // Steps of 1, 5 and 25 texels: about 125 texels each way, a quarter of the screen width
+            LLRenderTarget* pass_src[3] = { &src, &mBloomStreak[0], &mBloomStreak[1] };
+            LLRenderTarget* pass_dst[3] = { &mBloomStreak[0], &mBloomStreak[1], &mBloomStreak[0] };
+            const F32 pass_step[3] = { 1.f, 5.f, 25.f };
+            for (U32 i = 0; i < 3; ++i)
+            {
+                pass_dst[i]->bindTarget();
+                gFSBloomStreakProgram.bindTexture(LLShaderMgr::DEFERRED_DIFFUSE, pass_src[i], false, LLTexUnit::TFO_BILINEAR);
+                gFSBloomStreakProgram.uniform1f(s_streak_step, pass_step[i]);
+                fs_draw_screen_triangle(mScreenTriangleVB);
+                pass_dst[i]->flush();
+            }
+            gFSBloomStreakProgram.unbind();
+            streaked = true;
+        }
+    }
+    else
+    {
+        mBloomStreak[0].release();
+        mBloomStreak[1].release();
+    }
+
     // Back up, each level added onto the next larger one
     {
         LLGLEnable blend(GL_BLEND);
@@ -15829,6 +15977,22 @@ void LLPipeline::renderBloom()
             mBloomLevels[i - 1].flush();
         }
         gFSBloomUpProgram.unbind();
+
+        // The streaks, tinted the cool blue of an anamorphic flare, added into the summed bloom.
+        // The tonemap pass divides the bloom by the level count, so the gain takes it back out.
+        if (streaked)
+        {
+            gFSBloomStreakProgram.bind();
+            mBloomLevels[0].bindTarget();
+            gFSBloomStreakProgram.bindTexture(LLShaderMgr::DEFERRED_DIFFUSE, &mBloomStreak[0], false, LLTexUnit::TFO_BILINEAR);
+            gFSBloomStreakProgram.uniform2f(s_src_texel, 1.f / (F32)mBloomStreak[0].getWidth(), 1.f / (F32)mBloomStreak[0].getHeight());
+            gFSBloomStreakProgram.uniform1f(s_streak_step, 0.f);
+            const F32 gain = streak_strength * 6.f * (F32)count;
+            gFSBloomStreakProgram.uniform3f(s_streak_gain, 0.55f * gain, 0.75f * gain, 1.2f * gain);
+            fs_draw_screen_triangle(mScreenTriangleVB);
+            mBloomLevels[0].flush();
+            gFSBloomStreakProgram.unbind();
+        }
         gGL.setSceneBlendType(LLRender::BT_ALPHA);
     }
 
@@ -16179,6 +16343,7 @@ bool LLPipeline::renderLensEffects(LLRenderTarget* src, LLRenderTarget* dst)
     // Where the sun or moon lands on screen
     LLVector3 sun_screen(0.f, 0.f, 0.f);
     LLColor3 flare_color(1.f, 1.f, 1.f);
+    F32 flare_ghosts = 1.f;
     if (flare > 0.f)
     {
         LLEnvironment& environment = LLEnvironment::instance();
@@ -16195,12 +16360,21 @@ bool LLPipeline::renderLensEffects(LLRenderTarget* src, LLRenderTarget* dst)
             {
                 sun_screen.set(clip.x / clip.w * 0.5f + 0.5f, clip.y / clip.w * 0.5f + 0.5f, 1.f);
             }
-            LLColor3 light = sun_up ? LLColor3(mSunDiffuse.mV) : LLColor3(mMoonDiffuse.mV) * 0.35f;
+            // Only the colour: the strength is set below
+            LLColor3 light = sun_up ? LLColor3(mSunDiffuse.mV) : LLColor3(mMoonDiffuse.mV);
             const F32 peak = llmax(light.mV[0], llmax(light.mV[1], light.mV[2]));
             flare_color = peak > 0.f ? light * (1.f / peak) : LLColor3::white;
             if (!sun_up)
             {
-                flare *= 0.35f;
+                // The moon is far dimmer than the sun, but the flare lands on the finished image,
+                // where the night is exposed up: a fixed share of the sun's flare glared out of the
+                // dark. Its own strength, scaled by how bright the sky sets the moon, and mostly
+                // the glow around it: ghosts need a light far brighter than the moon.
+                static LLCachedControl<F32> moon_flare(gSavedSettings, "FSRenderLensFlareMoon", 0.15f);
+                LLSettingsSky::ptr_t psky = environment.getCurrentSky();
+                const F32 moon_brightness = psky ? llclamp((F32)psky->getMoonBrightness(), 0.f, 1.f) : 1.f;
+                flare *= llclamp((F32)moon_flare, 0.f, 1.f) * moon_brightness;
+                flare_ghosts = 0.15f;
             }
         }
     }
@@ -16217,6 +16391,7 @@ bool LLPipeline::renderLensEffects(LLRenderTarget* src, LLRenderTarget* dst)
     static LLStaticHashedString s_flare_strength("flare_strength");
     static LLStaticHashedString s_flare_color("flare_color");
     static LLStaticHashedString s_sun_screen("sun_screen");
+    static LLStaticHashedString s_flare_ghosts("flare_ghosts");
     static LLStaticHashedString s_grain_strength("grain_strength");
     static LLStaticHashedString s_grain_size("grain_size");
     static LLStaticHashedString s_grain_seed("grain_seed");
@@ -16242,6 +16417,7 @@ bool LLPipeline::renderLensEffects(LLRenderTarget* src, LLRenderTarget* dst)
     shader.uniform1f(s_flare_strength, flare);
     shader.uniform3fv(s_flare_color, 1, flare_color.mV);
     shader.uniform3fv(s_sun_screen, 1, sun_screen.mV);
+    shader.uniform1f(s_flare_ghosts, flare_ghosts);
 
     shader.uniform1f(s_grain_strength, grain * 0.25f);
     // grain size is set in screen pixels, the shader works in target pixels

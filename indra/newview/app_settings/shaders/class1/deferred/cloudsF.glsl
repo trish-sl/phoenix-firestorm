@@ -67,6 +67,8 @@ uniform float sun_moon_glow_factor;
 
 uniform vec3 cloud_color;
 
+uniform float fs_silver_lining; // strength, 0 is off
+
 vec4 cloudNoise(vec2 uv)
 {
    // blend_factor is uniform: endpoint skies need only one texture lookup.
@@ -226,6 +228,19 @@ void main()
     color = (cloudColorSun*(1.-alpha2) + cloudColorAmbient);
     color.rgb = clamp(color.rgb, vec3(0), vec3(1));
     color.rgb *= 2.0;
+
+    if (fs_silver_lining > 0.0)
+    {
+        // Silver lining: near the sun or moon, light scattered forward through the cloud. Thick
+        // cloud soaks it up, so it shows where the cloud is thin: blended by alpha1, the
+        // (1 - alpha1) here puts it on the edges. Self shadowed parts get less.
+        vec3 light = (sun_up_factor == 1) ? sunlight_color : moonlight_color;
+        light *= exp(-light_atten / max(1e-6, lightnorm.y * 2.));
+        float cos_a = dot(rel_pos_norm, lightnorm.xyz);
+        float forward = exp((cos_a - 1.0) * 40.0) * 1.5 + exp((cos_a - 1.0) * 8.0) * 0.3;
+        float lining = forward * (1.0 - alpha1) * (1.0 - 0.5 * alpha2) * smoothstep(0.0, 0.1, lightnorm.y);
+        color.rgb += light * lining * fs_silver_lining;
+    }
 
     /// Gamma correct for WL (soft clip effect).
 

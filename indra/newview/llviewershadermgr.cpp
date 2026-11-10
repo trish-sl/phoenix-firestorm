@@ -219,6 +219,7 @@ LLGLSLShader            gFSDustMotesProgram; // <FS:Trish/> Dust motes
 LLGLSLShader            gFSBloomPrefilterProgram;
 LLGLSLShader            gFSBloomDownProgram;
 LLGLSLShader            gFSBloomUpProgram;
+LLGLSLShader            gFSBloomStreakProgram; // <FS:Trish/> Anamorphic streaks
 LLGLSLShader            gFSLensDirtProgram;
 LLGLSLShader            gFSLensEffectsProgram;
 LLGLSLShader            gFSAvatarMatteProgram;
@@ -1315,6 +1316,13 @@ std::string LLViewerShaderMgr::loadBasicShaders()
     {
         attribs["FS_SKIN_SSS"] = "1";
     }
+    // Backlit foliage: alpha masked g-buffer writers mark their pixels (FS_MASK_FLAG) and the sun
+    // light pass lights them from behind
+    static LLCachedControl<bool> fs_foliage(gSavedSettings, "FSRenderFoliage", true);
+    if (fs_foliage)
+    {
+        attribs["FS_FOLIAGE"] = "1";
+    }
     // </FS:Trish>
 
     // <FS:Trish> Exponential height fog (fsHeightFogF.glsl), attached next to waterFogF.glsl
@@ -1725,6 +1733,7 @@ bool LLViewerShaderMgr::loadShadersDeferred()
         gFSBloomPrefilterProgram.unload();
         gFSBloomDownProgram.unload();
         gFSBloomUpProgram.unload();
+        gFSBloomStreakProgram.unload(); // <FS:Trish/> Anamorphic streaks
         gFSLensDirtProgram.unload();
         gFSLensEffectsProgram.unload();
         gFSAvatarMatteProgram.unload();
@@ -3402,6 +3411,7 @@ bool LLViewerShaderMgr::loadShadersDeferred()
             { &gFSBloomPrefilterProgram,   "FS Bloom Prefilter",    "deferred/fsBloomPrefilterF.glsl",   false },
             { &gFSBloomDownProgram,        "FS Bloom Downsample",   "deferred/fsBloomDownF.glsl",        false },
             { &gFSBloomUpProgram,          "FS Bloom Upsample",     "deferred/fsBloomUpF.glsl",          false },
+            { &gFSBloomStreakProgram,      "FS Bloom Streak",       "deferred/fsBloomStreakF.glsl",      false }, // <FS:Trish/> Anamorphic streaks
             { &gFSLensDirtProgram,         "FS Lens Dirt",          "deferred/fsLensDirtF.glsl",         false },
             { &gFSLensEffectsProgram,      "FS Lens Effects",       "deferred/fsLensEffectsF.glsl",      false },
             { &gFSAvatarMatteProgram,      "FS Avatar Matte",       "deferred/fsAvatarMatteF.glsl",      false },

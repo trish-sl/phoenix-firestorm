@@ -47,6 +47,7 @@ uniform vec4 waterFogColor;
 uniform vec3 waterFogColorLinear;
 uniform float waterFogKS;
 uniform vec2 screenRes;
+uniform float fs_snell_window;    // strength of Snell's window, 0 is off
 
 //bigWave is (refCoord.w, view.w);
 in vec4 refCoord;
@@ -60,6 +61,36 @@ float fsWaterFoam(vec2 screen_tc, vec3 pos, vec3 up, vec2 view_offset);
 #endif
 
 vec4 applyWaterFogViewLinearNoClip(vec3 pos, vec4 color);
+
+// Snell's window: from below, light from above the water only gets through within the critical
+// angle of the surface normal (48.6 degrees for water into air), a cone about 97 degrees wide.
+// Toward its rim the surface reflects more and more (Fresnel from the water side), and past it
+// the reflection is total: the underside of the surface mirrors the depths. The waves tilt the
+// normal, so the rim ripples. Returns how much of the view from above gets through.
+float fsSnellTransmission(vec3 pos, vec3 wavef)
+{
+    vec3 n = normalize(waterPlane.xyz);
+    vec3 t = cross(n, vec3(0.0, 0.0, 1.0));
+    t = dot(t, t) > 1e-4 ? normalize(t) : vec3(1.0, 0.0, 0.0);
+    vec3 b = cross(n, t);
+    n = normalize(n + 0.12 * (wavef.x * t + wavef.y * b));
+
+    float c = dot(normalize(pos), n);         // cosine of the angle to the normal, inside the water
+    if (c <= 0.0)
+    {
+        return 1.0;                           // not looking up at the surface
+    }
+    const float eta = 1.333;
+    float sin_t2 = eta * eta * (1.0 - c * c);
+    if (sin_t2 >= 1.0)
+    {
+        return 0.0;
+    }
+    float ct = sqrt(1.0 - sin_t2);
+    float rs = (eta * c - ct) / (eta * c + ct);
+    float rp = (eta * ct - c) / (eta * ct + c);
+    return 1.0 - 0.5 * (rs * rs + rp * rp);
+}
 void mirrorClip(vec3 position);
 
 void main()
@@ -96,6 +127,14 @@ void main()
         fb.rgb = mix(fb.rgb, vec3(luma * 1.4 + 0.02), foam * 0.7);
     }
 #endif
+
+    if (fs_snell_window > 0.0)
+    {
+        // Outside the window the surface mirrors the deep water below it
+        float transmit = fsSnellTransmission(vary_position, wavef);
+        transmit = mix(1.0, transmit, clamp(fs_snell_window, 0.0, 1.0) * water_mask);
+        fb.rgb = mix(waterFogColorLinear, fb.rgb, transmit);
+    }
 
     fb = applyWaterFogViewLinearNoClip(vary_position, fb);
 

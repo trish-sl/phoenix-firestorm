@@ -707,6 +707,24 @@ GLuint LLShaderMgr::loadShaderFile(const std::string& filename, S32 & shader_lev
                                                      "#undef GBUFFER_FLAG_HAS_PBR\n#define GBUFFER_FLAG_HAS_PBR 0.72\n"
                                                      "#endif\n");
     }
+    // Backlit foliage (FSRenderFoliage): alpha masked g-buffer writers (leaves, grass) bias their
+    // flag by -0.05 through FS_MASK_FLAG so softenLightF.glsl can find them. Avatars keep the
+    // skin marking above. Still within GET_GBUFFER_FLAG's 0.1 tolerance for every other reader.
+    if (type == GL_FRAGMENT_SHADER)
+    {
+        if (LLGLSLShader::sGlobalDefines.count("FS_FOLIAGE"))
+        {
+            extra_code_text[extra_code_count++] = strdup("#if defined(HAS_SKIN) || defined(AVATAR_CLOTH)\n"
+                                                         "#define FS_MASK_FLAG(f, masked) (f)\n"
+                                                         "#else\n"
+                                                         "#define FS_MASK_FLAG(f, masked) ((masked) ? (f) - 0.05 : (f))\n"
+                                                         "#endif\n");
+        }
+        else
+        {
+            extra_code_text[extra_code_count++] = strdup("#define FS_MASK_FLAG(f, masked) (f)\n");
+        }
+    }
     // </FS:Trish>
 
     if( gGLManager.mIsAMD )

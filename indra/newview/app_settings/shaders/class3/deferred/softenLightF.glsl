@@ -86,6 +86,9 @@ uniform vec4 waterPlane;
 #ifdef FS_WATER_CAUSTICS
 float fsWaterCaustics(vec3 pos, vec3 norm, vec3 light_dir, vec4 water_plane);
 #endif
+#ifdef FS_FOLIAGE
+uniform float fs_foliage; // strength of the sunlight seen through backlit leaves, 0 off
+#endif
 #ifdef FS_WET_SHORE
 float fsWetShore(vec3 pos, vec3 norm, vec4 water_plane);
 #endif
@@ -217,6 +220,25 @@ void main()
 #endif
     vec3 amblit_linear = amblit;
 
+    // Backlit foliage: alpha masked surfaces (leaves, grass, flagged through FS_MASK_FLAG) are thin,
+    // so with the sun behind them they glow with the light coming through. That is the case when
+    // the sun and the eye are on opposite sides of the surface; the normal's sign does not matter,
+    // as single sided leaves seen from behind keep their front normal. Strongest looking toward
+    // the sun, under the leaf's own sun shadow so a leaf deep in the canopy stays dark.
+    vec3 fs_leaf_light = vec3(0);
+#ifdef FS_FOLIAGE
+    if (fs_foliage > 0.0 &&
+        (abs(gb.gbufferFlag - (GBUFFER_FLAG_HAS_ATMOS - 0.05)) < 0.02 || abs(gb.gbufferFlag - (GBUFFER_FLAG_HAS_PBR - 0.05)) < 0.02))
+    {
+        vec3 to_eye = -normalize(pos.xyz);
+        float nl = dot(gb.normal, light_dir);
+        float nv = dot(gb.normal, to_eye);
+        float through = nl * nv < 0.0 ? abs(nl) : 0.0;
+        float toward_sun = pow(max(dot(-to_eye, light_dir), 0.0), 4.0);
+        fs_leaf_light = sunlit_linear * (scol * through * mix(0.35, 1.0, toward_sun) * fs_foliage);
+    }
+#endif
+
 #ifdef FS_WATER_CAUSTICS
     // Sunlight focused by the waves onto surfaces under the water, on the diffuse albedo and
     // under the same sun shadow (fsCausticsF.glsl). Taken before the branches below modify scol.
@@ -284,6 +306,8 @@ void main()
         // occlusion; SSAO measures larger scale geometry, not the bumps the normal map draws.
         float micro = fsMicroShadow(dot(gb.normal, light_dir), ao);
         color = pbrBaseLight(diffuseColor, specularColor, metallic, v, gb.normal, perceptualRoughness, light_dir, sunlit_linear, scol, radiance, irradiance, colorEmissive, visibility, additive, atten, micro);
+        // Light through the leaf takes its colour twice, so it comes out more saturated
+        color += fs_leaf_light * diffuseColor * diffuseColor / max(dot(diffuseColor, vec3(0.3333)), 0.05);
     }
     else if (GET_GBUFFER_FLAG(gb.gbufferFlag, GBUFFER_FLAG_HAS_HDRI))
     {
@@ -358,6 +382,8 @@ void main()
         }
 
         color.rgb *= baseColor.rgb;
+        // Backlit foliage, more saturated as in the PBR branch
+        color.rgb += fs_leaf_light * baseColor.rgb * baseColor.rgb / max(dot(baseColor.rgb, vec3(0.3333)), 0.05);
 
         vec3 refnormpersp = reflect(pos.xyz, gb.normal);
 

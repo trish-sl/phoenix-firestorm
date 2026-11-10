@@ -72,6 +72,9 @@ uniform sampler2D lightMap;         // log2 luminance at a quarter size, with mi
 uniform vec4 local_tm_params;       // x on, y strength, z detail boost
 uniform vec2 local_tm_lods;         // fine and coarse base levels
 
+uniform float fs_night_vision;      // strength times how dark the sky is, 0 by day or when off
+uniform float fs_halation;          // share of the bloom that comes back as halation, 0 is off
+
 // Compresses the large scale contrast toward the frame's average and keeps (or boosts) the
 // detail on top of it. The base is the coarse level where it agrees with the fine one and the
 // fine one across strong edges, so a bright window doesn't leave a dark halo around it.
@@ -88,6 +91,18 @@ vec3 localTonemap(vec3 c)
     float detail = clamp(L - base, -4.0, 4.0);
     float stops = (key - base) * local_tm_params.y + detail * (local_tm_params.z - 1.0);
     return c * exp2(clamp(stops, -6.0, 6.0));
+}
+
+// Night vision: in the dark the eye's rods take over from the cones. They can't tell colours
+// apart and are most sensitive to blue-green light, so dark parts of a night scene lose their
+// colour and shift toward blue, while lit parts (lamps, fires, the moon) keep theirs. Works on
+// the tone mapped image, so it follows what is dark on screen, whatever the exposure.
+vec3 fsNightVision(vec3 c)
+{
+    float luma = dot(c, vec3(0.2126, 0.7152, 0.0722));
+    float rods = dot(c, vec3(0.06, 0.56, 0.38));     // scotopic response, peak near 500 nm
+    float w = fs_night_vision * (1.0 - smoothstep(0.0, 0.25, luma));
+    return mix(c, rods * vec3(0.72, 0.9, 1.25), w);
 }
 
 float gradeLuma(vec3 c)
@@ -164,6 +179,11 @@ void main()
         // only what passed the threshold, so it adds light around bright areas.
         vec3 bloom = texture(bloomMap, vary_fragcoord).rgb / max(bloom_levels, 1.0);
         diff.rgb += bloom * bloom_strength;
+        // Halation: on film, light from bright highlights goes through the emulsion, reflects
+        // off the back of the film and exposes the red layer around them again: a warm glow
+        // close around lamps, neon and the sun. The bloom is that light spread, so a warm share
+        // of it is added back.
+        diff.rgb += bloom * (bloom_strength * fs_halation) * vec3(0.9, 0.35, 0.12);
     }
 
     if (local_tm_params.x > 0.0)
@@ -177,6 +197,11 @@ void main()
     }
 
     diff.rgb = toneMap(diff.rgb);
+
+    if (fs_night_vision > 0.0)
+    {
+        diff.rgb = fsNightVision(diff.rgb);
+    }
 
     if (grade_enabled != 0)
     {

@@ -34,6 +34,7 @@ in vec2 texcoord0;
 out vec4 vertex_color;
 out vec2 vary_texcoord0;
 out vec2 screenpos;
+out float star_elevation;    // sine of the star's height above the horizon
 
 void main()
 {
@@ -51,4 +52,5 @@ void main()
     screenpos = position.xy * vec2(t, t);
     vary_texcoord0 = (texture_matrix0 * vec4(texcoord0,0,1)).xy;
     vertex_color = diffuse_color;
+    star_elevation = position.z / max(length(position), 1e-3); // the dome only turns about the vertical
 }
