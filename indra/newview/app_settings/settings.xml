@@ -25742,6 +25742,17 @@ Change of this parameter will affect the layout of buttons in notification toast
       <key>Value</key>
       <integer>1</integer>
     </map>
+    <key>FSMenuFPSLimit</key>
+    <map>
+      <key>Comment</key>
+      <string>Frame rate cap for the startup, login, loading, teleport and logout screens, where nothing needs more. Uncapped, the GPU runs flat out there and can freeze the desktop. 0 is no cap.</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>U32</string>
+      <key>Value</key>
+      <integer>60</integer>
+    </map>
     <key>FSLimitFramerate</key>
       <map>
       <key>Comment</key>
