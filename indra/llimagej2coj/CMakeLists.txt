@@ -11,12 +11,14 @@ include(LLImage)
 include(OpenJPEG)
 
 set(llimagej2coj_SOURCE_FILES
+    fsopjheap.cpp
     llimagej2coj.cpp
     )
 
 set(llimagej2coj_HEADER_FILES
     CMakeLists.txt
 
+    fsopjheap.h
     llimagej2coj.h
     )
 

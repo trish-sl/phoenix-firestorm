@@ -29404,6 +29404,17 @@ Change of this parameter will affect the layout of buttons in notification toast
       <key>Value</key>
       <integer>0</integer>
     </map>
+    <key>FSPerfOpenJPEGBufferCacheMB</key>
+    <map>
+      <key>Comment</key>
+      <string>Builds decoding textures with OpenJPEG (not Kakadu) only. How much of the decoder's large working buffers each texture decode thread keeps for its next decode, in MB, instead of returning them to Windows and getting them back fresh, page by page, every decode. Saves the bursts of page faults that make the whole computer sluggish while many textures decode at once (logging in, arriving somewhere). The memory stays with the decode threads, at most this much each. 0 turns it off. Takes effect after a restart.</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>U32</string>
+      <key>Value</key>
+      <integer>64</integer>
+    </map>
     <key>FSLowPriorityTextureThreads</key>
     <map>
       <key>Comment</key>

@@ -107,7 +107,9 @@ namespace
 //static
 bool LLViewerTexture::fsUnderDownscalePressure()
 {
-    return sDesiredDiscardBias > FS_DOWNSCALE_MIN_BIAS;
+    // The bias can be held up for a while after memory ran out; shrinking textures then only
+    // makes them load again, so it also takes memory being tight now
+    return sFSVRAMTight && sDesiredDiscardBias > FS_DOWNSCALE_MIN_BIAS;
 }
 
 //static
@@ -126,6 +128,7 @@ U32 LLViewerTexture::sBiasTexturesUpdated = 0;
 F32 LLViewerTexture::sVRAMUsedMegabytes = 0.f;
 F32 LLViewerTexture::sVRAMTargetMegabytes = 0.f;
 bool LLViewerTexture::sSystemMemoryLow = false;
+bool LLViewerTexture::sFSVRAMTight = false;
 S32 LLViewerTexture::sVRAMLiveFreeMegabytes = -1;
 // </FS:Trish>
 
@@ -704,6 +707,7 @@ void LLViewerTexture::updateClass()
 
     bool is_sys_low = isSystemMemoryLow();
     bool is_low = is_sys_low || over_pct > 0.f;
+    bool vram_tight = is_low; // <FS:Trish/> textures may be shrunk (see fsUnderDownscalePressure)
 
     // <FS:Trish>
     sVRAMUsedMegabytes = used;
@@ -823,6 +827,34 @@ void LLViewerTexture::updateClass()
         {
             FREE_PERCENTAGE_TRESHOLD = llmin(FREE_PERCENTAGE_TRESHOLD, -soft_zone - 0.15f);
         }
+        // <FS:Trish> Textures are only shrunk while memory is actually tight: in the soft zone (or
+        // close to the target without one). A bias held up after running out still keeps new
+        // loads smaller, but no longer shrinks textures while there is plenty of room.
+        vram_tight = over_pct > -llmax(soft_zone, 0.1f);
+        // The hold over the bias that last ran out of memory relaxes while there is room: slowly,
+        // or a teleport's hold in settled steps. Both lowering paths below use it, so it can't
+        // stay put while usage sits between the soft zone and the lowering threshold.
+        auto relax_hold = [&]()
+        {
+            constexpr F32 HOLD_DECAY = 0.005f;              // per second
+            constexpr F32 TELEPORT_HOLD_STEP = 0.15f;       // one step of the applied bias
+            constexpr F32 TELEPORT_HOLD_SETTLE = 5.f;       // seconds of room before each step
+            overflow_bias = llmax(overflow_bias, soft_zone_peak);
+            soft_zone_peak = 0.f;
+            if (teleport_hold && !recent_teleport)
+            {
+                if (hold_step_timer.getElapsedTimeF32() > TELEPORT_HOLD_SETTLE && usage_settled)
+                {
+                    overflow_bias = llmax(overflow_bias - TELEPORT_HOLD_STEP, 0.f);
+                    hold_step_timer.reset();
+                }
+            }
+            else if (!teleport_hold)
+            {
+                overflow_bias = llmax(overflow_bias - HOLD_DECAY * gFrameIntervalSeconds.value(), 0.f);
+            }
+        };
+        // </FS:Trish>
         if (soft_zone > 0.f && over_pct > -soft_zone)
         {
             static LLCachedControl<F32> soft_discard_increment(gSavedSettings, "RenderLowMemMinDiscardIncrement", .1f);
@@ -862,7 +894,6 @@ void LLViewerTexture::updateClass()
             static LLCachedControl<F32> recovery_headroom(gSavedSettings, "FSTextureBiasRecoveryHeadroom", 0.3f);
             constexpr F32 RECOVERY_DELAY = 3.f;     // seconds of room before lowering
             constexpr F32 SLOW_DECREMENT = 0.05f;   // per second, while headroom is modest
-            constexpr F32 HOLD_DECAY = 0.005f;      // per second, of the hold while headroom is modest
             const F32 headroom = llmax((F32)recovery_headroom(), -FREE_PERCENTAGE_TRESHOLD + 0.1f);
             overflow_bias = llmax(overflow_bias, soft_zone_peak);
             soft_zone_peak = 0.f;
@@ -871,25 +902,9 @@ void LLViewerTexture::updateClass()
                 if (over_pct > -headroom)
                 {
                     decrement = llmin(decrement, SLOW_DECREMENT);
-                    // The hold relaxes slowly, otherwise steady modest headroom kept the bias
-                    // above 1 for good
-                    // <FS:Trish> A teleport's hold goes down in settled steps instead
-                    //overflow_bias = llmax(overflow_bias - HOLD_DECAY * gFrameIntervalSeconds.value(), 0.f);
-                    constexpr F32 TELEPORT_HOLD_STEP = 0.15f;      // one step of the applied bias
-                    constexpr F32 TELEPORT_HOLD_SETTLE = 5.f;      // seconds of room before each step
-                    if (teleport_hold && !recent_teleport)
-                    {
-                        if (hold_step_timer.getElapsedTimeF32() > TELEPORT_HOLD_SETTLE && usage_settled)
-                        {
-                            overflow_bias = llmax(overflow_bias - TELEPORT_HOLD_STEP, 0.f);
-                            hold_step_timer.reset();
-                        }
-                    }
-                    else if (!teleport_hold)
-                    {
-                        overflow_bias = llmax(overflow_bias - HOLD_DECAY * gFrameIntervalSeconds.value(), 0.f);
-                    }
-                    // </FS:Trish>
+                    // The hold relaxes slowly (a teleport's in settled steps), otherwise steady
+                    // modest headroom kept the bias above 1 for good
+                    relax_hold();
                 }
                 const F32 previous_bias = sDesiredDiscardBias;
                 sDesiredDiscardBias -= decrement * gFrameIntervalSeconds;
@@ -917,7 +932,10 @@ void LLViewerTexture::updateClass()
             const F32 hold_from = llmax(overflow_bias, soft_zone_peak);
             if (hold_from > 0.f && recovery_timer.getElapsedTimeF32() > BAND_RECOVERY_DELAY)
             {
-                const F32 hold = hold_from + llmax((F32)band_recovery_margin(), 0.f);
+                // The hold relaxes here too; it used to only relax below the lowering threshold,
+                // so usage settling in this band kept the bias where it was indefinitely
+                relax_hold();
+                const F32 hold = overflow_bias + llmax((F32)band_recovery_margin(), 0.f);
                 if (sDesiredDiscardBias > hold)
                 {
                     sDesiredDiscardBias = llmax(sDesiredDiscardBias - BAND_DECREMENT * gFrameIntervalSeconds.value(), hold);
@@ -986,6 +1004,10 @@ void LLViewerTexture::updateClass()
     }
 
     sDesiredDiscardBias = llclamp(sDesiredDiscardBias, 1.f, 4.f);
+
+    // <FS:Trish> Backgrounded or minimized, memory is handed back whatever the headroom
+    sFSVRAMTight = vram_tight || was_backgrounded;
+    // </FS:Trish>
 
     // <FS:Trish> Textures see the bias in steps. Their thresholds (on and off screen resets, the
     // vsize divisor, the downscale test) are hard cut-offs, so a bias drifting slowly across one

@@ -1506,6 +1506,15 @@ F32 LLViewerTextureList::updateImagesCreateTextures(F32 max_time)
             llassert(image->mDownScalePending);
 
             LLImageGL* img = image->getGLTexture();
+            // <FS:Trish> FSPerfGPUDrivenPBRBindless: a bindless texture moves to a fresh one to shrink.
+            // When none is ready, making one waits for the render thread to work through everything
+            // queued (a hitch of tens of milliseconds or more), so the rest wait a frame for the ones
+            // just requested instead.
+            if (img && img->getHasGLTexture() && !img->fsCanMoveNow())
+            {
+                break;
+            }
+            // </FS:Trish>
             if (img && img->getHasGLTexture())
             {
                 img->scaleDown(image->getDesiredDiscardLevel());

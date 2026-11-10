@@ -319,6 +319,15 @@ bool LLImageGL::fsMakeWritable(bool copy_contents, S32 bind_unit)
     }
     return true;
 }
+
+bool LLImageGL::fsCanMoveNow() const
+{
+    if (!mTexName || !gGLManager.mHasDSA || !FSGLStream::isRecording() || !fsIsTextureLocked(mTexName))
+    {
+        return true; // no move, or generateTextures takes a name from a pool that doesn't wait
+    }
+    return FSGLStream::reserveTextures(mTarget, 1);
+}
 // </FS:Trish>
 std::unordered_set<LLImageGL*> LLImageGL::sImageList;
 

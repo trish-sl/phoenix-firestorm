@@ -89,6 +89,11 @@ namespace FSGLStream
     // recording). For GL calls made outside the proxies that return nothing.
     void recordCall(void (*fn)(U64), U64 value);
 
+    // Whether count textures of target can be made with glCreateTextures now without waiting
+    // for the render thread. When not, more are requested without waiting, so they can be
+    // shortly after. Always true when not recording. Main thread.
+    bool reserveTextures(U32 target, U32 count);
+
     // Render thread work that waits on the GPU (fences of asynchronous readbacks). fn runs on the
     // render thread after each replayed chunk and while it waits for work, and returns true while
     // it still has work, which keeps the waiting thread polling. stop() calls it once more on the

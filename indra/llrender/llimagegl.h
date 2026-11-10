@@ -122,6 +122,9 @@ public:
     // Before changing this image's texture in place: if it is locked, move to a fresh texture (a copy of the
     // current levels when copy_contents), bound on unit 0 and then on bind_unit. True when it moved.
     bool fsMakeWritable(bool copy_contents, S32 bind_unit = 0);
+    // Whether a change in place could go ahead now without waiting for the render thread: false when this
+    // texture is locked and no fresh texture is ready for it to move to (one is requested; try a frame later)
+    bool fsCanMoveNow() const;
     // As fsMakeWritable for the image that owns tex_name (parameter changes through LLTexUnit only know the name),
     // before setting address_mode or filter_option (-1 for the one not set). A locked texture that already has
     // that value doesn't move: true then, and the caller skips setting it (the locked texture can't take it).
