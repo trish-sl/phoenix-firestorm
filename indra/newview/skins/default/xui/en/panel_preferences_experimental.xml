@@ -6151,7 +6151,7 @@
              bottom="-1">
                 <panel
                  follows="left|top"
-                 height="2200"
+                 height="2260"
                  layout="topleft"
                  left="0"
                  name="experimental_performance_settings"
@@ -7445,6 +7445,56 @@
                      tool_tip="Opening the inventory, switching its tabs or changing the sort order sorted every folder at once, a freeze of a few hundred milliseconds with large inventories. With this on, open folders are sorted right away and each closed folder when you open it. With folders sorted by date everything is still sorted at once, since that order depends on what is inside them."
                      top="2166"
                      width="455" />
+                    <text
+                     follows="left|top"
+                     font="SansSerifBold"
+                     height="18"
+                     layout="topleft"
+                     left="15"
+                     name="fs_heading_diagnostics"
+                     top="2196"
+                     width="340">
+                        Diagnostics
+                    </text>
+                    <button
+                     follows="left|top"
+                     height="19"
+                     label="Reset to default"
+                     layout="topleft"
+                     left="370"
+                     name="reset_fs_heading_diagnostics"
+                     tool_tip="Set every option in &quot;Diagnostics&quot; back to its default value."
+                     top="2195"
+                     width="120">
+                        <button.commit_callback
+                         function="FSExperimental.ResetSection"
+                         parameter="FSHitchStackMs" />
+                    </button>
+                    <text
+                     follows="left|top"
+                     height="18"
+                     layout="topleft"
+                     left="35"
+                     name="fs_fshitchstackms_label"
+                     tool_tip="Diagnostics. When a frame is still running after this many milliseconds, the log (FSHitch) gets where the main thread is at that moment, and again at 3 and 8 times that. Use it to find out what a freeze is waiting on, for example 300 to catch freezes of half a second. 0 turns it off."
+                     top="2221"
+                     width="290">
+                        Log where a long frame is stuck after (ms)
+                    </text>
+                    <spinner
+                     control_name="FSHitchStackMs"
+                     decimal_digits="0"
+                     follows="left|top"
+                     height="20"
+                     increment="50"
+                     layout="topleft"
+                     left="330"
+                     max_val="10000"
+                     min_val="0"
+                     name="fs_fshitchstackms"
+                     tool_tip="Diagnostics. When a frame is still running after this many milliseconds, the log (FSHitch) gets where the main thread is at that moment, and again at 3 and 8 times that. Use it to find out what a freeze is waiting on, for example 300 to catch freezes of half a second. 0 turns it off."
+                     top="2219"
+                     width="100" />
                 </panel>
             </scroll_container>
         </panel>
