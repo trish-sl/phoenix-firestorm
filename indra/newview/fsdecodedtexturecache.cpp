@@ -1256,7 +1256,13 @@ private:
             "experimental_effects_tab",
             "experimental_rendering_tab",
             "experimental_shadows_tab",
-            "experimental_performance_tab"
+            "experimental_performance_tab",
+            // <FS:Trish> Sections moved here from the tabs above when the Experimental tabs were sorted
+            // by subject (texture uploads; avatar performance, login, skin, hair). Their other settings,
+            // which presets never covered, are in preset_excluded_settings.
+            "experimental_textures_tab",
+            "experimental_avatar_tab"
+            // </FS:Trish>
         };
 
         // Settings on those tabs that are not part of the look, such as driver workarounds that
