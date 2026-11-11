@@ -5280,12 +5280,65 @@ LLPanelPreferenceSkins::LLPanelPreferenceSkins()
     m_SkinThemeName = gSavedSettings.getString("FSSkinCurrentThemeReadableName");
 
     const std::string strSkinsPath = gDirUtilp->getSkinBaseDir() + gDirUtilp->getDirDelimiter() + "skins.xml";
+    // <FS:Trish> Read in one go, then parsed from memory: parsed from the file, every refill of the
+    // stream's small buffer was a read from disk while opening Preferences waited
+    //llifstream fileSkins(strSkinsPath.c_str(), std::ios::binary);
+    //if (fileSkins.is_open())
+    //{
+    //    LLSDSerialize::fromXMLDocument(m_SkinsInfo, fileSkins);
+    //}
     llifstream fileSkins(strSkinsPath.c_str(), std::ios::binary);
     if (fileSkins.is_open())
     {
-        LLSDSerialize::fromXMLDocument(m_SkinsInfo, fileSkins);
+        std::stringstream contents;
+        contents << fileSkins.rdbuf();
+        LLSDSerialize::fromXMLDocument(m_SkinsInfo, contents);
     }
+    // </FS:Trish>
 }
+
+// <FS:Trish> FSPerfPrefetchPreferences: once logged in, read the files the first opening of Preferences
+// will read (the floater, its tabs in every skin and language layer that applies, skins.xml) on a
+// thread of their own, so that opening reads them from the system's file cache instead of from disk.
+// The first opening otherwise waited a few hundred milliseconds on those reads. Called from llstartup.cpp.
+void fs_prefetch_preferences_files()
+{
+    if (!gSavedSettings.getBOOL("FSPerfPrefetchPreferences"))
+    {
+        return;
+    }
+    const std::string delim = gDirUtilp->getDirDelimiter();
+    std::vector<std::string> paths;
+    paths.push_back(gDirUtilp->getSkinBaseDir() + delim + "skins.xml");
+
+    // the names of the layout files, from the default skin's English set every other set overrides
+    const std::string base_dir = gDirUtilp->getSkinBaseDir() + delim + "default" + delim + "xui" + delim + "en";
+    std::error_code ec;
+    for (std::filesystem::directory_iterator it(fsyspath(base_dir), ec), end; !ec && it != end; it.increment(ec))
+    {
+        const std::string name = it->path().filename().string();
+        if (name.rfind("panel_preferences", 0) == 0 || name.rfind("floater_preferences", 0) == 0)
+        {
+            for (const std::string& path : gDirUtilp->findSkinnedFilenames(LLDir::XUI, name, LLDir::ALL_SKINS))
+            {
+                paths.push_back(path);
+            }
+        }
+    }
+
+    std::thread([paths = std::move(paths)]()
+        {
+            std::vector<char> buffer(256 * 1024);
+            for (const std::string& path : paths)
+            {
+                llifstream file(path.c_str(), std::ios::binary);
+                while (file.is_open() && file.read(buffer.data(), buffer.size()))
+                {
+                }
+            }
+        }).detach();
+}
+// </FS:Trish>
 
 bool LLPanelPreferenceSkins::postBuild()
 {
