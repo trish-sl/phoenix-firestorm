@@ -91,6 +91,7 @@ namespace
     {
         std::vector<U32> mIndices;
         bool mVerify = false;
+        bool mPrebuildPalettes = false; // FSPerfParallelSkinPalettes, read on the main thread
     };
 
     Batch sBatch;
@@ -450,6 +451,12 @@ void FSParallelAvatar::runTask(void* context, unsigned int index)
     Batch* batch = (Batch*)context;
     PendingPose& pending = sPending[batch->mIndices[index]];
     evaluatePose(pending.mAvatar.get());
+    // FSPerfParallelSkinPalettes: the rigged palettes this avatar used last frame, from the joints just
+    // posed; their first use on the main thread checks no joint moved since (llvoavatar.cpp)
+    if (batch->mPrebuildPalettes)
+    {
+        pending.mAvatar->fsPrebuildMatrixPalettes();
+    }
     if (batch->mVerify)
     {
         pending.mFingerprint = poseFingerprint(pending.mAvatar.get());
@@ -474,6 +481,8 @@ void FSParallelAvatar::endIdle()
 
     sBatch.mIndices.clear();
     sBatch.mVerify = verify;
+    static LLCachedControl<bool> prebuild_palettes(gSavedSettings, "FSPerfParallelSkinPalettes", false);
+    sBatch.mPrebuildPalettes = prebuild_palettes;
 
     // Motions may have been started or stopped by later objects in the idle loop, decide now
     for (U32 i = 0; i < (U32)sPending.size(); ++i)
