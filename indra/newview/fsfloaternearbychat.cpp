@@ -627,6 +627,12 @@ void FSFloaterNearbyChat::loadHistory()
 
     std::list<LLSD> history;
     LLLogChat::loadChatHistory("chat", history);
+    // FSChatHistoryLinesShown: only the most recent lines, as for conversations (llimview.cpp)
+    static LLCachedControl<U32> lines_shown(gSavedSettings, "FSChatHistoryLinesShown", 50);
+    while (lines_shown > 0 && history.size() > (size_t)lines_shown)
+    {
+        history.pop_front();
+    }
 
     std::list<LLSD>::const_iterator it = history.begin();
     // FS:LO FIRE-5230 - Chat Console Improvement: Replacing the "IM" in front of group chat messages with the actual group name
