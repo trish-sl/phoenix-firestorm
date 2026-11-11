@@ -403,6 +403,39 @@ static LLCullResult* sCull = NULL;
 // <FS:Trish> Bumped whenever a light joins mLights, so a throttled calcNearbyLights rescans at once
 static U32 sLightSetSerial = 0;
 static bool sFSShadowCameraMoving = false; // <FS:Trish/> FSRenderShadowReduceWhileMoving, see fs_update_shadow_camera_motion
+
+// <FS:Trish> Whether the camera turns or travels fast, and for a quarter second after it settles. Worked out
+// once a frame by updateGeom (before the frame renders); the moving shadow option and the group rebuild
+// throttle use it.
+static bool sFSCameraMovingFast = false;
+
+static void fs_update_camera_motion()
+{
+    static LLVector3 last_origin;
+    static LLVector3 last_at;
+    static bool have_last = false;
+    static LLFrameTimer settle_timer;
+
+    const LLViewerCamera* camera = LLViewerCamera::getInstance();
+    const F32 dt = llmax(gFrameIntervalSeconds.value(), 0.001f);
+    bool moving = false;
+    if (have_last)
+    {
+        const F32 turn_rate = acosf(llclamp(camera->getAtAxis() * last_at, -1.f, 1.f)) / dt; // radians per second
+        const F32 speed = dist_vec(camera->getOrigin(), last_origin) / dt;                   // metres per second
+        moving = turn_rate > 0.6f || speed > 20.f; // about 35 degrees a second, or flying fast
+    }
+    last_origin = camera->getOrigin();
+    last_at = camera->getAtAxis();
+    have_last = true;
+
+    if (moving)
+    {
+        settle_timer.resetWithExpiry(0.25f);
+    }
+    sFSCameraMovingFast = moving || !settle_timer.hasExpired();
+}
+// </FS:Trish>
 // </FS:Trish>
 
 void validate_framebuffer_object();
@@ -3243,6 +3276,14 @@ static bool fs_can_defer_group_rebuild(LLSpatialGroup* group)
     return !group->isAnyRecentlyVisible();
 }
 
+// FSPerfGroupRebuildBudgetMs: time this frame spent rebuilding groups in view (their geometry, and the
+// vertex fills after it). A detail change of one object rebuilds its whole group, so while the camera
+// moves and many objects change detail, these rebuilds cost several milliseconds a frame. updateGeom
+// reads it and, when it ran over the budget, applies fewer drawable updates (detail changes) the next
+// frame, so they spread over more frames. A group in view is never drawn from stale geometry: only the
+// change that would dirty it waits.
+static F32 sFSGroupRebuildMs = 0.f;
+
 // Drawables that must be updated this frame even when the rebuild queue is over its time budget.
 static bool fs_is_priority_drawable_rebuild(LLDrawable* drawablep)
 {
@@ -3283,6 +3324,7 @@ void LLPipeline::rebuildPriorityGroups()
     // </FS:Trish>
 
     mGroupQ1Locked = true;
+    LLTimer fs_rebuild_timer; // <FS:Trish/> FSPerfGroupRebuildBudgetMs
     // Iterate through all drawables on the priority build queue,
     for (LLSpatialGroup::sg_vector_t::iterator iter = mGroupQ1.begin();
          iter != mGroupQ1.end(); ++iter)
@@ -3298,6 +3340,7 @@ void LLPipeline::rebuildPriorityGroups()
         group->rebuildGeom();
         group->clearState(LLSpatialGroup::IN_BUILD_Q1);
     }
+    sFSGroupRebuildMs += fs_rebuild_timer.getElapsedTimeF32().value() * 1000.f; // <FS:Trish/>
 
     // <FS:Trish> Swap instead of copying the pointers, the old saved groups are released by the clear just the same
     //mGroupSaveQ1 = mGroupQ1;
@@ -3334,6 +3377,84 @@ void LLPipeline::updateGeom(F32 max_dtime)
     static LLCachedControl<bool> rebuild_budget(gSavedSettings, "FSPerfRebuildTimeBudget", false);
     U32 num_updated = 0;
     bool over_budget = false;
+    fs_update_camera_motion();
+    bool fs_throttling = false;
+    // FSPerfGroupRebuildBudgetMs: fewer drawable updates while the group rebuilds they cause run over
+    // budget, only while the camera moves fast: once it settles, detail catches up at full speed.
+    // Smoothed over a few frames, so one heavy frame doesn't stall detail changes. Independent of
+    // FSPerfRebuildTimeBudget, whose time limit it uses while it throttles.
+    {
+        static LLCachedControl<F32> group_budget_ms(gSavedSettings, "FSPerfGroupRebuildBudgetMs", 4.f);
+        static F32 s_group_ms_avg = 0.f;
+        s_group_ms_avg = s_group_ms_avg * 0.6f + sFSGroupRebuildMs * 0.4f;
+        sFSGroupRebuildMs = 0.f;
+        static U32 s_frames = 0;
+        static U32 s_throttled = 0;
+        static F32 s_peak_ms = 0.f;
+        static LLFrameTimer s_log_timer;
+        ++s_frames;
+        s_peak_ms = llmax(s_peak_ms, s_group_ms_avg);
+        if (sFSCameraMovingFast && group_budget_ms > 0.f && s_group_ms_avg > group_budget_ms)
+        {
+            max_dtime *= llclamp((F32)group_budget_ms / s_group_ms_avg, 0.1f, 1.f);
+            fs_throttling = true;
+            ++s_throttled;
+        }
+        if (s_log_timer.getElapsedTimeF32() > 10.f)
+        {
+            if (s_throttled > 0)
+            {
+                LL_INFOS("FSRebuild") << "Group rebuilds over " << (F32)group_budget_ms << " ms while the camera moved fast in "
+                                      << s_throttled << " of " << s_frames << " frames (peak " << llformat("%.1f", s_peak_ms)
+                                      << " ms): detail changes spread over more frames" << LL_ENDL;
+            }
+            s_frames = 0;
+            s_throttled = 0;
+            s_peak_ms = 0.f;
+            s_log_timer.reset();
+        }
+    }
+    const bool fs_budget_active = rebuild_budget || fs_throttling;
+    // When the queue may be cut short, what is in view and nearest goes first: coming back to where you
+    // were, the objects around you sharpen before the distant ones (as the viewer used to sort it)
+    static LLCachedControl<bool> nearest_first(gSavedSettings, "FSPerfRebuildNearestFirst", true);
+    if (fs_budget_active && nearest_first && mBuildQ1.size() > 1)
+    {
+        LL_PROFILE_ZONE_NAMED_CATEGORY_PIPELINE("fs sort build queue");
+        // The keys are taken once, before sorting: isVisible() needs the drawable to be in the octree
+        // (a queued drawable may not be yet, or any more) and marks it visible as it goes, which a
+        // comparison must not do. Null and dead entries go last.
+        struct FSQueuedDrawable
+        {
+            LLPointer<LLDrawable> mDrawable;
+            bool mVisible;
+            F32 mDistance;
+        };
+        static std::vector<FSQueuedDrawable> s_keyed;
+        s_keyed.clear();
+        s_keyed.reserve(mBuildQ1.size());
+        for (LLPointer<LLDrawable>& drawable : mBuildQ1)
+        {
+            const bool alive = drawable.notNull() && !drawable->isDead();
+            const bool visible = alive && drawable->getEntry() && drawable->isVisible();
+            const F32 distance = alive ? drawable->mDistanceWRTCamera : F32_MAX;
+            s_keyed.push_back({ std::move(drawable), visible, distance });
+        }
+        std::stable_sort(s_keyed.begin(), s_keyed.end(),
+            [](const FSQueuedDrawable& lhs, const FSQueuedDrawable& rhs)
+            {
+                if (lhs.mVisible != rhs.mVisible)
+                {
+                    return lhs.mVisible;
+                }
+                return lhs.mDistance < rhs.mDistance;
+            });
+        for (size_t i = 0; i < s_keyed.size(); ++i)
+        {
+            mBuildQ1[i] = std::move(s_keyed[i].mDrawable);
+        }
+        s_keyed.clear();
+    }
     // </FS:Trish>
 
     // Iterate through all drawables on the priority build queue,
@@ -3350,7 +3471,8 @@ void LLPipeline::updateGeom(F32 max_dtime)
         bool keep = false;
     // </FS:Trish>
         // <FS:Trish> Always update at least one drawable, then stop once the time budget is used up
-        if (rebuild_budget && drawablep && !drawablep->isDead() && num_updated > 0 && !over_budget)
+        //if (rebuild_budget && drawablep && !drawablep->isDead() && num_updated > 0 && !over_budget)
+        if (fs_budget_active && drawablep && !drawablep->isDead() && num_updated > 0 && !over_budget)
         {
             over_budget = update_timer.getElapsedTimeF32() > max_dtime;
         }
@@ -4252,10 +4374,12 @@ void LLPipeline::postSort(LLCamera &camera)
     // pack vertex buffers for groups that chose to delay their updates
     {
         LL_PROFILE_GPU_ZONE("rebuildMesh");
+        LLTimer fs_rebuild_timer; // <FS:Trish/> FSPerfGroupRebuildBudgetMs
         for (LLSpatialGroup::sg_vector_t::iterator iter = mMeshDirtyGroup.begin(); iter != mMeshDirtyGroup.end(); ++iter)
         {
             (*iter)->rebuildMesh();
         }
+        sFSGroupRebuildMs += fs_rebuild_timer.getElapsedTimeF32().value() * 1000.f; // <FS:Trish/>
     }
     }
 
@@ -16514,29 +16638,9 @@ static void bucketShadowCull(LLCullResult& src, LLCamera& cam, LLCullResult& dst
 
 static void fs_update_shadow_camera_motion(const LLCamera& camera)
 {
-    static LLVector3 last_origin;
-    static LLVector3 last_at;
-    static bool have_last = false;
-    static LLFrameTimer settle_timer;
-
+    // the motion itself is worked out by fs_update_camera_motion(), once a frame
     static LLCachedControl<bool> reduce_while_moving(gSavedSettings, "FSRenderShadowReduceWhileMoving", false);
-    const F32 dt = llmax(gFrameIntervalSeconds.value(), 0.001f);
-    bool moving = false;
-    if (have_last && reduce_while_moving)
-    {
-        const F32 turn_rate = acosf(llclamp(camera.getAtAxis() * last_at, -1.f, 1.f)) / dt; // radians per second
-        const F32 speed = dist_vec(camera.getOrigin(), last_origin) / dt;                   // metres per second
-        moving = turn_rate > 0.6f || speed > 20.f; // about 35 degrees a second, or flying fast
-    }
-    last_origin = camera.getOrigin();
-    last_at = camera.getAtAxis();
-    have_last = true;
-
-    if (moving)
-    {
-        settle_timer.resetWithExpiry(0.25f);
-    }
-    sFSShadowCameraMoving = moving || !settle_timer.hasExpired();
+    sFSShadowCameraMoving = reduce_while_moving && sFSCameraMovingFast;
 }
 
 // How many times RenderShadowMinCasterTexels a caster must span to be drawn into a sun cascade.
