@@ -40,6 +40,10 @@
 #include "llwin32headers.h"
 #include <psapi.h>
 #include <dbghelp.h>
+#include <tlhelp32.h>
+
+// llrender/fsglstream.cpp: the render thread's handle and stack range
+bool fs_render_thread_info(void*& handle, uintptr_t& stack_low, uintptr_t& stack_high);
 #endif
 
 namespace
@@ -228,6 +232,134 @@ private:
         const Counters counters = read_counters(mMain);
         const U64 cpu = counters.mUser + counters.mKernel;
         const F64 cpu_ms = cpu > sFrameCpuStart.load() ? (cpu - sFrameCpuStart.load()) / 10000.0 : 0.0;
+        bool same_frame = true;
+        const std::string stack = threadStack(mMain, mStackLow, mStackHigh, id, same_frame);
+        if (!same_frame)
+        {
+            return; // it moved on meanwhile
+        }
+        // The render thread too: a main thread waiting on present is waiting for it
+        std::string render_stack;
+        void* render_handle = NULL;
+        uintptr_t render_low = 0, render_high = 0;
+        if (fs_render_thread_info(render_handle, render_low, render_high))
+        {
+            render_stack = threadStack((HANDLE)render_handle, render_low, render_high, id, same_frame);
+        }
+        LL_WARNS("FSHitch") << llformat("Main thread stuck %.0f ms in one frame, using %.0f ms of CPU in it", elapsed_ms, cpu_ms)
+                            << (stack.empty() ? std::string() : "; it is in: " + stack)
+                            << (render_stack.empty() ? std::string() : "; the render thread is in: " + render_stack) << LL_ENDL;
+
+        // Waiting rather than working: what it waits for is likely another thread holding a lock, or a
+        // disk read. List the threads that aren't idle, on the first sample of a frame only.
+        if (cpu_ms < elapsed_ms * 0.5 && id != mOthersLoggedFrame)
+        {
+            mOthersLoggedFrame = id;
+            logOtherThreads(id, render_handle);
+        }
+    }
+
+    // Every thread of the process except this one, the main and the render thread, whose stack top
+    // isn't an idle wait (a thread pool waiting for work, a sleep), with its name and a short stack.
+    // Waits on a lock or a condition variable are listed: one of those may be what holds things up.
+    void logOtherThreads(U64 id, void* render_handle)
+    {
+        const DWORD pid = GetCurrentProcessId();
+        const DWORD self = GetCurrentThreadId();
+        const DWORD main_id = GetThreadId(mMain);
+        const DWORD render_id = render_handle ? GetThreadId((HANDLE)render_handle) : 0;
+        std::vector<DWORD> ids;
+        HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+        if (snap == INVALID_HANDLE_VALUE)
+        {
+            return;
+        }
+        THREADENTRY32 te{};
+        te.dwSize = sizeof(te);
+        for (BOOL ok = Thread32First(snap, &te); ok; ok = Thread32Next(snap, &te))
+        {
+            if (te.th32OwnerProcessID == pid && te.th32ThreadID != self && te.th32ThreadID != main_id && te.th32ThreadID != render_id)
+            {
+                ids.push_back(te.th32ThreadID);
+            }
+        }
+        CloseHandle(snap);
+
+        // stack tops of a thread parked until there is work for it
+        static const char* IDLE[] = { "NtWaitForSingleObject", "NtWaitForMultipleObjects", "NtWaitForWorkViaWorkerFactory",
+                                      "NtRemoveIoCompletion", "NtDelayExecution", "ZwWaitForSingleObject", "ZwWaitForMultipleObjects",
+                                      "ZwWaitForWorkViaWorkerFactory", "ZwRemoveIoCompletion", "ZwDelayExecution",
+                                      "NtUserMsgWaitForMultipleObjectsEx", "ZwUserMsgWaitForMultipleObjectsEx",
+                                      "NtUserGetMessage", "ZwUserGetMessage", "ZwWaitForAlertByThreadId", "NtWaitForAlertByThreadId" };
+        // ...unless it is waiting on a lock, which may be the one the main thread needs
+        static const char* LOCKS[] = { "EnterCriticalSection", "AcquireSRWLock", "_Mtx_lock", "mutex::lock" };
+        std::string out;
+        int listed = 0;
+        int idle = 0;
+        for (DWORD tid : ids)
+        {
+            HANDLE thread = OpenThread(THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT | THREAD_QUERY_INFORMATION, FALSE, tid);
+            if (!thread)
+            {
+                continue;
+            }
+            bool same_frame = true;
+            // Walking and naming a hundred threads takes a while: the main thread often moves on
+            // meanwhile, and what was holding it up is still worth seeing
+            const std::string stack = threadStack(thread, 0, 0, id, same_frame, 10, true);
+            std::string name;
+            PWSTR desc = nullptr;
+            if (SUCCEEDED(GetThreadDescription(thread, &desc)) && desc)
+            {
+                name = ll_convert_wide_to_string(desc);
+                LocalFree(desc);
+            }
+            CloseHandle(thread);
+            if (stack.empty())
+            {
+                continue;
+            }
+            bool parked = false;
+            for (const char* top : IDLE)
+            {
+                if (stack.compare(0, strlen(top), top) == 0)
+                {
+                    parked = true;
+                    break;
+                }
+            }
+            if (parked)
+            {
+                for (const char* lock : LOCKS)
+                {
+                    if (stack.find(lock) != std::string::npos)
+                    {
+                        parked = false;
+                        break;
+                    }
+                }
+            }
+            if (parked)
+            {
+                ++idle;
+                continue;
+            }
+            if (listed < 16)
+            {
+                out += llformat("\n    thread %u", (U32)tid) + (name.empty() ? std::string() : " (" + name + ")") + ": " + stack;
+            }
+            ++listed;
+        }
+        LL_WARNS("FSHitch") << "While the main thread waited, " << listed << " other threads were not idle (" << idle
+                            << " idle)" << (sFrameId.load() != id ? ", the main thread moved on while they were listed" : "")
+                            << (listed > 16 ? ", the first 16:" : ":") << out << LL_ENDL;
+    }
+
+    // The call stack of a thread whose stack spans [stack_low, stack_high), copied while it is
+    // briefly suspended. same_frame turns false when the main thread finished frame id meanwhile.
+    // any_frame: take it even when the main thread has finished frame id meanwhile
+    std::string threadStack(HANDLE thread, ULONG_PTR stack_low, ULONG_PTR stack_high, U64 id, bool& same_frame, int max_frames = 40, bool any_frame = false)
+    {
         std::string stack;
 #if defined(_M_X64)
         if (mCopy.empty())
@@ -239,22 +371,34 @@ private:
         ctx.ContextFlags = CONTEXT_FULL;
         size_t len = 0;
         DWORD64 orig_rsp = 0;
-        if (SuspendThread(mMain) == (DWORD)-1)
+        if (SuspendThread(thread) == (DWORD)-1)
         {
-            return;
+            return stack;
         }
         // Only copying while it is suspended: no allocation, no lock, no logging.
-        const bool same_frame = sFrameId.load() == id;
-        if (same_frame && GetThreadContext(mMain, &ctx) && ctx.Rsp >= mStackLow && ctx.Rsp < mStackHigh)
+        same_frame = any_frame || sFrameId.load() == id;
+        bool have_context = same_frame && GetThreadContext(thread, &ctx);
+        if (have_context && (ctx.Rsp < stack_low || ctx.Rsp >= stack_high))
+        {
+            // Running on another stack, a coroutine's: its committed range up from the stack pointer.
+            // VirtualQuery takes no lock the suspended thread could hold.
+            MEMORY_BASIC_INFORMATION mbi{};
+            if (VirtualQuery((LPCVOID)ctx.Rsp, &mbi, sizeof(mbi)) && mbi.State == MEM_COMMIT)
+            {
+                stack_low = (ULONG_PTR)mbi.BaseAddress;
+                stack_high = (ULONG_PTR)mbi.BaseAddress + mbi.RegionSize;
+            }
+        }
+        if (have_context && ctx.Rsp >= stack_low && ctx.Rsp < stack_high)
         {
             orig_rsp = ctx.Rsp;
-            len = llmin((size_t)(mStackHigh - orig_rsp), mCopy.size()) & ~(size_t)7;
+            len = llmin((size_t)(stack_high - orig_rsp), mCopy.size()) & ~(size_t)7;
             memcpy(mCopy.data(), (const void*)orig_rsp, len);
         }
-        ResumeThread(mMain);
+        ResumeThread(thread);
         if (!same_frame)
         {
-            return; // it moved on meanwhile
+            return stack;
         }
         if (len)
         {
@@ -278,12 +422,11 @@ private:
                 }
             }
             DWORD64 pcs[40];
-            const int n = unwind_copy(ctx, mCopy.data(), len, pcs, 40);
+            const int n = unwind_copy(ctx, mCopy.data(), len, pcs, llclamp(max_frames, 1, 40));
             stack = symbolize(pcs, n);
         }
 #endif
-        LL_WARNS("FSHitch") << llformat("Main thread stuck %.0f ms in one frame, using %.0f ms of CPU in it", elapsed_ms, cpu_ms)
-                            << (stack.empty() ? std::string() : "; it is in: " + stack) << LL_ENDL;
+        return stack;
     }
 
     std::string symbolize(const DWORD64* pcs, int n)
@@ -359,6 +502,7 @@ private:
     ULONG_PTR mStackHigh = 0;
     std::vector<U8> mCopy;
     bool mSymInitDone = false;
+    U64 mOthersLoggedFrame = 0;
 };
 
 Watcher sWatcher;

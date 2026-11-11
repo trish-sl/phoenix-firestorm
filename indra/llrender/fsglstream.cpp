@@ -3580,10 +3580,35 @@ namespace
         sPresented.notify_all();
     }
 
+    // For the stall watch (newview/fsstallwatch.cpp): this thread's handle and stack range, so a frame
+    // stuck waiting on present can also log where the render thread is.
+    std::atomic<HANDLE> sRenderThreadHandle{ NULL };
+    std::atomic<ULONG_PTR> sRenderStackLow{ 0 };
+    std::atomic<ULONG_PTR> sRenderStackHigh{ 0 };
+
+    void publishRenderThread()
+    {
+        MEMORY_BASIC_INFORMATION mbi{};
+        volatile U8 local = 0;
+        HANDLE handle = NULL;
+        if (!VirtualQuery((LPCVOID)&local, &mbi, sizeof(mbi)) ||
+            !DuplicateHandle(GetCurrentProcess(), GetCurrentThread(), GetCurrentProcess(), &handle,
+                             THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT | THREAD_QUERY_INFORMATION, FALSE, 0))
+        {
+            return;
+        }
+        sRenderStackLow.store((ULONG_PTR)mbi.AllocationBase);
+        sRenderStackHigh.store((ULONG_PTR)mbi.BaseAddress + mbi.RegionSize);
+        // A previous render thread's handle (after a restart) stays open: the stall watch may be
+        // using it right now, and an exited thread's handle only makes SuspendThread fail.
+        sRenderThreadHandle.store(handle);
+    }
+
     void renderMain()
     {
         tRenderThread = true;
         LL_PROFILER_SET_THREAD_NAME("FS Render");
+        publishRenderThread();
         const bool ok = sOps.mAcquireOnRender && sOps.mAcquireOnRender();
         sStartResult.store(ok ? 1 : -1, std::memory_order_release);
         sStartResult.notify_all();
@@ -3996,6 +4021,16 @@ namespace FSGLStream
         sStatPresentWaitNs = 0;
         return s;
     }
+}
+
+// The stall watch (newview/fsstallwatch.cpp) declares this itself, so no header changes for it:
+// the render thread's handle and stack range, false while there has been no render thread.
+bool fs_render_thread_info(void*& handle, uintptr_t& stack_low, uintptr_t& stack_high)
+{
+    handle = sRenderThreadHandle.load();
+    stack_low = sRenderStackLow.load();
+    stack_high = sRenderStackHigh.load();
+    return handle != NULL && stack_low < stack_high;
 }
 
 #else // !LL_WINDOWS
