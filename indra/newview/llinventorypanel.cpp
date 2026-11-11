@@ -400,7 +400,13 @@ void LLInventoryPanel::initializeViewBuilding()
         LL_DEBUGS("Inventory") << "Setting views for " << getName() << " to initialize" << LL_ENDL;
         // Build view of inventory if we need default full hierarchy and inventory is ready, otherwise do in onIdle.
         // Initializing views takes a while so always do it onIdle if viewer already loaded.
+        // <FS:Trish> Build at login in slices on idle as well: built at once, every panel's views
+        // (133k each for a large inventory) held the main thread for seconds, and the outfit
+        // and attachment requests waiting on it with it
+        static LLCachedControl<bool> fs_defer_views(gSavedSettings, "FSPerfInventoryDeferViews", true);
         if (mInventory->isInventoryUsable()
+            && !fs_defer_views
+        // </FS:Trish>
             && LLStartUp::getStartupState() <= STATE_WEARABLES_WAIT)
         {
             LLTimer timer;
@@ -1048,6 +1054,10 @@ void LLInventoryPanel::idle(void* user_data)
         if (panel->mBuildViewsQueue.empty())
         {
             panel->mViewsInitialized = VIEWS_INITIALIZED;
+            // <FS:Trish> When a panel built in slices is complete
+            LL_INFOS("Inventory") << "Finished building inventory panel " << panel->getName()
+                                  << " with " << (S32)panel->mItemMap.size() << " views" << LL_ENDL;
+            // </FS:Trish>
         }
     }
     // in case panel is empty or only has 'roots'
