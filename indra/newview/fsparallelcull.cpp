@@ -409,8 +409,9 @@ bool LLPipeline::fsParallelShadowCullDefer(S32 cascade, LLCamera& shadow_cam, F3
 
     // the minimum caster size as generateSunShadow works it out for the draw
     static LLCachedControl<F32> min_caster_texels(gSavedSettings, "RenderShadowMinCasterTexels", 1.f);
-    static LLCachedControl<F32> far_caster_scale(gSavedSettings, "FSRenderShadowFarCascadeMinCasterScale", 1.f);
-    const F32 cascade_caster_scale = cascade >= 2 ? llclamp((F32)far_caster_scale, 1.f, 16.f) : 1.f;
+    // fs_shadow_cascade_caster_scale (pipeline.cpp): FSRenderShadowFarCascadeMinCasterScale, and FSRenderShadowReduceWhileMoving
+    extern F32 fs_shadow_cascade_caster_scale(S32 cascade);
+    const F32 cascade_caster_scale = fs_shadow_cascade_caster_scale(cascade);
     rec.mMinCasterSize = (!gCubeSnapshot && min_caster_texels > 0.f && llfinite(min_texel_size))
         ? llmax(min_texel_size, 0.f) * min_caster_texels * cascade_caster_scale : 0.f;
 
