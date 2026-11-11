@@ -3430,6 +3430,9 @@ bool idle_startup()
         // <FS:Trish> FSPerfPrefetchPreferences (llfloaterpreference.cpp)
         extern void fs_prefetch_preferences_files();
         fs_prefetch_preferences_files();
+        // FSPerfDiskThread: list the decoded sounds once (llaudioengine.cpp)
+        extern void fs_index_decoded_sounds();
+        fs_index_decoded_sounds();
         // </FS:Trish>
 
         if (!mBenefitsSuccessfullyInit)

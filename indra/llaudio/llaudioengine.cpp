@@ -38,6 +38,13 @@
 #include "llfilesystem.h"
 #include "lldir.h"
 #include "llaudiodecodemgr.h"
+// <FS:Trish> FSPerfDiskThread: the decoded sound list
+#include "fsdiskthread.h"
+#include <atomic>
+#include <filesystem>
+#include <mutex>
+#include <unordered_set>
+// </FS:Trish>
 #include "llassetstorage.h"
 
 
@@ -1021,8 +1028,100 @@ void LLAudioEngine::cleanupAudioSource(LLAudioSource *asp)
     }
 }
 
+// <FS:Trish> FSPerfDiskThread: which sounds have a decoded file in the sound cache. Each object update
+// carrying a sound asked the disk whether its decoded file exists, on the main thread, which with a
+// busy disk took hundreds of milliseconds. Once logged in, the disk thread lists the sound cache folder
+// once (fs_index_decoded_sounds, called from llstartup.cpp), and from then on the answer comes from
+// this list. Decodes finishing later add theirs (fs_note_decoded_sound); a removal takes it out
+// (fs_forget_decoded_sound). Until the list is ready the disk is asked as before.
+namespace
+{
+    std::mutex sFSDecodedMutex;
+    std::unordered_set<LLUUID> sFSDecoded;
+    std::atomic<bool> sFSDecodedReady{ false };
+    std::atomic<bool> sFSDecodedIndexing{ false };
+}
+
+void fs_note_decoded_sound(const LLUUID& id)
+{
+    std::lock_guard<std::mutex> lock(sFSDecodedMutex);
+    sFSDecoded.insert(id);
+}
+
+void fs_forget_decoded_sound(const LLUUID& id)
+{
+    std::lock_guard<std::mutex> lock(sFSDecodedMutex);
+    sFSDecoded.erase(id);
+}
+
+void fs_index_decoded_sounds()
+{
+    if (!FSDiskThread::isEnabled())
+    {
+        LL_INFOS("AudioEngine") << "Not indexing decoded sounds: the disk thread is off" << LL_ENDL;
+        return;
+    }
+    if (sFSDecodedReady.load() || sFSDecodedIndexing.exchange(true))
+    {
+        return;
+    }
+    const std::string dir = gDirUtilp->getExpandedFilename(LL_PATH_FS_SOUND_CACHE, "");
+    LL_INFOS("AudioEngine") << "Indexing decoded sounds in " << dir << " on the disk thread" << LL_ENDL;
+    const bool posted = FSDiskThread::postUrgent([dir]()
+        {
+            try
+            {
+                std::vector<LLUUID> found;
+                std::error_code ec;
+                for (std::filesystem::directory_iterator it(fsyspath(dir), ec), end; !ec && it != end; it.increment(ec))
+                {
+                    const std::filesystem::path& path = it->path();
+                    if (path.extension() == ".dsf")
+                    {
+                        const std::string stem = path.stem().string();
+                        if (LLUUID::validate(stem))
+                        {
+                            found.emplace_back(stem);
+                        }
+                    }
+                }
+                if (!ec)
+                {
+                    std::lock_guard<std::mutex> lock(sFSDecodedMutex);
+                    sFSDecoded.insert(found.begin(), found.end());
+                    sFSDecodedReady.store(true);
+                    LL_INFOS("AudioEngine") << "Indexed " << found.size() << " decoded sounds in the sound cache" << LL_ENDL;
+                }
+                else
+                {
+                    LL_WARNS("AudioEngine") << "Couldn't index decoded sounds in " << dir << ": " << ec.message()
+                                            << "; checking the disk for each as before" << LL_ENDL;
+                }
+            }
+            catch (const std::exception& e)
+            {
+                LL_WARNS("AudioEngine") << "Couldn't index decoded sounds in " << dir << ": " << e.what() << LL_ENDL;
+            }
+            sFSDecodedIndexing.store(false);
+        });
+    if (!posted)
+    {
+        LL_INFOS("AudioEngine") << "Not indexing decoded sounds: the disk thread took no work" << LL_ENDL;
+        sFSDecodedIndexing.store(false);
+    }
+}
+// </FS:Trish>
+
 bool LLAudioEngine::hasDecodedFile(const LLUUID &uuid)
 {
+    // <FS:Trish> FSPerfDiskThread: from the list once it is ready
+    if (sFSDecodedReady.load())
+    {
+        std::lock_guard<std::mutex> lock(sFSDecodedMutex);
+        return sFSDecoded.count(uuid) != 0;
+    }
+    // </FS:Trish>
+
     std::string uuid_str;
     uuid.toString(uuid_str);
 

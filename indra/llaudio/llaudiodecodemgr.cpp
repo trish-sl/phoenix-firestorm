@@ -514,6 +514,14 @@ bool LLVorbisDecodeState::finishDecode()
 
     mDone = true;
 
+    // <FS:Trish> FSPerfDiskThread: its decoded file is on disk now (llaudioengine.cpp)
+    if (mValid && mFileHandle != LLLFSThread::nullHandle())
+    {
+        extern void fs_note_decoded_sound(const LLUUID& id);
+        fs_note_decoded_sound(mUUID);
+    }
+    // </FS:Trish>
+
     LL_DEBUGS("AudioEngine") << "Finished decode for " << getUUID() << LL_ENDL;
 
     return true;

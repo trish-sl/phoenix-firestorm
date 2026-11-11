@@ -49,6 +49,11 @@ namespace FSDiskThread
     // Runs work on the disk thread, nothing afterwards. False as above.
     bool post(std::function<void()> work);
 
+    // As post(work), ahead of what is queued: for short jobs something is waiting on (an asset download
+    // writing its cache file, an index the next lookups use), which would otherwise wait behind
+    // hundreds of cache checks while the disk is busy.
+    bool postUrgent(std::function<void()> work);
+
     // Finishes the queued work and stops the thread (application shutdown).
     void shutdown();
 }

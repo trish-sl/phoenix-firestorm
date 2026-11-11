@@ -5310,6 +5310,9 @@ void fs_prefetch_preferences_files()
     const std::string delim = gDirUtilp->getDirDelimiter();
     std::vector<std::string> paths;
     paths.push_back(gDirUtilp->getSkinBaseDir() + delim + "skins.xml");
+    // the key bindings, which opening Preferences loads to show the mouse click actions
+    paths.push_back(gDirUtilp->getExpandedFilename(LL_PATH_APP_SETTINGS, "key_bindings.xml"));
+    paths.push_back(gDirUtilp->getExpandedFilename(LL_PATH_USER_SETTINGS, "key_bindings.xml"));
 
     // the names of the layout files, from the default skin's English set every other set overrides
     const std::string base_dir = gDirUtilp->getSkinBaseDir() + delim + "default" + delim + "xui" + delim + "en";
@@ -5317,7 +5320,10 @@ void fs_prefetch_preferences_files()
     for (std::filesystem::directory_iterator it(fsyspath(base_dir), ec), end; !ec && it != end; it.increment(ec))
     {
         const std::string name = it->path().filename().string();
-        if (name.rfind("panel_preferences", 0) == 0 || name.rfind("floater_preferences", 0) == 0)
+        // and panels built the first time something is hovered or opened in world
+        if (name.rfind("panel_preferences", 0) == 0 || name.rfind("floater_preferences", 0) == 0 ||
+            name == "panel_prim_media_controls.xml" || name == "panel_hud.xml" || name == "inspect_object.xml" ||
+            name == "inspect_avatar.xml" || name == "menu_pie_object.xml" || name == "menu_pie_avatar_other.xml")
         {
             for (const std::string& path : gDirUtilp->findSkinnedFilenames(LLDir::XUI, name, LLDir::ALL_SKINS))
             {

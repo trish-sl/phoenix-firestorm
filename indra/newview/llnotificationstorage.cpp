@@ -40,6 +40,7 @@
 #include "llsingleton.h"
 #include "llregistry.h"
 #include "llviewermessage.h"
+#include "fsasyncfilewriter.h" // <FS:Trish/>
 
 typedef std::function<LLNotificationResponderInterface*(const LLSD& pParams)> responder_constructor_t;
 
@@ -87,6 +88,19 @@ LLNotificationStorage::~LLNotificationStorage()
 
 bool LLNotificationStorage::writeNotifications(const LLSD& pNotificationData) const
 {
+    // <FS:Trish> Formatted here, written by the background file writer: every change to the saved
+    // notifications (an offer arriving or being answered) rewrote the file on the main thread, and
+    // closing it once held a frame for a second while the disk was busy
+    {
+        std::ostringstream contents;
+        LLPointer<LLSDFormatter> formatter = new LLSDXMLFormatter();
+        formatter->format(pNotificationData, contents, LLSDFormatter::OPTIONS_PRETTY);
+        if (FSAsyncFileWriter::replace(mFileName, contents.str()))
+        {
+            return true;
+        }
+    }
+    // </FS:Trish>
 
     llofstream notifyFile(mFileName.c_str());
     bool didFileOpen = notifyFile.is_open();
