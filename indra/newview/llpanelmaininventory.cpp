@@ -2243,10 +2243,18 @@ void LLPanelMainInventory::initSingleFolderRoot(const LLUUID& start_folder_id)
 void LLPanelMainInventory::initInventoryViews()
 {
     mAllItemsPanel->initializeViewBuilding();
-    if (gSavedSettings.getBOOL("InventoryShowRecentTab"))
+    // <FS:Trish> Recent and Worn build their views (all of inventory each) when first shown
+    // instead of with All Items: their tab becoming visible starts the build
+    //if (gSavedSettings.getBOOL("InventoryShowRecentTab"))
+    //    mRecentPanel->initializeViewBuilding();
+    //if (gSavedSettings.getBOOL("InventoryShowWornTab"))
+    //    mWornItemsPanel->initializeViewBuilding();
+    static LLCachedControl<bool> fs_defer_views(gSavedSettings, "FSPerfInventoryDeferViews", true);
+    if (gSavedSettings.getBOOL("InventoryShowRecentTab") && (!fs_defer_views || mRecentPanel->isInVisibleChain()))
         mRecentPanel->initializeViewBuilding();
-    if (gSavedSettings.getBOOL("InventoryShowWornTab"))
+    if (gSavedSettings.getBOOL("InventoryShowWornTab") && (!fs_defer_views || mWornItemsPanel->isInVisibleChain()))
         mWornItemsPanel->initializeViewBuilding();
+    // </FS:Trish>
 }
 
 void LLPanelMainInventory::toggleViewMode()

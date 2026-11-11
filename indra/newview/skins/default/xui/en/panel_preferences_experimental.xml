@@ -6151,7 +6151,7 @@
              bottom="-1">
                 <panel
                  follows="left|top"
-                 height="2177"
+                 height="2200"
                  layout="topleft"
                  left="0"
                  name="experimental_performance_settings"
@@ -7421,7 +7421,7 @@
                      width="120">
                         <button.commit_callback
                          function="FSExperimental.ResetSection"
-                         parameter="FSPerfParallelTextureEncode" />
+                         parameter="FSPerfParallelTextureEncode,FSPerfInventoryLazySort" />
                     </button>
                     <check_box
                      control_name="FSPerfParallelTextureEncode"
@@ -7433,6 +7433,17 @@
                      name="fs_fsperfparalleltextureencode"
                      tool_tip="The viewer freezes while it compresses a texture for upload, about a second per large texture, and a material upload compresses up to four. With this on, each texture is compressed on several cores and the maps of a material at the same time, so the freeze is several times shorter. Applies to textures, materials, snapshots and mesh textures."
                      top="2143"
+                     width="455" />
+                    <check_box
+                     control_name="FSPerfInventoryLazySort"
+                     follows="left|top"
+                     height="20"
+                     label="Sort only open inventory folders right away"
+                     layout="topleft"
+                     left="35"
+                     name="fs_fsperfinventorylazysort"
+                     tool_tip="Opening the inventory, switching its tabs or changing the sort order sorted every folder at once, a freeze of a few hundred milliseconds with large inventories. With this on, open folders are sorted right away and each closed folder when you open it. With folders sorted by date everything is still sorted at once, since that order depends on what is inside them."
+                     top="2166"
                      width="455" />
                 </panel>
             </scroll_container>

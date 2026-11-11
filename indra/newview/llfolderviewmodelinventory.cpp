@@ -31,6 +31,7 @@
 #include "llinventorypanel.h"
 #include "lltooldraganddrop.h"
 #include "llfavoritesbar.h"
+#include "llviewercontrol.h" // <FS:Trish/>
 
 //
 // class LLFolderViewModelInventory
@@ -71,6 +72,14 @@ void LLFolderViewModelInventory::sort( LLFolderViewFolder* folder )
     LLFolderViewModelItemInventory* sort_modelp =   static_cast<LLFolderViewModelItemInventory*>(folder->getViewModelItem());
     if (!sort_modelp->canSortContent()) return;
 
+    // <FS:Trish> FSPerfInventoryLazySort: a new sort order (the first time the inventory is drawn, a tab
+    // switch) re-sorted every folder ever built, open or not: 23000 folders in one frame. A closed folder
+    // is sorted when it is opened and laid out (arrange() sorts it then). Only with folders sorted by date
+    // does the order here depend on the dates passed up from sorted subfolders, so recurse fully then.
+    static LLCachedControl<bool> lazy_sort(gSavedSettings, "FSPerfInventoryLazySort", true);
+    const bool sort_closed = !lazy_sort || getSorter().isFoldersByDate();
+    // </FS:Trish>
+
     bool has_favorites = false;
     for (std::list<LLFolderViewFolder*>::iterator it =   folder->getFoldersBegin(), end_it = folder->getFoldersEnd();
         it != end_it;
@@ -78,7 +87,13 @@ void LLFolderViewModelInventory::sort( LLFolderViewFolder* folder )
     {
         // Recursive call to sort() on child (CHUI-849)
         LLFolderViewFolder* child_folderp = *it;
-        sort(child_folderp);
+        //sort(child_folderp);
+        // <FS:Trish>
+        if (sort_closed || child_folderp->isOpen())
+        {
+            sort(child_folderp);
+        }
+        // </FS:Trish>
 
         LLFolderViewModelItemInventory* modelp = static_cast<LLFolderViewModelItemInventory*>(child_folderp->getViewModelItem());
         has_favorites |= child_folderp->isFavorite() || child_folderp->hasFavorites();

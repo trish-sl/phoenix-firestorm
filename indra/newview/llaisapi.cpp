@@ -39,6 +39,8 @@
 #include "llvoavatar.h"
 #include "llvoavatarself.h"
 #include "llviewercontrol.h"
+#include "llstartup.h" // <FS:Trish/>
+#include "llcoros.h" // <FS:Trish/>
 
 #include "llviewernetwork.h"
 
@@ -712,10 +714,39 @@ void AISAPI::FetchCOF(completion_t callback)
     // Only cof folder will be full, but cof can contain an outfit
     // link with embedded outfit folder for request to parse
     body["depth"] = 0;
+    //LLCoprocedureManager::CoProcedure_t proc(boost::bind(&AISAPI::InvokeAISCommandCoro,
+    //                                                     _1, getFn, url, LLUUID::null, body, callback, FETCHCOF));
+    //
+    //EnqueueAISCommand("FetchCOF", proc);
+    // <FS:Trish> FSFastSelfRez: at login the inventory background fetch keeps about 19 AIS requests going
+    // on the 8 connections of the default HTTP policy, and the outfit request queued behind them for
+    // seconds while the avatar waited half loaded. Send it on the inventory policy instead, whose
+    // connections only the legacy (non AIS) inventory fetch uses, so it goes out at once.
+    static LLCachedControl<bool> fast_self_rez(gSavedSettings, "FSFastSelfRez", true);
+    const F64 sent_at = LLTimer::getTotalSeconds();
+    completion_t timed_callback = [callback, sent_at](const LLUUID& id)
+        {
+            LL_INFOS("Avatar") << "Current outfit folder fetched in " << llformat("%.2f", LLTimer::getTotalSeconds() - sent_at) << " s" << LL_ENDL;
+            if (callback)
+            {
+                callback(id);
+            }
+        };
     LLCoprocedureManager::CoProcedure_t proc(boost::bind(&AISAPI::InvokeAISCommandCoro,
-                                                         _1, getFn, url, LLUUID::null, body, callback, FETCHCOF));
-
+                                                         _1, getFn, url, LLUUID::null, body, timed_callback, FETCHCOF));
+    if (fast_self_rez && LLStartUp::getStartupState() < STATE_STARTED)
+    {
+        LLCoros::instance().launch("AIS(FetchCOF)", [proc]()
+            {
+                LLCoreHttpUtil::HttpCoroutineAdapter::ptr_t adapter = std::make_shared<LLCoreHttpUtil::HttpCoroutineAdapter>(
+                    "AIS(FetchCOF)", LLAppViewer::instance()->getAppCoreHttp().getPolicy(LLAppCoreHttp::AP_INVENTORY));
+                LLUUID id(LLUUID::generateNewID());
+                proc(adapter, id);
+            });
+        return;
+    }
     EnqueueAISCommand("FetchCOF", proc);
+    // </FS:Trish>
 }
 
 void AISAPI::FetchCategoryLinks(const LLUUID &catId, completion_t callback)
