@@ -590,6 +590,15 @@ public:
             return false;
         }
 
+        // <FS:Trish> FSPerfParallelTextureEncode: let OpenJPEG code the blocks of the image on several
+        // threads. Uploads encode on the main thread, about a second per 1024 texture otherwise.
+        const U32 encode_threads = LLImageJ2C::sFSEncodeThreads.load(std::memory_order_relaxed);
+        if (encode_threads > 1 && opj_has_thread_support())
+        {
+            opj_codec_set_threads(encoder, (int)encode_threads);
+        }
+        // </FS:Trish>
+
         U32 tile_count = width_tiles * height_tiles;
         U32 data_size_guess = tile_count * TILE_SIZE;
 

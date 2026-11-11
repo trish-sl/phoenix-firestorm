@@ -6151,7 +6151,7 @@
              bottom="-1">
                 <panel
                  follows="left|top"
-                 height="2120"
+                 height="2177"
                  layout="topleft"
                  left="0"
                  name="experimental_performance_settings"
@@ -7397,6 +7397,42 @@
                      name="fs_fsfastselfrez"
                      tool_tip="Shortens the time other people see your avatar half loaded after you log in. The viewer starts loading your outfit as soon as your inventory list arrives instead of after the loading screen's wait, and asks the region for up to four attachments at a time instead of one. Attachments that take a long time to rez on the region side are not affected. The log gets a list of when each attachment was requested and arrived."
                      top="2087"
+                     width="455" />
+                    <text
+                     follows="left|top"
+                     font="SansSerifBold"
+                     height="18"
+                     layout="topleft"
+                     left="15"
+                     name="fs_heading_uploads_inventory"
+                     top="2120"
+                     width="340">
+                        Uploads and inventory
+                    </text>
+                    <button
+                     follows="left|top"
+                     height="19"
+                     label="Reset to default"
+                     layout="topleft"
+                     left="370"
+                     name="reset_fs_heading_uploads_inventory"
+                     tool_tip="Set every option in &quot;Uploads and inventory&quot; back to its default value."
+                     top="2119"
+                     width="120">
+                        <button.commit_callback
+                         function="FSExperimental.ResetSection"
+                         parameter="FSPerfParallelTextureEncode" />
+                    </button>
+                    <check_box
+                     control_name="FSPerfParallelTextureEncode"
+                     follows="left|top"
+                     height="20"
+                     label="Compress uploaded textures on several cores"
+                     layout="topleft"
+                     left="35"
+                     name="fs_fsperfparalleltextureencode"
+                     tool_tip="The viewer freezes while it compresses a texture for upload, about a second per large texture, and a material upload compresses up to four. With this on, each texture is compressed on several cores and the maps of a material at the same time, so the freeze is several times shorter. Applies to textures, materials, snapshots and mesh textures."
+                     top="2143"
                      width="455" />
                 </panel>
             </scroll_container>

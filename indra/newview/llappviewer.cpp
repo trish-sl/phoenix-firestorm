@@ -2762,6 +2762,17 @@ bool LLAppViewer::initThreads()
 
     LLImage::initClass(gSavedSettings.getBOOL("TextureNewByteRange"),gSavedSettings.getS32("TextureReverseByteRange"));
     LLImageJ2C::sFSOpenJPEGBufferCacheMB = gSavedSettings.getU32("FSPerfOpenJPEGBufferCacheMB"); // <FS:Trish/> before the first decode
+    // <FS:Trish> FSPerfParallelTextureEncode: threads for one texture encode (uploads)
+    {
+        auto set_encode_threads = []()
+        {
+            const U32 cores = llmax(1U, std::thread::hardware_concurrency());
+            LLImageJ2C::sFSEncodeThreads = gSavedSettings.getBOOL("FSPerfParallelTextureEncode") ? llclamp(cores / 2, 2U, 8U) : 0U;
+        };
+        set_encode_threads();
+        gSavedSettings.getControl("FSPerfParallelTextureEncode")->getSignal()->connect([set_encode_threads](LLControlVariable*, const LLSD&, const LLSD&) { set_encode_threads(); });
+    }
+    // </FS:Trish>
 
     LLLFSThread::initClass(enable_threads && true); // TODO: fix crashes associated with this shutdo
 
