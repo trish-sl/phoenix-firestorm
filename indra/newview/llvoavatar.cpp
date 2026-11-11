@@ -11736,6 +11736,74 @@ LLViewerTexture* LLVOAvatar::getBakedTexture(const U8 te)
 
 }
 
+// <FS:Trish> Palette builds happen on the pose workers too (FSPerfParallelSkinPalettes)
+static U32 fs_next_palette_build_serial()
+{
+    static std::atomic<U32> sSerial{ 0 };
+    return ++sSerial;
+}
+
+// FSPerfParallelSkinPalettes. Any thread, for this avatar only, while the main thread waits for the pose
+// workers: rebuilds the palettes this avatar used last frame from the joints just posed, as
+// updateSkinInfoMatrixPalette() would, and records the joint serials so their first use this frame can
+// check nothing moved since. Skins whose joint numbers were never resolved are left to the main thread,
+// as resolving writes the shared skin.
+void LLVOAvatar::fsPrebuildMatrixPalettes()
+{
+    LL_PROFILE_ZONE_SCOPED_CATEGORY_AVATAR;
+    const bool use_local_origin = LLViewerShaderMgr::sRiggedLocalOrigin;
+    const LLVector3 skin_origin = use_local_origin ? (mRoot ? mRoot->getWorldPosition() : getPositionAgent()) : LLVector3::zero;
+    for (auto& [hash, entry] : mMatrixPaletteCache)
+    {
+        // The workers run in idle, before display() counts the frame up and renders it: an entry the
+        // last render used carries the current count, and the coming render uses the next one. A frame
+        // that skips rendering leaves a stamp ahead; its first use then checks the joint serials.
+        const LLMeshSkinInfo* skin = entry.mFSSkin.get();
+        if (!skin || entry.mFrame != gFrameCount || !skin->mJointNumsInitialized)
+        {
+            continue;
+        }
+        const U32 count = LLSkinningUtil::getMeshJointCount(skin);
+        if (count == 0 || skin->mInvBindMatrix.size() < count || skin->mJointNums.size() < count)
+        {
+            continue;
+        }
+        entry.mMatrixPalette.resize(count);
+        LLSkinningUtil::initSkinningMatrixPalette(&(entry.mMatrixPalette[0]), count, skin, this);
+        entry.mJointSerials.resize(count);
+        for (U32 j = 0; j < count; ++j)
+        {
+            LLJoint* joint = getJoint(skin->mJointNums[j]);
+            entry.mJointSerials[j] = joint ? joint->mWorldMatrixSerial : 0;
+        }
+        entry.mSkinOrigin = skin_origin;
+        entry.mGLMp.resize(count * 12);
+        F32* mp = &(entry.mGLMp[0]);
+        for (U32 i = 0; i < count; ++i)
+        {
+            const F32* m = entry.mMatrixPalette[i].mMatrix[0].getF32ptr();
+            const U32 idx = i * 12;
+            mp[idx + 0] = m[0];
+            mp[idx + 1] = m[1];
+            mp[idx + 2] = m[2];
+            mp[idx + 3] = m[12] - skin_origin.mV[VX];
+            mp[idx + 4] = m[4];
+            mp[idx + 5] = m[5];
+            mp[idx + 6] = m[6];
+            mp[idx + 7] = m[13] - skin_origin.mV[VY];
+            mp[idx + 8] = m[8];
+            mp[idx + 9] = m[9];
+            mp[idx + 10] = m[10];
+            mp[idx + 11] = m[14] - skin_origin.mV[VZ];
+        }
+        entry.mUsesLocalOrigin = use_local_origin;
+        entry.mFSBuildSerial = fs_next_palette_build_serial();
+        entry.mFrame = gFrameCount + 1;
+        entry.mFSPrebuilt = true;
+    }
+}
+// </FS:Trish>
+
 const LLVOAvatar::MatrixPaletteCache& LLVOAvatar::updateSkinInfoMatrixPalette(const LLMeshSkinInfo* skin)
 {
     U64 hash = skin->mHash;
@@ -11745,6 +11813,44 @@ const LLVOAvatar::MatrixPaletteCache& LLVOAvatar::updateSkinInfoMatrixPalette(co
     // <FS:Trish> Cached at shader load, a string keyed map lookup here runs for every rigged mesh in every pass
     //const bool use_local_origin = LLGLSLShader::sGlobalDefines.count("RIGGED_LOCAL_ORIGIN") != 0;
     const bool use_local_origin = LLViewerShaderMgr::sRiggedLocalOrigin;
+    // </FS:Trish>
+
+    // <FS:Trish> FSPerfParallelSkinPalettes: remember the skin for the pose workers, and take a palette
+    // they built this frame once no joint in it moved since (the main thread may still move joints after
+    // the workers: deferred visual params, the poser, attachments)
+    if (entry.mFSSkin.get() != skin)
+    {
+        entry.mFSSkin = skin;
+    }
+    if (entry.mFSPrebuilt)
+    {
+        entry.mFSPrebuilt = false;
+        if (entry.mFrame == gFrameCount && entry.mUsesLocalOrigin == use_local_origin)
+        {
+            const U32 count = (U32)entry.mMatrixPalette.size();
+            bool unchanged = count > 0 && count == entry.mJointSerials.size() && skin->mJointNums.size() >= count;
+            if (unchanged && use_local_origin)
+            {
+                unchanged = (mRoot ? mRoot->getWorldPosition() : getPositionAgent()) == entry.mSkinOrigin;
+            }
+            for (U32 j = 0; unchanged && j < count; ++j)
+            {
+                LLJoint* joint = getJoint(skin->mJointNums[j]);
+                if (!joint)
+                {
+                    unchanged = false;
+                    break;
+                }
+                joint->getWorldMatrix4a(); // apply any pending update, as the build would
+                unchanged = joint->mWorldMatrixSerial == entry.mJointSerials[j];
+            }
+            if (unchanged)
+            {
+                return entry;
+            }
+            entry.mFrame = gFrameCount - 1; // rebuild below
+        }
+    }
     // </FS:Trish>
 
     // <FS:Trish> Rebuild only when a joint in the palette was recomputed since the last build
@@ -11787,8 +11893,9 @@ const LLVOAvatar::MatrixPaletteCache& LLVOAvatar::updateSkinInfoMatrixPalette(co
         entry.mUsesLocalOrigin = use_local_origin;
         entry.mJointSerials.clear(); // <FS:Trish/>
         // <FS:Trish> Skin once per frame: skin blends captured from the old palette are stale
-        static U32 sFSPaletteBuildSerial = 0;
-        entry.mFSBuildSerial = ++sFSPaletteBuildSerial;
+        //static U32 sFSPaletteBuildSerial = 0;
+        //entry.mFSBuildSerial = ++sFSPaletteBuildSerial;
+        entry.mFSBuildSerial = fs_next_palette_build_serial(); // shared with the pose workers
         // </FS:Trish>
 
         //build matrix palette

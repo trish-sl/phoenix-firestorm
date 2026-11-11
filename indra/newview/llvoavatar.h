@@ -1000,6 +1000,13 @@ public:
         U32 mFSBuildSerial = 0;
         // </FS:Trish>
 
+        // <FS:Trish> FSPerfParallelSkinPalettes: the skin this entry was last built for (set on the main
+        // thread; workers only read it through get()), and whether the avatar's worker built it this
+        // frame, so its first use checks no joint moved after that
+        LLConstPointer<LLMeshSkinInfo> mFSSkin;
+        bool mFSPrebuilt = false;
+        // </FS:Trish>
+
         MatrixPaletteCache() :
             mFrame(gFrameCount - 1),
             mSkinOrigin(LLVector3::zero),
@@ -1012,6 +1019,11 @@ public:
     // Will do a map lookup for the entry associated with the given MeshSkinInfo
     // Will update said entry if it hasn't been updated yet this frame
     const MatrixPaletteCache& updateSkinInfoMatrixPalette(const LLMeshSkinInfo* skinInfo);
+
+    // <FS:Trish> FSPerfParallelSkinPalettes: on this avatar's pose worker, after its joints are posed,
+    // build the palettes it used last frame. Touches only this avatar and reads the skins.
+    void fsPrebuildMatrixPalettes();
+    // </FS:Trish>
 
     // Map of LLMeshSkinInfo::mHash to MatrixPaletteCache
     typedef std::unordered_map<U64, MatrixPaletteCache> matrix_palette_cache_t;
