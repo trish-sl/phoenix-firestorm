@@ -275,6 +275,8 @@ void FSAssetBlacklist::addNewItemToBlacklistData(const LLUUID& id, const FSAsset
         {
             LLFile::remove(wav_path);
         }
+        extern void fs_forget_decoded_sound(const LLUUID& id); // llaudioengine.cpp, FSPerfDiskThread
+        fs_forget_decoded_sound(id);
         if (gAudiop)
         {
             gAudiop->removeAudioData(id);

@@ -78,7 +78,7 @@ namespace
         }
     }
 
-    bool enqueue(std::function<void()> job)
+    bool enqueue(std::function<void()> job, bool urgent = false)
     {
         if (!sEnabled.load(std::memory_order_relaxed))
         {
@@ -90,7 +90,14 @@ namespace
             {
                 return false;
             }
-            sJobs.push_back(std::move(job));
+            if (urgent)
+            {
+                sJobs.push_front(std::move(job));
+            }
+            else
+            {
+                sJobs.push_back(std::move(job));
+            }
         }
         sWake.notify_one();
         return true;
@@ -137,6 +144,11 @@ namespace FSDiskThread
     bool post(std::function<void()> work)
     {
         return enqueue(std::move(work));
+    }
+
+    bool postUrgent(std::function<void()> work)
+    {
+        return enqueue(std::move(work), true);
     }
 
     void shutdown()

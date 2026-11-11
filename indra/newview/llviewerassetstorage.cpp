@@ -46,6 +46,8 @@
 #include "llworld.h"
 
 #include "llviewernetwork.h" // <FS:Ansariel> [UDP Assets]
+#include "fsdiskthread.h" // <FS:Trish/> FSPerfDiskThread
+#include <atomic> // <FS:Trish/>
 
 ///----------------------------------------------------------------------------
 /// LLViewerAssetRequest
@@ -655,6 +657,59 @@ void LLViewerAssetStorage::assetRequestCoro(
             // case.
             LLUUID temp_id;
             temp_id.generate();
+            // <FS:Trish> FSPerfDiskThread: the cache file is written and renamed on the disk thread while
+            // this coroutine waits a frame at a time, so the callbacks below still find it in the cache.
+            // Written from here, a busy disk held the main thread for up to a second.
+            S32 fs_disk_result = 0; // 0: not posted, 1: written, 2: write failed, 3: rename failed
+            if (FSDiskThread::isEnabled())
+            {
+                auto data = std::make_shared<LLSD::Binary>(raw);
+                auto finished = std::make_shared<std::atomic<S32>>(0);
+                if (FSDiskThread::postUrgent([data, finished, temp_id, uuid, atype]()
+                    {
+                        LLFileSystem file(temp_id, atype, LLFileSystem::WRITE);
+                        S32 result = 1;
+                        if (!file.write(data->data(), (S32)data->size()))
+                        {
+                            result = 2;
+                        }
+                        else if (!file.rename(uuid, atype))
+                        {
+                            result = 3;
+                        }
+                        finished->store(result, std::memory_order_release);
+                    }))
+                {
+                    while ((fs_disk_result = finished->load(std::memory_order_acquire)) == 0)
+                    {
+                        llcoro::suspendUntilNextFrame();
+                        LLCoros::checkStop();
+                    }
+                }
+            }
+            if (fs_disk_result != 0)
+            {
+                bytes_fetched = size;
+                if (fs_disk_result == 2)
+                {
+                    LL_WARNS("ViewerAsset") << "Failure in vf.write()" << LL_ENDL;
+                    result_code = LL_ERR_ASSET_REQUEST_FAILED;
+                    ext_status = LLExtStat::CACHE_CORRUPT;
+                }
+                else if (fs_disk_result == 3)
+                {
+                    LL_WARNS("ViewerAsset") << "rename failed" << LL_ENDL;
+                    result_code = LL_ERR_ASSET_REQUEST_FAILED;
+                    ext_status = LLExtStat::CACHE_CORRUPT;
+                }
+                else
+                {
+                    mCountSucceeded++;
+                }
+            }
+            else
+            // </FS:Trish>
+            {
             LLFileSystem vf(temp_id, atype, LLFileSystem::WRITE);
             bytes_fetched = size;
             if (!vf.write(raw.data(),size))
@@ -674,6 +729,7 @@ void LLViewerAssetStorage::assetRequestCoro(
             {
                 mCountSucceeded++;
             }
+            } // <FS:Trish/> not posted to the disk thread
         }
         else
         {
