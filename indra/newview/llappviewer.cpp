@@ -1566,6 +1566,10 @@ void LLAppViewer::initMaxHeapSize()
 // externally visible timers
 LLTrace::BlockTimerStatHandle FTM_FRAME("Frame");
 
+#if LL_WINDOWS
+#include <tlhelp32.h> // <FS:Trish/> FSPerfProfileLogInterval
+#endif
+
 // <FS:Trish> FSHitchLogThresholdMs: a frame longer than this (wall clock, in world) logs the timers
 // that took the most time in it, by their own time, so a hitch can be traced from the log. The
 // timers record whether or not the Fast Timers floater is open; nothing is walked unless the
@@ -1632,6 +1636,152 @@ static void fs_log_hitch()
         line += " " + costs;
     }
     LL_WARNS("FSHitch") << line << LL_ENDL;
+}
+// </FS:Trish>
+
+// <FS:Trish> FSPerfProfileLogInterval: every so many seconds, the main thread's timers by their own time
+// (average ms a frame over the interval) and every thread's CPU use, by name, so where the time goes in
+// a steady scene can be read from the log. The timers record anyway; nothing is summed while it is 0.
+static void fs_log_profile()
+{
+    static LLCachedControl<F32> interval(gSavedSettings, "FSPerfProfileLogInterval", 0.f);
+    static std::unordered_map<const LLTrace::BlockTimerStatHandle*, std::pair<std::string, F64>> s_self_ms;
+    static U32 s_frames = 0;
+    static LLTimer s_timer;
+    if (interval <= 0.f || LLStartUp::getStartupState() < STATE_STARTED)
+    {
+        s_self_ms.clear();
+        s_frames = 0;
+        s_timer.reset();
+        return;
+    }
+    LLTrace::Recording& rec = LLTrace::get_frame_recording().getLastRecording();
+    for (auto& base : LLTrace::BlockTimerStatHandle::instance_snapshot())
+    {
+        LLTrace::BlockTimerStatHandle& timer = static_cast<LLTrace::BlockTimerStatHandle&>(base);
+        const F64 self_ms = F64Milliseconds(rec.getSum(timer.selfTime())).value();
+        if (self_ms > 0.0)
+        {
+            auto& entry = s_self_ms[&timer];
+            if (entry.first.empty())
+            {
+                entry.first = timer.getName();
+            }
+            entry.second += self_ms;
+        }
+    }
+    ++s_frames;
+    const F64 elapsed = s_timer.getElapsedTimeF64();
+    if (elapsed < (F64)llmax((F32)interval, 2.f) || s_frames == 0)
+    {
+        return;
+    }
+
+    std::vector<std::pair<F64, std::string>> top;
+    for (const auto& [handle, entry] : s_self_ms)
+    {
+        top.emplace_back(entry.second / s_frames, entry.first);
+    }
+    std::sort(top.begin(), top.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
+    std::string line = llformat("Main thread over %.0f s, %u frames, %.1f ms a frame; own time, ms a frame:", elapsed, s_frames,
+                                elapsed * 1000.0 / s_frames);
+    for (size_t i = 0; i < top.size() && i < 20; ++i)
+    {
+        line += llformat(" %s %.2f;", top[i].second.c_str(), top[i].first);
+    }
+    LL_INFOS("FSProfile") << line << LL_ENDL;
+
+#if LL_WINDOWS
+    // Every thread's CPU time over the interval, by name, busiest first. On the General pool: the snapshot
+    // lists every thread on the system and took a sizeable part of a frame on the main thread.
+    static std::atomic<bool> s_listing{ false };
+    auto queue = LL::WorkQueue::getInstance("General");
+    if (!queue || s_listing.exchange(true))
+    {   // no pool, or the last listing is still running: skip this one
+        s_self_ms.clear();
+        s_frames = 0;
+        s_timer.reset();
+        return;
+    }
+    const bool posted = queue->post([elapsed]()
+    {
+        static std::unordered_map<DWORD, U64> s_thread_cpu;
+        std::unordered_map<DWORD, U64> now_cpu;
+        std::vector<std::pair<F64, std::string>> threads;
+        HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+        if (snap != INVALID_HANDLE_VALUE)
+        {
+            const DWORD pid = GetCurrentProcessId();
+            THREADENTRY32 te{};
+            te.dwSize = sizeof(te);
+            for (BOOL ok = Thread32First(snap, &te); ok; ok = Thread32Next(snap, &te))
+            {
+                if (te.th32OwnerProcessID != pid)
+                {
+                    continue;
+                }
+                HANDLE thread = OpenThread(THREAD_QUERY_LIMITED_INFORMATION, FALSE, te.th32ThreadID);
+                if (!thread)
+                {
+                    continue;
+                }
+                FILETIME create, exit, kernel, user;
+                if (GetThreadTimes(thread, &create, &exit, &kernel, &user))
+                {
+                    const U64 cpu = (((U64)kernel.dwHighDateTime << 32) | kernel.dwLowDateTime) + (((U64)user.dwHighDateTime << 32) | user.dwLowDateTime);
+                    now_cpu[te.th32ThreadID] = cpu;
+                    auto prev = s_thread_cpu.find(te.th32ThreadID);
+                    const U64 delta = prev != s_thread_cpu.end() && cpu >= prev->second ? cpu - prev->second : 0;
+                    const F64 pct = (F64)delta / 10000.0 / (elapsed * 1000.0) * 100.0; // of one core
+                    if (prev != s_thread_cpu.end() && pct >= 1.0)
+                    {
+                        std::string name;
+                        PWSTR desc = nullptr;
+                        if (SUCCEEDED(GetThreadDescription(thread, &desc)) && desc)
+                        {
+                            name = ll_convert_wide_to_string(desc);
+                            LocalFree(desc);
+                        }
+                        if (name.empty())
+                        {
+                            name = llformat("thread %u", (U32)te.th32ThreadID);
+                        }
+                        threads.emplace_back(pct, name);
+                    }
+                }
+                CloseHandle(thread);
+            }
+            CloseHandle(snap);
+        }
+        const bool first = s_thread_cpu.empty();
+        s_thread_cpu.swap(now_cpu);
+        if (!first)
+        {
+            std::sort(threads.begin(), threads.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
+            std::string tline = "Threads, % of one core:";
+            F64 total = 0.0;
+            for (const auto& [pct, name] : threads)
+            {
+                total += pct;
+            }
+            for (size_t i = 0; i < threads.size() && i < 24; ++i)
+            {
+                tline += llformat(" %s %.0f;", threads[i].second.c_str(), threads[i].first);
+            }
+            tline += llformat(" all %.0f", total);
+            LL_INFOS("FSProfile") << tline << LL_ENDL;
+        }
+        s_listing = false;
+    });
+    if (!posted)
+    {   // shutting down
+        s_listing = false;
+    }
+#endif
+
+    s_self_ms.clear();
+    s_frames = 0;
+    s_timer.reset();
 }
 // </FS:Trish>
 
@@ -1765,6 +1915,7 @@ bool LLAppViewer::doFrame()
 
             LLTrace::get_frame_recording().nextPeriod();
             fs_log_hitch(); // <FS:Trish/> FSHitchLogThresholdMs
+            fs_log_profile(); // <FS:Trish/> FSPerfProfileLogInterval
             LLTrace::BlockTimer::logStats();
         }
 
