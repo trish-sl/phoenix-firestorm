@@ -82,6 +82,8 @@ public:
     // <FS:Trish> FSPerfOpenJPEGBufferCacheMB: how much of its large buffers the OpenJPEG decoder keeps per
     // thread for the next decode, in MB (0 off). Read once, at the first decode.
     static std::atomic<U32> sFSOpenJPEGBufferCacheMB;
+    // FSPerfParallelTextureEncode: threads OpenJPEG may use for one encode (0 or 1: the calling thread only)
+    static std::atomic<U32> sFSEncodeThreads;
     // </FS:Trish>
 
 protected:

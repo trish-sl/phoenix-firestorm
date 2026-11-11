@@ -66,6 +66,7 @@
 
 #include <boost/iostreams/device/array.hpp>
 #include <boost/iostreams/stream.hpp>
+#include <future> // <FS:Trish/>
 
 const std::string MATERIAL_BASE_COLOR_DEFAULT_NAME = "Base Color";
 const std::string MATERIAL_NORMAL_DEFAULT_NAME = "Normal";
@@ -2008,6 +2009,43 @@ static void pack_textures(
     LLPointer<LLImageJ2C>& emissive_j2c)
 {
     // NOTE : remove log spam and lossless vs lossy comparisons when the logs are no longer useful
+
+    // <FS:Trish> FSPerfParallelTextureEncode: the maps are independent, encode them at the same time. The
+    // main thread waits here either way, so nothing else touches the settings the encode reads.
+    static LLCachedControl<bool> parallel_encode(gSavedSettings, "FSPerfParallelTextureEncode", true);
+    if (parallel_encode)
+    {
+        auto encode_async = [](LLPointer<LLImageRaw>& img)
+        {
+            std::future<LLPointer<LLImageJ2C>> result;
+            if (img)
+            {
+                result = std::async(std::launch::async, [&img]() { return LLViewerTextureList::convertToUploadFile(img); });
+            }
+            return result;
+        };
+        std::future<LLPointer<LLImageJ2C>> base_color_job = encode_async(base_color_img);
+        std::future<LLPointer<LLImageJ2C>> mr_job = encode_async(mr_img);
+        std::future<LLPointer<LLImageJ2C>> emissive_job = encode_async(emissive_img);
+        if (normal_img)
+        {
+            normal_j2c = LLViewerTextureList::convertToUploadFile(normal_img, 2048, false, true);
+        }
+        if (base_color_job.valid())
+        {
+            base_color_j2c = base_color_job.get();
+        }
+        if (mr_job.valid())
+        {
+            mr_j2c = mr_job.get();
+        }
+        if (emissive_job.valid())
+        {
+            emissive_j2c = emissive_job.get();
+        }
+        return;
+    }
+    // </FS:Trish>
 
     if (base_color_img)
     {
