@@ -1020,7 +1020,11 @@ void LLViewerTextureList::updateImageDecodePriority(LLViewerFetchedTexture* imag
         // get adjusted bias based on image resolution
         LLImageGL* img = imagep->getGLTexture();
         F32 max_discard = F32(img ? img->getMaxDiscardLevel() : MAX_DISCARD_LEVEL);
-        F32 bias = llclamp(max_discard - 2.f, 1.f, LLViewerTexture::sDesiredDiscardBias);
+        //F32 bias = llclamp(max_discard - 2.f, 1.f, LLViewerTexture::sDesiredDiscardBias);
+        // <FS:Trish> FSTextureMaxDiscardBias: each step of bias above 4 lets a texture go one level deeper
+        // (a 2048 one 512 -> 256 -> 128), as below 4 the per texture limit already stops it at the same size
+        F32 bias = llclamp(max_discard - 2.f + llclamp(LLViewerTexture::sDesiredDiscardBias - 4.f, 0.f, 2.f), 1.f, LLViewerTexture::sDesiredDiscardBias);
+        // </FS:Trish>
 
         // convert bias into a vsize scaler
         bias = (F32) llroundf(powf(4, bias - 1.f));
