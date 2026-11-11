@@ -29,6 +29,8 @@
 #include "llaudioengine.h"
 
 #include "lllistener_openal.h"
+#include "llaudioengine_openal.h" // <FS:Trish/> FSPerfAudioThread
+#include <array> // <FS:Trish/>
 
 LLListener_OpenAL::LLListener_OpenAL()
 {
@@ -77,21 +79,37 @@ void LLListener_OpenAL::commitDeferredChanges()
     velocity[1] = mVelocity.mV[1];
     velocity[2] = mVelocity.mV[2];
 
-    alListenerfv(AL_ORIENTATION, orientation);
-    alListenerfv(AL_POSITION, mPosition.mV);
-    alListenerfv(AL_VELOCITY, velocity);
+    // <FS:Trish> FSPerfAudioThread
+    //alListenerfv(AL_ORIENTATION, orientation);
+    //alListenerfv(AL_POSITION, mPosition.mV);
+    //alListenerfv(AL_VELOCITY, velocity);
+    std::array<ALfloat, 6> orient{ orientation[0], orientation[1], orientation[2], orientation[3], orientation[4], orientation[5] };
+    std::array<ALfloat, 3> vel{ velocity[0], velocity[1], velocity[2] };
+    LLVector3 position = mPosition;
+    fs_audio_run([orient, vel, position]()
+        {
+            alListenerfv(AL_ORIENTATION, orient.data());
+            alListenerfv(AL_POSITION, position.mV);
+            alListenerfv(AL_VELOCITY, vel.data());
+        });
+    // </FS:Trish>
 }
 
 void LLListener_OpenAL::setDopplerFactor(F32 factor)
 {
     //LL_INFOS() << "LLListener_OpenAL::setDopplerFactor() : " << factor << LL_ENDL;
-    alDopplerFactor(factor);
+    //alDopplerFactor(factor);
+    mFSDopplerFactor = factor; // <FS:Trish/> FSPerfAudioThread
+    fs_audio_run([factor]() { alDopplerFactor(factor); }); // <FS:Trish/>
 }
 
 F32 LLListener_OpenAL::getDopplerFactor()
 {
     ALfloat factor;
-    factor = alGetFloat(AL_DOPPLER_FACTOR);
+    // <FS:Trish> FSPerfAudioThread: the one set last; asking would wait for the audio thread's calls
+    //factor = alGetFloat(AL_DOPPLER_FACTOR);
+    factor = fs_audio_threaded() ? mFSDopplerFactor : alGetFloat(AL_DOPPLER_FACTOR);
+    // </FS:Trish>
     //LL_INFOS() << "LLListener_OpenAL::getDopplerFactor() : " << factor << LL_ENDL;
     return factor;
 }

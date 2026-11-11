@@ -1185,6 +1185,7 @@ bool idle_startup()
             if (!gAudiop)
 #endif // !LL_WINDOWS
             {
+                LLAudioEngine_OpenAL::sFSUseAudioThread = gSavedSettings.getBOOL("FSPerfAudioThread"); // <FS:Trish/>
                 gAudiop = (LLAudioEngine *) new LLAudioEngine_OpenAL();
             }
 #endif

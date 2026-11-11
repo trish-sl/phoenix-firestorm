@@ -53,6 +53,7 @@ class LLListener_OpenAL  : public LLListener
 
  protected:
     F32 mRolloffFactor;
+    F32 mFSDopplerFactor{ 1.f }; // <FS:Trish/> FSPerfAudioThread: the one set last
 };
 
 #endif
