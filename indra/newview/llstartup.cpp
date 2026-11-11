@@ -3426,6 +3426,11 @@ bool idle_startup()
         set_startup_status(1.0, "", "");
         do_startup_frame();
 
+        // <FS:Trish> FSPerfPrefetchPreferences (llfloaterpreference.cpp)
+        extern void fs_prefetch_preferences_files();
+        fs_prefetch_preferences_files();
+        // </FS:Trish>
+
         if (!mBenefitsSuccessfullyInit)
         {
             LLNotificationsUtil::add("FailedToGetBenefits", LLSD(), LLSD(), boost::bind(on_benefits_failed_callback, _1, _2));
