@@ -93,6 +93,13 @@ public:
     // modified while the write is pending (texture fetch results are not).
     void store(const LLUUID& id, const LLPointer<LLImageRaw>& raw, S32 discard);
 
+    // Main thread, when a fetch is requested: textures seen only on avatars (their bakes, what they
+    // wear and their attachments) are neither stored nor loaded. Each avatar brings hundreds of
+    // textures seldom seen again, and writing or reading their raw pixels when someone arrives
+    // added hundreds of MB of disk traffic and page faults at once.
+    void setAvatarOnly(const LLUUID& id, bool avatar_only);
+    bool isAvatarOnly(const LLUUID& id) const; // any thread
+
     struct Stats
     {
         bool mEnabled = false;
@@ -138,6 +145,8 @@ private:
     void dropEntry(const LLUUID& id, const std::string* only_path = nullptr); // only_path: drop only while the entry still has that file
     void evictIfNeeded();
     static S64 now();
+
+    std::unordered_set<LLUUID> mAvatarOnly; // mMutex
 
     std::string mDir;
     bool mReadOnly = false;

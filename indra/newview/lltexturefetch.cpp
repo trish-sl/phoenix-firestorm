@@ -3049,7 +3049,7 @@ bool LLTextureFetchWorker::tryDecodedCache()
 
     FSDecodedTextureCache& cache = FSDecodedTextureCache::instance();
     if (mNeedsAux || mDesiredDiscard < 0 || mFTType == FTT_SERVER_BAKE ||
-        mUrl.compare(0, 7, "file://") == 0 || !cache.canLoad(mID, mDesiredDiscard))
+        mUrl.compare(0, 7, "file://") == 0 || cache.isAvatarOnly(mID) || !cache.canLoad(mID, mDesiredDiscard))
     {
         return false;
     }

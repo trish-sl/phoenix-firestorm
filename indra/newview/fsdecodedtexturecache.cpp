@@ -577,10 +577,35 @@ LLPointer<LLImageRaw> FSDecodedTextureCache::load(const LLUUID& id, S32 discard)
     return raw;
 }
 
+// Main thread
+void FSDecodedTextureCache::setAvatarOnly(const LLUUID& id, bool avatar_only)
+{
+    std::lock_guard<std::mutex> lock(mMutex);
+    if (avatar_only)
+    {
+        mAvatarOnly.insert(id);
+    }
+    else
+    {
+        mAvatarOnly.erase(id);
+    }
+}
+
+// Any thread
+bool FSDecodedTextureCache::isAvatarOnly(const LLUUID& id) const
+{
+    std::lock_guard<std::mutex> lock(mMutex);
+    return mAvatarOnly.count(id) != 0;
+}
+
 // Fetch thread
 void FSDecodedTextureCache::store(const LLUUID& id, const LLPointer<LLImageRaw>& raw, S32 discard)
 {
     if (!isEnabled() || mReadOnly || raw.isNull() || discard < 0 || discard > MAX_DISCARD_LEVEL)
+    {
+        return;
+    }
+    if (isAvatarOnly(id))
     {
         return;
     }

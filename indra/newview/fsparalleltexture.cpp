@@ -371,7 +371,9 @@ void FSParallelTexture::reduceFaces(LLViewerFetchedTexture* imagep, const Params
     // get adjusted bias based on image resolution
     LLImageGL* img = imagep->getGLTexture();
     F32 max_discard = F32(img ? img->getMaxDiscardLevel() : MAX_DISCARD_LEVEL);
-    F32 bias = llclamp(max_discard - 2.f, 1.f, p.mDiscardBias);
+    // FSTextureMaxDiscardBias: deeper above 4, as in updateImageDecodePriority
+    //F32 bias = llclamp(max_discard - 2.f, 1.f, p.mDiscardBias);
+    F32 bias = llclamp(max_discard - 2.f + llclamp(p.mDiscardBias - 4.f, 0.f, 2.f), 1.f, p.mDiscardBias);
 
     // convert bias into a vsize scaler
     bias = (F32) llroundf(powf(4, bias - 1.f));

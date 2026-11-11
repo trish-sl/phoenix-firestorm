@@ -28,6 +28,7 @@
 #include "llviewerprecompiledheaders.h"
 
 #include "llviewertexture.h"
+#include "fsdecodedtexturecache.h" // <FS:Trish/>
 
 // Library includes
 #include "llmath.h"
@@ -1003,7 +1004,23 @@ void LLViewerTexture::updateClass()
         }
     }
 
-    sDesiredDiscardBias = llclamp(sDesiredDiscardBias, 1.f, 4.f);
+    // <FS:Trish> FSTextureMaxDiscardBias: above 4 the per texture limit goes deeper (see
+    // fs_texture_bias_limit), so a crowd that still overfills video memory at 4 can shrink further
+    //sDesiredDiscardBias = llclamp(sDesiredDiscardBias, 1.f, 4.f);
+    static LLCachedControl<F32> max_bias_setting(gSavedSettings, "FSTextureMaxDiscardBias", 4.f);
+    const F32 max_bias = llclamp((F32)max_bias_setting, 4.f, 6.f);
+    sDesiredDiscardBias = llclamp(sDesiredDiscardBias, 1.f, max_bias); // backgrounded (5) included
+    // Every 30 s while the bias is up: where it is and how full video memory is
+    {
+        static LLFrameTimer s_bias_log_timer;
+        if (sDesiredDiscardBias > 1.f && s_bias_log_timer.getElapsedTimeF32() > 30.f)
+        {
+            s_bias_log_timer.reset();
+            LL_INFOS("FSTextureBias") << llformat("Texture discard bias %.2f (cap %.1f), video memory %.0f of %.0f MB used",
+                                                  sDesiredDiscardBias, max_bias, sVRAMUsedMegabytes, sVRAMTargetMegabytes) << LL_ENDL;
+        }
+    }
+    // </FS:Trish>
 
     // <FS:Trish> Backgrounded or minimized, memory is handed back whatever the headroom
     sFSVRAMTight = vram_tight || was_backgrounded;
@@ -1028,7 +1045,8 @@ void LLViewerTexture::updateClass()
             s_settle_ref = s_bias_state;
             s_settle_timer.reset();
         }
-        if (s_bias_state <= 1.f || s_bias_state >= 4.f || fabsf(s_bias_state - s_applied_bias) >= BIAS_STEP
+        //if (s_bias_state <= 1.f || s_bias_state >= 4.f || fabsf(s_bias_state - s_applied_bias) >= BIAS_STEP
+        if (s_bias_state <= 1.f || s_bias_state >= max_bias || fabsf(s_bias_state - s_applied_bias) >= BIAS_STEP // <FS:Trish/>
             || s_settle_timer.getElapsedTimeF32() > SETTLE_TIME)
         {
             s_applied_bias = s_bias_state;
@@ -2805,6 +2823,47 @@ bool LLViewerFetchedTexture::processFetchResults(S32& desired_discard, S32 curre
     return true;
 }
 
+// <FS:Trish> FSDecodedTextureCacheSkipAvatars: a texture of an avatar type (bakes, what is worn), or one
+// whose faces are all on avatars and their attachments. One face anywhere else and it is a world texture.
+static bool fs_is_avatar_only_texture(LLViewerFetchedTexture* tex)
+{
+    switch (tex->getBoostLevel())
+    {
+    case LLGLTexture::BOOST_AVATAR:
+    case LLGLTexture::BOOST_AVATAR_BAKED:
+    case LLGLTexture::BOOST_AVATAR_SELF:
+    case LLGLTexture::BOOST_AVATAR_BAKED_SELF:
+        return true;
+    default:
+        break;
+    }
+    bool on_avatar = false;
+    for (U32 ch = 0; ch < LLRender::NUM_TEXTURE_CHANNELS; ++ch)
+    {
+        const LLViewerTexture::ll_face_list_t* faces = tex->getFaceList(ch);
+        const S32 count = llmin(tex->getNumFaces(ch), (S32)faces->size());
+        for (S32 i = 0; i < count; ++i)
+        {
+            const LLFace* face = (*faces)[i];
+            const LLViewerObject* obj = face ? face->getViewerObject() : nullptr;
+            if (!obj)
+            {
+                continue;
+            }
+            if (obj->isAttachment() || obj->isAvatar())
+            {
+                on_avatar = true;
+            }
+            else
+            {
+                return false;
+            }
+        }
+    }
+    return on_avatar;
+}
+// </FS:Trish>
+
 bool LLViewerFetchedTexture::updateFetch()
 {
     LL_PROFILE_ZONE_SCOPED_CATEGORY_TEXTURE;
@@ -2987,6 +3046,13 @@ bool LLViewerFetchedTexture::updateFetch()
             h = mGLTexturep->getHeight(0);
             c = mComponents;
         }
+
+        // <FS:Trish> FSDecodedTextureCacheSkipAvatars: avatar textures stay out of the decoded texture cache
+        {
+            static LLCachedControl<bool> skip_avatars(gSavedSettings, "FSDecodedTextureCacheSkipAvatars", true);
+            FSDecodedTextureCache::instance().setAvatarOnly(getID(), skip_avatars && fs_is_avatar_only_texture(this));
+        }
+        // </FS:Trish>
 
         // bypass texturefetch directly by pulling from LLTextureCache
         S32 fetch_request_response = -1;
