@@ -1636,6 +1636,15 @@ void LLIMModel::LLIMSession::loadHistory()
         // read and parse chat history from local file
         chat_message_list_t chat_history;
         LLLogChat::loadChatHistory(mHistoryFileName, chat_history, LLSD(), isGroupChat());
+        // <FS:Trish> FSChatHistoryLinesShown: only the most recent lines of the log are shown. Each one
+        // builds its own widgets in the conversation, and a full recall (about 200 lines) took about
+        // half a second when a session opened, in the middle of handling the message that opened it.
+        static LLCachedControl<U32> lines_shown(gSavedSettings, "FSChatHistoryLinesShown", 50);
+        while (lines_shown > 0 && chat_history.size() > (size_t)lines_shown)
+        {
+            chat_history.pop_front();
+        }
+        // </FS:Trish>
         addMessagesFromHistoryCache(chat_history);
     }
 }
