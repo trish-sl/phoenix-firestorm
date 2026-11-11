@@ -402,6 +402,7 @@ static LLCullResult* sCull = NULL;
 
 // <FS:Trish> Bumped whenever a light joins mLights, so a throttled calcNearbyLights rescans at once
 static U32 sLightSetSerial = 0;
+static bool sFSShadowCameraMoving = false; // <FS:Trish/> FSRenderShadowReduceWhileMoving, see fs_update_shadow_camera_motion
 // </FS:Trish>
 
 void validate_framebuffer_object();
@@ -12693,8 +12694,10 @@ void LLPipeline::renderShadow(const glm::mat4& view, const glm::mat4& proj, LLCa
     // masked materials) only in the nearer sun cascades. In the far ones their shadows are a few
     // texels of a large map, and they are a large share of the shadow pass.
     static LLCachedControl<U32> alpha_cascades(gSavedSettings, "FSRenderShadowAlphaCascades", 3);
+    // FSRenderShadowReduceWhileMoving: none in the far cascades while the camera moves fast
+    const S32 fs_alpha_limit = sFSShadowCameraMoving ? llmin((S32)alpha_cascades, 2) : (S32)alpha_cascades;
     const bool fs_alpha_casters = gCubeSnapshot || mFSSunShadowCascade < 0 ||
-                                  mFSSunShadowCascade < (S32)alpha_cascades || mFSSunShadowCascade == mColoredShadowCascade;
+                                  mFSSunShadowCascade < fs_alpha_limit || mFSSunShadowCascade == mColoredShadowCascade;
     if (fs_alpha_casters)
     // </FS:Trish>
     {
@@ -16503,6 +16506,53 @@ static void bucketShadowCull(LLCullResult& src, LLCamera& cam, LLCullResult& dst
     }
 }
 
+// <FS:Trish> FSRenderShadowReduceWhileMoving: while the camera turns or travels fast, the sun cascades
+// past the first leave out more of the small casters, and the far ones the alpha masked casters, whose
+// shadows can't be made out in motion. Everything is back a quarter second after the camera settles.
+// Skipping cascade updates instead would show the stale map's edge, as cascades are picked by depth only.
+// sFSShadowCameraMoving is declared near the top of this file.
+
+static void fs_update_shadow_camera_motion(const LLCamera& camera)
+{
+    static LLVector3 last_origin;
+    static LLVector3 last_at;
+    static bool have_last = false;
+    static LLFrameTimer settle_timer;
+
+    static LLCachedControl<bool> reduce_while_moving(gSavedSettings, "FSRenderShadowReduceWhileMoving", false);
+    const F32 dt = llmax(gFrameIntervalSeconds.value(), 0.001f);
+    bool moving = false;
+    if (have_last && reduce_while_moving)
+    {
+        const F32 turn_rate = acosf(llclamp(camera.getAtAxis() * last_at, -1.f, 1.f)) / dt; // radians per second
+        const F32 speed = dist_vec(camera.getOrigin(), last_origin) / dt;                   // metres per second
+        moving = turn_rate > 0.6f || speed > 20.f; // about 35 degrees a second, or flying fast
+    }
+    last_origin = camera.getOrigin();
+    last_at = camera.getAtAxis();
+    have_last = true;
+
+    if (moving)
+    {
+        settle_timer.resetWithExpiry(0.25f);
+    }
+    sFSShadowCameraMoving = moving || !settle_timer.hasExpired();
+}
+
+// How many times RenderShadowMinCasterTexels a caster must span to be drawn into a sun cascade.
+// Also used by FSPerfParallelShadowCull (fsparallelcull.cpp).
+F32 fs_shadow_cascade_caster_scale(S32 cascade)
+{
+    static LLCachedControl<F32> far_caster_scale(gSavedSettings, "FSRenderShadowFarCascadeMinCasterScale", 1.f);
+    F32 scale = cascade >= 2 ? llclamp((F32)far_caster_scale, 1.f, 16.f) : 1.f;
+    if (sFSShadowCameraMoving && cascade >= 1 && !gCubeSnapshot)
+    {
+        scale *= 4.f;
+    }
+    return scale;
+}
+// </FS:Trish>
+
 void LLPipeline::generateSunShadow(LLCamera& camera)
 {
     if (!sRenderDeferred || RenderShadowDetail <= 0)
@@ -16519,6 +16569,7 @@ void LLPipeline::generateSunShadow(LLCamera& camera)
     if (!gCubeSnapshot)
     {
         sShadowDistanceOrigin = camera.getOrigin();
+        fs_update_shadow_camera_motion(camera); // FSRenderShadowReduceWhileMoving
     }
     // </FS:Trish>
 
@@ -17422,8 +17473,9 @@ void LLPipeline::generateSunShadow(LLCamera& camera)
                 // show up in it. Not applied to probe shadows, which use their own path.
                 static LLCachedControl<F32> min_caster_texels(gSavedSettings, "RenderShadowMinCasterTexels", 1.f);
                 // ...and more of them in the far cascades, where small objects barely show
-                static LLCachedControl<F32> far_caster_scale(gSavedSettings, "FSRenderShadowFarCascadeMinCasterScale", 1.f);
-                const F32 cascade_caster_scale = j >= 2 ? llclamp((F32)far_caster_scale, 1.f, 16.f) : 1.f;
+                //static LLCachedControl<F32> far_caster_scale(gSavedSettings, "FSRenderShadowFarCascadeMinCasterScale", 1.f);
+                //const F32 cascade_caster_scale = j >= 2 ? llclamp((F32)far_caster_scale, 1.f, 16.f) : 1.f;
+                const F32 cascade_caster_scale = fs_shadow_cascade_caster_scale(j); // and in motion
                 const F32 min_caster_size = (!gCubeSnapshot && min_caster_texels > 0.f && llfinite(min_texel_size))
                     ? llmax(min_texel_size, 0.f) * min_caster_texels * cascade_caster_scale : 0.f;
                 // </FS:Trish>
