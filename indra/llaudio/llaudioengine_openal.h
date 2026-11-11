@@ -36,6 +36,17 @@
 #include "llatomic.h"
 #include "llframetimer.h" // <FS:Trish/> Output device recovery fallback
 #include <memory> // <FS:Trish/>
+// <FS:Trish> FSPerfAudioThread
+#include <atomic>
+#include <functional>
+#include <optional>
+
+// FSPerfAudioThread: every OpenAL call made on an audio thread of its own, in order, so a call that
+// blocks inside OpenAL (its locks, a device reopen, waiting for the mixer) never holds the main thread.
+// True while that thread runs; fs_audio_run() runs fn there, or right away when it doesn't.
+bool fs_audio_threaded();
+void fs_audio_run(std::function<void()> fn);
+// </FS:Trish>
 
 class LLAudioEngine_OpenAL : public LLAudioEngine
 {
@@ -59,6 +70,20 @@ class LLAudioEngine_OpenAL : public LLAudioEngine
         /*virtual*/ bool initWind();
         /*virtual*/ void cleanupWind();
         /*virtual*/ void updateWind(LLVector3 direction, F32 camera_altitude);
+    private:
+        // <FS:Trish> FSPerfAudioThread: the OpenAL parts, on the audio thread when it runs
+        bool fsInitWind();
+        void fsDestroyWind();
+        void fsUpdateWindAL(bool set_params);
+        void changeDeviceAL(std::optional<std::string> device_name);
+        bool mFSWindReady{ false };                     // main thread
+        std::atomic<bool> mFSResumeChannels{ false };   // a reopen on the audio thread finished
+        // </FS:Trish>
+    public:
+
+        // <FS:Trish> FSPerfAudioThread: set before init(), from the setting; takes effect at the next start
+        static bool sFSUseAudioThread;
+        // </FS:Trish>
 
         // <FS:Ansariel> Output device selection
         virtual output_device_map_t getDevices();
@@ -130,6 +155,21 @@ class LLAudioChannelOpenAL : public LLAudioChannel
 
         ALuint mALSource;
             ALint mLastSamplePos;
+
+        // <FS:Trish> FSPerfAudioThread: mALSource is then only used on the audio thread. What the main
+        // thread asks about the source comes from these, which the audio thread refreshes after each
+        // command for this channel and every few milliseconds. Until it has run the last state change
+        // the main thread issued (play, stop, a new buffer), the main thread assumes that change.
+    public:
+        void fsRefreshState(); // audio thread
+    protected:
+        void fsRun(std::function<void()> fn, bool state_change, bool expect_playing = false);
+        std::atomic<ALint> mFSState{ AL_INITIAL };
+        std::atomic<ALint> mFSSampleOffset{ 0 };
+        std::atomic<U32> mFSDoneSerial{ 0 };
+        U32 mFSSerial{ 0 };             // main thread
+        bool mFSExpectPlaying{ false }; // main thread
+        // </FS:Trish>
 };
 
 class LLAudioBufferOpenAL : public LLAudioBuffer{
@@ -147,6 +187,13 @@ class LLAudioBufferOpenAL : public LLAudioBuffer{
         ALuint getBuffer() {return mALBuffer;}
 
         ALuint mALBuffer;
+
+        // <FS:Trish> FSPerfAudioThread: the buffer is created on the audio thread, which stores its id here
+        // for the commands that use it after; the main thread only knows that it is ready and its size
+        std::shared_ptr<std::atomic<ALuint>> mFSBufferCell;
+        bool mFSReady{ false };
+        U32 mFSSizeBytes{ 0 };
+        // </FS:Trish>
 
         // <FS:Trish> The file is read and parsed on a worker thread, only the copy into the
         // OpenAL buffer happens on the main thread
