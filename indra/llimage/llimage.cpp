@@ -42,6 +42,11 @@
 #include "llmemory.h"
 
 #include <cerrno> // <FS:Beq/> [FIRE-36494] Small memory allocation fail bugsplat reporting improvement
+// <FS:Trish> Pixel buffer pool
+#include <chrono>
+#include <mutex>
+#include <unordered_map>
+// </FS:Trish>
 
 #include <boost/preprocessor.hpp>
 
@@ -691,11 +696,278 @@ void LLImageBase::sanityCheck()
     }
 }
 
+// <FS:Trish> Reuse of large pixel buffers (FSPerfImageBufferPoolMB)
+//
+// Every decoded texture gets a new pixel buffer (4 MB for a 1024x1024 RGBA image) and frees it again
+// once the texture is on the GPU. Blocks that big bypass the heap's free lists on Windows: each comes
+// straight from the OS and goes back to it, so every page of it is faulted in and zeroed by the kernel
+// again for the next texture. Arriving somewhere decodes gigabytes in a few seconds, and the page faults
+// from all decode threads at once queue up in the memory manager, stalling the main thread in whatever
+// memory it touches next.
+//
+// Buffers of 256 KB and up are handed out in size classes (a quarter of a power of two apart) and kept
+// when freed, up to FSPerfImageBufferPoolMB in all, for the next image needing that class. Kept buffers
+// unused for 30 seconds go back to the OS, so the memory is only held while textures keep arriving. The
+// pool remembers the buffers it handed out; anything else an image frees (buffers the texture cache or
+// fetcher allocated and gave to an image) goes back to the C runtime as before.
+std::atomic<U32> LLImageBase::sFSBufferPoolMB{ 0 };
+
+namespace
+{
+    constexpr size_t FS_POOL_MIN = 256 * 1024;
+    constexpr U32 FS_POOL_MIN_SHIFT = 18;       // log2(FS_POOL_MIN)
+    constexpr U32 FS_POOL_CLASSES = 4 * 12;     // up to 1 GB
+    constexpr F64 FS_POOL_KEEP_SECONDS = 30.0;
+    constexpr F64 FS_POOL_TRIM_INTERVAL = 5.0;
+    constexpr F64 FS_POOL_LOG_INTERVAL = 60.0;
+
+    F64 fs_pool_now()
+    {
+        return std::chrono::duration<F64>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    }
+
+    // Size class and capacity for a request: 2^k, 1.25 * 2^k, 1.5 * 2^k or 1.75 * 2^k bytes
+    bool fs_pool_class(size_t size, U32& cls, size_t& capacity)
+    {
+        if (size < FS_POOL_MIN)
+        {
+            return false;
+        }
+        U32 k = FS_POOL_MIN_SHIFT;
+        while ((size_t(2) << k) <= size)
+        {
+            ++k;
+        }
+        const size_t base = size_t(1) << k;
+        const size_t quarter = base / 4;
+        size_t m = (size - base + quarter - 1) / quarter;
+        if (m == 4)
+        {
+            ++k;
+            m = 0;
+        }
+        cls = (k - FS_POOL_MIN_SHIFT) * 4 + (U32)m;
+        if (cls >= FS_POOL_CLASSES)
+        {
+            return false;
+        }
+        capacity = (size_t(1) << k) + m * ((size_t(1) << k) / 4);
+        return true;
+    }
+
+    size_t fs_pool_capacity(U32 cls)
+    {
+        const size_t base = size_t(1) << (FS_POOL_MIN_SHIFT + cls / 4);
+        return base + (cls % 4) * (base / 4);
+    }
+
+    struct FSPoolFree
+    {
+        U8* mData;
+        F64 mFreed;
+    };
+
+    struct FSImageBufferPool
+    {
+        std::mutex mMutex;
+        std::unordered_map<const U8*, U32> mOwned;  // handed out and not given back yet, with their class
+        std::atomic<size_t> mOwnedCount{ 0 };       // lets frees skip the lock while the pool has none out
+        std::vector<FSPoolFree> mFree[FS_POOL_CLASSES]; // oldest first
+        size_t mKeptBytes = 0;
+        F64 mLastTrim = 0.0;
+        F64 mLastLog = 0.0;
+        // since the last log
+        U64 mReused = 0;
+        U64 mReusedBytes = 0;
+        U64 mNew = 0;
+        U64 mNewBytes = 0;
+        U64 mReleased = 0;  // freed to the OS: over the limit or unused too long
+    };
+
+    FSImageBufferPool& fs_pool()
+    {
+        // never destroyed: images can still be freed during static destruction
+        static FSImageBufferPool* pool = new FSImageBufferPool;
+        return *pool;
+    }
+
+    // With the lock held. Moves kept buffers unused too long, or over the limit, to 'release'.
+    void fs_pool_trim(FSImageBufferPool& pool, F64 now, size_t limit, std::vector<U8*>& release)
+    {
+        pool.mLastTrim = now;
+        for (U32 cls = 0; cls < FS_POOL_CLASSES; ++cls)
+        {
+            std::vector<FSPoolFree>& list = pool.mFree[cls];
+            size_t expired = 0;
+            while (expired < list.size() && now - list[expired].mFreed >= FS_POOL_KEEP_SECONDS)
+            {
+                ++expired;
+            }
+            if (expired)
+            {
+                const size_t capacity = fs_pool_capacity(cls);
+                for (size_t i = 0; i < expired; ++i)
+                {
+                    release.push_back(list[i].mData);
+                    pool.mKeptBytes -= capacity;
+                }
+                pool.mReleased += expired;
+                list.erase(list.begin(), list.begin() + expired);
+            }
+        }
+        // the limit was lowered: drop the largest first
+        for (U32 cls = FS_POOL_CLASSES; cls-- > 0 && pool.mKeptBytes > limit;)
+        {
+            std::vector<FSPoolFree>& list = pool.mFree[cls];
+            const size_t capacity = fs_pool_capacity(cls);
+            while (!list.empty() && pool.mKeptBytes > limit)
+            {
+                release.push_back(list.front().mData);
+                list.erase(list.begin());
+                pool.mKeptBytes -= capacity;
+                ++pool.mReleased;
+            }
+        }
+    }
+
+    // With the lock held
+    void fs_pool_log(FSImageBufferPool& pool, F64 now)
+    {
+        if (now - pool.mLastLog < FS_POOL_LOG_INTERVAL)
+        {
+            return;
+        }
+        if (pool.mReused || pool.mNew)
+        {
+            LL_INFOS("FSImagePool") << "Pixel buffers over " << (S32)(now - pool.mLastLog) << " s: "
+                                    << pool.mReused << " reused (" << (pool.mReusedBytes >> 20) << " MB not faulted in again), "
+                                    << pool.mNew << " new (" << (pool.mNewBytes >> 20) << " MB), "
+                                    << pool.mReleased << " released; keeping " << (pool.mKeptBytes >> 20) << " MB" << LL_ENDL;
+        }
+        pool.mLastLog = now;
+        pool.mReused = pool.mReusedBytes = pool.mNew = pool.mNewBytes = pool.mReleased = 0;
+    }
+
+    U8* fs_image_alloc(size_t size)
+    {
+        U32 cls = 0;
+        size_t capacity = 0;
+        if (!LLImageBase::sFSBufferPoolMB.load(std::memory_order_relaxed) || !fs_pool_class(size, cls, capacity))
+        {
+            return static_cast<U8*>(ll_aligned_malloc_16(size));
+        }
+        FSImageBufferPool& pool = fs_pool();
+        {
+            std::lock_guard<std::mutex> lock(pool.mMutex);
+            std::vector<FSPoolFree>& list = pool.mFree[cls];
+            if (!list.empty())
+            {   // the most recently freed: the likeliest to still be in memory
+                U8* data = list.back().mData;
+                list.pop_back();
+                pool.mKeptBytes -= capacity;
+                pool.mOwned.emplace(data, cls);
+                pool.mOwnedCount.fetch_add(1, std::memory_order_release);
+                ++pool.mReused;
+                pool.mReusedBytes += capacity;
+                return data;
+            }
+        }
+        U8* data = static_cast<U8*>(ll_aligned_malloc_16(capacity));
+        if (data)
+        {
+            std::lock_guard<std::mutex> lock(pool.mMutex);
+            pool.mOwned.emplace(data, cls);
+            pool.mOwnedCount.fetch_add(1, std::memory_order_release);
+            ++pool.mNew;
+            pool.mNewBytes += capacity;
+        }
+        return data;
+    }
+
+    void fs_image_free(U8* data)
+    {
+        if (!data)
+        {
+            return;
+        }
+        FSImageBufferPool& pool = fs_pool();
+        if (!pool.mOwnedCount.load(std::memory_order_acquire))
+        {
+            ll_aligned_free_16(data);
+            return;
+        }
+        std::vector<U8*> release;
+        {
+            std::lock_guard<std::mutex> lock(pool.mMutex);
+            auto it = pool.mOwned.find(data);
+            if (it == pool.mOwned.end())
+            {   // not from the pool
+                release.push_back(data);
+            }
+            else
+            {
+                const U32 cls = it->second;
+                pool.mOwned.erase(it);
+                pool.mOwnedCount.fetch_sub(1, std::memory_order_relaxed);
+                const size_t capacity = fs_pool_capacity(cls);
+                const size_t limit = size_t(LLImageBase::sFSBufferPoolMB.load(std::memory_order_relaxed)) << 20;
+                const F64 now = fs_pool_now();
+                if (pool.mKeptBytes + capacity <= limit)
+                {
+                    pool.mFree[cls].push_back({ data, now });
+                    pool.mKeptBytes += capacity;
+                }
+                else
+                {
+                    release.push_back(data);
+                    ++pool.mReleased;
+                }
+                if (now - pool.mLastTrim >= FS_POOL_TRIM_INTERVAL)
+                {
+                    fs_pool_trim(pool, now, limit, release);
+                }
+                fs_pool_log(pool, now);
+            }
+        }
+        for (U8* block : release)
+        {
+            ll_aligned_free_16(block);
+        }
+    }
+}
+
+// static
+void LLImageBase::fsTrimBufferPool()
+{
+    FSImageBufferPool& pool = fs_pool();
+    std::vector<U8*> release;
+    {
+        std::unique_lock<std::mutex> lock(pool.mMutex, std::try_to_lock);
+        if (!lock.owns_lock())
+        {
+            return;
+        }
+        const F64 now = fs_pool_now();
+        if (!pool.mKeptBytes || now - pool.mLastTrim < FS_POOL_TRIM_INTERVAL)
+        {
+            return;
+        }
+        fs_pool_trim(pool, now, size_t(sFSBufferPoolMB.load(std::memory_order_relaxed)) << 20, release);
+        fs_pool_log(pool, now);
+    }
+    for (U8* block : release)
+    {
+        ll_aligned_free_16(block);
+    }
+}
+// </FS:Trish>
+
 // virtual
 void LLImageBase::deleteData()
 {
     invalidateAlphaInfo(); // <FS:Trish/>
-    ll_aligned_free_16(mData);
+    // ll_aligned_free_16(mData); // <FS:Trish/>
+    fs_image_free(mData); // <FS:Trish/>
     mDataSize = 0;
     mData = NULL;
 }
@@ -746,7 +1018,8 @@ U8* LLImageBase::allocateData(S32 size)
         else [[likely]]
         {
             errno = 0;
-            mData = static_cast<U8*>(ll_aligned_malloc_16(size));
+            // mData = static_cast<U8*>(ll_aligned_malloc_16(size)); // <FS:Trish/>
+            mData = fs_image_alloc(size); // <FS:Trish/>
         }
         const S32 alloc_errno = errno;
         // </FS:Beq>
@@ -813,7 +1086,8 @@ U8* LLImageBase::allocateData(S32 size)
 U8* LLImageBase::reallocateData(S32 size)
 {
     invalidateAlphaInfo(); // <FS:Trish/>
-    U8 *new_datap = (U8*)ll_aligned_malloc_16(size);
+    // U8 *new_datap = (U8*)ll_aligned_malloc_16(size); // <FS:Trish/>
+    U8 *new_datap = fs_image_alloc(size); // <FS:Trish/>
     if (!new_datap)
     {
         // <FS:Beq> [FIRE-36494] Small memory allocation fail bugsplat reporting improvement
@@ -829,7 +1103,8 @@ U8* LLImageBase::reallocateData(S32 size)
     {
         S32 bytes = llmin(mDataSize, size);
         memcpy(new_datap, mData, bytes);    /* Flawfinder: ignore */
-        ll_aligned_free_16(mData) ;
+        // ll_aligned_free_16(mData) ; // <FS:Trish/>
+        fs_image_free(mData); // <FS:Trish/>
     }
     mData = new_datap;
     mDataSize = size;
@@ -1151,7 +1426,8 @@ bool LLImageRaw::optimizeAwayAlpha()
         }
 
         // alpha channel is all 255, make a new copy of data without alpha channel
-        U8* new_data = (U8*) ll_aligned_malloc_16(getWidth() * getHeight() * 3);
+        // U8* new_data = (U8*) ll_aligned_malloc_16(getWidth() * getHeight() * 3); // <FS:Trish/>
+        U8* new_data = fs_image_alloc(getWidth() * getHeight() * 3); // <FS:Trish/>
 
         for (U32 i = 0; i < pixels; ++i)
         {
@@ -1180,7 +1456,8 @@ bool LLImageRaw::makeAlpha()
         U32 pixels = getWidth() * getHeight();
 
         // alpha channel doesn't exist, make a new copy of data with alpha channel
-        U8* new_data = (U8*) ll_aligned_malloc_16(getWidth() * getHeight() * 4);
+        // U8* new_data = (U8*) ll_aligned_malloc_16(getWidth() * getHeight() * 4); // <FS:Trish/>
+        U8* new_data = fs_image_alloc(getWidth() * getHeight() * 4); // <FS:Trish/>
 
         for (U32 i = 0; i < pixels; ++i)
         {
@@ -1753,7 +2030,8 @@ bool LLImageRaw::scale( S32 new_width, S32 new_height, bool scale_image_data )
 
         if (new_data_size > 0)
         {
-            U8 *new_data = (U8*)ll_aligned_malloc_16(new_data_size);
+            // U8 *new_data = (U8*)ll_aligned_malloc_16(new_data_size); // <FS:Trish/>
+            U8 *new_data = fs_image_alloc(new_data_size); // <FS:Trish/>
             if(NULL == new_data)
             {
                 return false;

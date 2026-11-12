@@ -2915,6 +2915,13 @@ bool LLAppViewer::initThreads()
 
     LLImage::initClass(gSavedSettings.getBOOL("TextureNewByteRange"),gSavedSettings.getS32("TextureReverseByteRange"));
     LLImageJ2C::sFSOpenJPEGBufferCacheMB = gSavedSettings.getU32("FSPerfOpenJPEGBufferCacheMB"); // <FS:Trish/> before the first decode
+    // <FS:Trish> FSPerfImageBufferPoolMB: pixel buffers kept for reuse
+    LLImageBase::sFSBufferPoolMB = gSavedSettings.getU32("FSPerfImageBufferPoolMB");
+    gSavedSettings.getControl("FSPerfImageBufferPoolMB")->getSignal()->connect([](LLControlVariable*, const LLSD& value, const LLSD&)
+    {
+        LLImageBase::sFSBufferPoolMB = (U32)llmax(0, value.asInteger());
+    });
+    // </FS:Trish>
     // <FS:Trish> FSPerfParallelTextureEncode: threads for one texture encode (uploads)
     {
         auto set_encode_threads = []()
@@ -6618,6 +6625,7 @@ void LLAppViewer::idle()
     LLMortician::updateClass();
     LLFilePickerThread::clearDead();  //calls LLFilePickerThread::notify()
     LLDirPickerThread::clearDead();
+    LLImageBase::fsTrimBufferPool(); // <FS:Trish/> pixel buffers unused for a while go back to the OS
 
     if (LLWebsocketMgr::instanceExists())
     {

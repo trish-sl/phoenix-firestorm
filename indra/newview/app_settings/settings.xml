@@ -29679,6 +29679,17 @@ Change of this parameter will affect the layout of buttons in notification toast
       <key>Value</key>
       <integer>64</integer>
     </map>
+    <key>FSPerfImageBufferPoolMB</key>
+    <map>
+      <key>Comment</key>
+      <string>How much of the pixel buffers freed by decoded textures (256 KB and up) is kept, in MB, for the next texture of a similar size instead of being handed back to Windows and fetched fresh, page by page, every time. Saves the bursts of page faults that stall the viewer while many textures decode at once (logging in, arriving somewhere). Kept buffers unused for 30 seconds are handed back, so the memory is only held while textures keep arriving. 0 turns it off.</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>U32</string>
+      <key>Value</key>
+      <integer>256</integer>
+    </map>
     <key>FSPerfInventoryDeferViews</key>
     <map>
       <key>Comment</key>
