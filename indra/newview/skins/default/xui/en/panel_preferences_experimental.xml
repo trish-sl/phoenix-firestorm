@@ -6112,7 +6112,7 @@
                      layout="topleft"
                      left="15"
                      name="repair_animations"
-                     tool_tip="EXPERIMENTAL. Every 2 seconds, restarts animations other avatars should be playing but are not, because they failed to load or a looping animation got stuck stopped. Only that avatar's broken animations are restarted, up to 3 times each. Logged under FSAnimRepair."
+                     tool_tip="EXPERIMENTAL. Every 2 seconds, restarts animations other avatars should be playing but are not, because they failed to load, were dropped, or a looping animation got stuck stopped. Only that avatar's broken animations are restarted, up to 5 times each. Logged under FSAnimRepair."
                      top="33"
                      width="475" />
                     <check_box

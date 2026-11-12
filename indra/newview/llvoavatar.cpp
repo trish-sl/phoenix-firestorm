@@ -7253,12 +7253,27 @@ void LLVOAvatar::repairAnimations()
             count = found->second;
         }
 
-        LLMotion* motionp = findMotion(anim_id);
+        // startMotion() plays some animations under another id (female walks and the like)
+        const LLUUID motion_id = remapMotionID(anim_id);
+        LLMotion* motionp = findMotion(motion_id);
         bool broken = false;
+        const char* why = "stopped";
         if (!motionp)
         {
-            // Nothing retries a failed load until the sim's animation list changes
-            broken = controller.hasMotionFailed(anim_id);
+            why = "dropped";
+            if (controller.hasMotionFailed(motion_id))
+            {
+                // Nothing retries a failed load until the sim's animation list changes
+                broken = true;
+                why = "failed";
+            }
+            else if (!gAnimLibrary.animStateToString(motion_id))
+            {
+                // An uploaded animation with no motion at all, though nothing failed: dropped by something
+                // else. Unless it is a finished one shot (those may be purged), it should still be playing.
+                const LLKeyframeMotion::JointMotionList* data = LLKeyframeDataCache::getKeyframeData(motion_id);
+                broken = !data || data->mLoop;
+            }
         }
         else if (controller.isMotionLoading(motionp))
         {
@@ -7277,7 +7292,7 @@ void LLVOAvatar::repairAnimations()
 
         if (broken && count < MAX_REPAIR_ATTEMPTS)
         {
-            LL_INFOS("FSAnimRepair") << "Restarting " << (motionp ? "stopped" : "failed") << " animation " << anim_id
+            LL_INFOS("FSAnimRepair") << "Restarting " << why << " animation " << anim_id
                                      << " on avatar " << getID() << ", attempt " << (count + 1) << LL_ENDL;
             stopMotion(anim_id, true);
             startMotion(anim_id);

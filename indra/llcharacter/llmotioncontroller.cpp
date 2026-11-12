@@ -38,6 +38,7 @@
 #include "llstl.h"
 
 #include <ranges> // <FS:Trish/> std::views::reverse
+#include <algorithm> // <FS:Trish/> std::sort
 
 // This is why LL_CHARACTER_MAX_ANIMATED_JOINTS needs to be a multiple of 4.
 const S32 NUM_JOINT_SIGNATURE_STRIDES = LL_CHARACTER_MAX_ANIMATED_JOINTS / 4;
@@ -1283,6 +1284,23 @@ void LLMotionController::flushAllMotions()
     }
     mActiveMotions.clear();
 
+    // <FS:Trish> Motions still loading are deleted below too. Restart the started ones as well, or their
+    // animations stay missing until the sim's animation list changes (the asset arrives with no motion
+    // for it: "No existing motion for asset data"). In the order they were started.
+    std::vector<std::pair<U32, std::pair<LLUUID, F32>>> loading_motions;
+    for (LLMotion* motionp : mLoadingMotions)
+    {
+        if (motionp && !motionp->isStopped())
+        {
+            // with FSExperimentalSyncAnimationClock they start where they would be had they loaded at once
+            const F32 offset = sSyncAnimationClock ? llmax(0.f, mAnimTime - motionp->mRequestedActivationTime) : 0.f;
+            loading_motions.push_back({ motionp->mStartSequence, { motionp->getID(), offset } });
+        }
+    }
+    std::sort(loading_motions.begin(), loading_motions.end(),
+              [](const auto& lhs, const auto& rhs) { return lhs.first < rhs.first; });
+    // </FS:Trish>
+
     // delete all motion instances
     deleteAllMotions();
 
@@ -1299,6 +1317,10 @@ void LLMotionController::flushAllMotions()
     for (const auto& [id, start_offset] : active_motions | std::views::reverse)
     {
         startMotion(id, start_offset);
+    }
+    for (const auto& [sequence, motion] : loading_motions)
+    {
+        startMotion(motion.first, motion.second);
     }
     // </FS:Trish>
 }
