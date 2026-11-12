@@ -353,6 +353,12 @@ public:
     // called to determine when a motion should be activated/deactivated based on avatar pixel coverage
     virtual F32 getMinPixelArea() { return MIN_REQUIRED_PIXEL_AREA_BODY_NOISE; }
 
+    // <FS:Trish> FSPerfParallelAvatarUpdate (see fsparallelavatar.cpp): writes only its own joint state; the
+    // noise tables it reads are built in onInitialize() on the main thread. Every avatar close enough runs
+    // it, and one motion that can't run on a worker keeps the whole avatar on the main thread.
+    bool canUpdateOffMainThread() const override { return true; }
+    // </FS:Trish>
+
     // run-time (post constructor) initialization,
     // called after parameters have been set
     // must return true to indicate success and be available for activation
@@ -366,6 +372,12 @@ public:
         mTorsoState->setUsage(LLJointState::ROT);
 
         addJointState( mTorsoState );
+
+        // <FS:Trish> noise2() builds its tables on the first call, unguarded: make that call here, on the
+        // main thread, before onUpdate() can run on a pose worker
+        F32 warm_up[2] = { 0.f, 0.f };
+        noise2(warm_up);
+        // </FS:Trish>
         return STATUS_SUCCESS;
     }
 
@@ -460,6 +472,8 @@ public:
 
     // called to determine when a motion should be activated/deactivated based on avatar pixel coverage
     virtual F32 getMinPixelArea() { return MIN_REQUIRED_PIXEL_AREA_BREATHE; }
+
+    bool canUpdateOffMainThread() const override { return true; } // <FS:Trish/> FSPerfParallelAvatarUpdate: own joint state only
 
     // run-time (post constructor) initialization,
     // called after parameters have been set
@@ -573,6 +587,8 @@ public:
 
     // called to determine when a motion should be activated/deactivated based on avatar pixel coverage
     virtual F32 getMinPixelArea() { return MIN_REQUIRED_PIXEL_AREA_PELVIS_FIX; }
+
+    bool canUpdateOffMainThread() const override { return true; } // <FS:Trish/> FSPerfParallelAvatarUpdate: own joint state only
 
     // run-time (post constructor) initialization,
     // called after parameters have been set
