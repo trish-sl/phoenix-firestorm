@@ -1965,6 +1965,22 @@
                function="Tools.EnableTakeCopy" />
           </menu_item_call>
           <menu_item_call
+             label="Take Into Selected Folder"
+             name="Take Into Folder">
+            <menu_item_call.on_click
+               function="Object.TakeIntoFolder" />
+            <menu_item_call.on_enable
+               function="Object.EnableTakeIntoFolder" />
+          </menu_item_call>
+          <menu_item_call
+             label="Take Copy Into Selected Folder"
+             name="Take Copy Into Folder">
+            <menu_item_call.on_click
+               function="Tools.TakeCopyIntoFolder" />
+            <menu_item_call.on_enable
+               function="Tools.EnableTakeCopyIntoFolder" />
+          </menu_item_call>
+          <menu_item_call
              label="Duplicate"
              name="Duplicate"
              shortcut="control|D">

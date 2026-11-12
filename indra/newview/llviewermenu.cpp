@@ -40,6 +40,8 @@
 #include "llfloaterreg.h"
 #include "llfloatersidepanelcontainer.h"
 #include "llinventorypanel.h"
+#include "llfolderview.h" // <FS:Trish/> Take into folder
+#include "llfolderviewmodelinventory.h" // <FS:Trish/>
 #include "llnotifications.h"
 #include "llnotificationsutil.h"
 #include "llviewereventrecorder.h"
@@ -6534,7 +6536,10 @@ static void derez_objects_separate(EDeRezDestination dest, const LLUUID &dest_id
     }
 }
 
-void handle_take_copy()
+// <FS:Trish> into_folder: Take Copy into that folder instead of Objects
+//void handle_take_copy()
+void handle_take_copy(const LLUUID& into_folder)
+// </FS:Trish>
 {
     if (LLSelectMgr::getInstance()->getSelection()->isEmpty()) return;
 
@@ -6549,7 +6554,10 @@ void handle_take_copy()
     }
 // [/RLVa:KB]
 
-    const LLUUID category_id = gInventory.findCategoryUUIDForType(LLFolderType::FT_OBJECT);
+    // <FS:Trish>
+    //const LLUUID category_id = gInventory.findCategoryUUIDForType(LLFolderType::FT_OBJECT);
+    const LLUUID category_id = into_folder.notNull() ? into_folder : gInventory.findCategoryUUIDForType(LLFolderType::FT_OBJECT);
+    // </FS:Trish>
     derez_objects(DRD_ACQUIRE_TO_AGENT_INVENTORY, category_id);
 }
 
@@ -6687,7 +6695,10 @@ void force_take_copy()
     derez_objects(DRD_FORCE_TO_GOD_INVENTORY, category_id);
 }
 
-void handle_take(bool take_separate)
+// <FS:Trish> into_folder: Take into that folder instead of where the objects came from or Objects
+//void handle_take(bool take_separate)
+void handle_take(bool take_separate, const LLUUID& into_folder)
+// </FS:Trish>
 {
     // we want to use the folder this was derezzed from if it's
     // available. Otherwise, derez to the normal place.
@@ -6776,6 +6787,12 @@ void handle_take(bool take_separate)
             // </FS:Ansariel>
         }
     }
+    // <FS:Trish> Take into the chosen folder (checked by fs_take_into_folder_target)
+    if (into_folder.notNull())
+    {
+        category_id = into_folder;
+    }
+    // </FS:Trish>
     if(category_id.isNull())
     {
         category_id = gInventory.findCategoryUUIDForType(LLFolderType::FT_OBJECT);
@@ -11026,6 +11043,80 @@ bool enable_take_copy_objects()
     return enable_object_take_copy() && is_multiple_selection();
 }
 
+// <FS:Trish> Take (Copy) into the folder selected in the active inventory window
+// That folder (the folder of the selected item when an item is selected), or null when there is none or
+// objects shouldn't go there: outside your inventory (the library), or a folder Take never fills.
+static LLUUID fs_take_into_folder_target()
+{
+    // This runs whenever an object menu opens: getActiveInventoryPanel() would build the inventory window
+    // if it doesn't exist yet
+    if (!LLFloaterReg::findInstance("inventory") && LLFloaterReg::getFloaterList("secondary_inventory").empty())
+    {
+        return LLUUID::null;
+    }
+    LLInventoryPanel* panel = LLInventoryPanel::getActiveInventoryPanel(false);
+    LLFolderView* root = panel ? panel->getRootFolder() : nullptr;
+    LLFolderViewItem* selected = root ? root->getCurSelectedItem() : nullptr;
+    const LLFolderViewModelItemInventory* model =
+        selected ? static_cast<const LLFolderViewModelItemInventory*>(selected->getViewModelItem()) : nullptr;
+    if (!model)
+    {
+        return LLUUID::null;
+    }
+    LLUUID folder_id = model->getUUID();
+    if (!gInventory.getCategory(folder_id))
+    {
+        const LLViewerInventoryItem* item = gInventory.getItem(folder_id);
+        folder_id = item ? item->getParentUUID() : LLUUID::null;
+    }
+    if (folder_id.isNull() || !gInventory.getCategory(folder_id) ||
+        !gInventory.isObjectDescendentOf(folder_id, gInventory.getRootFolderID()))
+    {
+        return LLUUID::null;
+    }
+    static const LLFolderType::EType excluded_types[] = { LLFolderType::FT_TRASH, LLFolderType::FT_CURRENT_OUTFIT,
+                                                          LLFolderType::FT_MY_OUTFITS, LLFolderType::FT_LOST_AND_FOUND,
+                                                          LLFolderType::FT_MARKETPLACE_LISTINGS, LLFolderType::FT_INBOX };
+    for (LLFolderType::EType type : excluded_types)
+    {
+        const LLUUID excluded = gInventory.findCategoryUUIDForType(type);
+        if (excluded.notNull() && gInventory.isObjectDescendentOf(folder_id, excluded))
+        {
+            return LLUUID::null;
+        }
+    }
+    return folder_id;
+}
+
+static void fs_handle_take_into_folder()
+{
+    const LLUUID folder_id = fs_take_into_folder_target();
+    if (folder_id.notNull())
+    {
+        handle_take(false, folder_id);
+    }
+}
+
+static void fs_handle_take_copy_into_folder()
+{
+    const LLUUID folder_id = fs_take_into_folder_target();
+    if (folder_id.notNull())
+    {
+        handle_take_copy(folder_id);
+    }
+}
+
+static bool fs_enable_take_into_folder()
+{
+    return visible_take_object() && fs_take_into_folder_target().notNull();
+}
+
+static bool fs_enable_take_copy_into_folder()
+{
+    return enable_object_take_copy() && fs_take_into_folder_target().notNull();
+}
+// </FS:Trish>
+
 class LLHasAsset : public LLInventoryCollectFunctor
 {
 public:
@@ -13281,7 +13372,11 @@ void initialize_menus()
     commit.add("Tools.LookAtSelection", boost::bind(&handle_look_at_selection, _2));
     commit.add("Tools.ScriptInfo",boost::bind(&handle_script_info));
     commit.add("Tools.BuyOrTake", boost::bind(&handle_buy_or_take));
-    commit.add("Tools.TakeCopy", boost::bind(&handle_take_copy));
+    // <FS:Trish> Take (Copy) into the folder selected in the inventory window
+    //commit.add("Tools.TakeCopy", boost::bind(&handle_take_copy));
+    commit.add("Tools.TakeCopy", boost::bind(&handle_take_copy, LLUUID::null));
+    commit.add("Tools.TakeCopyIntoFolder", boost::bind(&fs_handle_take_copy_into_folder));
+    // </FS:Trish>
     view_listener_t::addMenu(new LLToolsSaveToObjectInventory(), "Tools.SaveToObjectInventory");
     view_listener_t::addMenu(new LLToolsSelectedScriptAction(), "Tools.SelectedScriptAction");
     view_listener_t::addMenu(new FSToolsResyncAnimations(), "Tools.ResyncAnimations");  // <FS:CR> Resync Animations
@@ -13294,6 +13389,7 @@ void initialize_menus()
     enable.add("Tools.EnableUnlink", boost::bind(&LLSelectMgr::enableUnlinkObjects, LLSelectMgr::getInstance()));
     view_listener_t::addMenu(new LLToolsEnableBuyOrTake(), "Tools.EnableBuyOrTake");
     enable.add("Tools.EnableTakeCopy", boost::bind(&enable_object_take_copy));
+    enable.add("Tools.EnableTakeCopyIntoFolder", boost::bind(&fs_enable_take_copy_into_folder)); // <FS:Trish/>
     enable.add("Tools.EnableCopySeparate", boost::bind(&enable_take_copy_objects));
     enable.add("Tools.VisibleBuyObject", boost::bind(&tools_visible_buy_object));
     enable.add("Tools.VisibleTakeObject", boost::bind(&tools_visible_take_object));
@@ -13666,8 +13762,14 @@ void initialize_menus()
     commit.add("Object.EditGLTFMaterial", boost::bind(&handle_object_edit_gltf_material));
     commit.add("Object.Inspect", boost::bind(&handle_object_inspect));
     commit.add("Object.Open", boost::bind(&handle_object_open));
-    commit.add("Object.Take", boost::bind(&handle_take, false));
-    commit.add("Object.TakeSeparate", boost::bind(&handle_take, true));
+    // <FS:Trish> Take into the folder selected in the inventory window
+    //commit.add("Object.Take", boost::bind(&handle_take, false));
+    //commit.add("Object.TakeSeparate", boost::bind(&handle_take, true));
+    commit.add("Object.Take", boost::bind(&handle_take, false, LLUUID::null));
+    commit.add("Object.TakeSeparate", boost::bind(&handle_take, true, LLUUID::null));
+    commit.add("Object.TakeIntoFolder", boost::bind(&fs_handle_take_into_folder));
+    enable.add("Object.EnableTakeIntoFolder", boost::bind(&fs_enable_take_into_folder));
+    // </FS:Trish>
     commit.add("Object.TakeSeparateCopy", boost::bind(&handle_take_separate_copy));
     commit.add("Object.ShowInspector", boost::bind(&handle_object_show_inspector));
     enable.add("Object.EnableInspect", boost::bind(&enable_object_inspect));

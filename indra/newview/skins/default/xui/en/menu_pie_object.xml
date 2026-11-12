@@ -74,8 +74,24 @@
             <pie_slice.on_visible
              function="Object.VisibleTakeMultiple"/>
         </pie_slice>
-        <pie_separator/>
-        <pie_separator/>
+        <pie_slice
+         enabled="false"
+         label="Take: Into Folder"
+         name="Take Into Folder">
+            <pie_slice.on_click
+             function="Object.TakeIntoFolder"/>
+            <pie_slice.on_enable
+             function="Object.EnableTakeIntoFolder"/>
+        </pie_slice>
+        <pie_slice
+         enabled="false"
+         label="Copy: Into Folder"
+         name="Take Copy Into Folder">
+            <pie_slice.on_click
+             function="Tools.TakeCopyIntoFolder"/>
+            <pie_slice.on_enable
+             function="Tools.EnableTakeCopyIntoFolder"/>
+        </pie_slice>
         <pie_slice
          enabled="false"
          label="Take copy"
