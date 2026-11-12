@@ -190,6 +190,13 @@ public:
     // mFSGDDPass is that pass's number), so a texture in many batches is looked up once per pass
     mutable U32 mFSGDDPass = 0;
     mutable U64 mFSGDDHandle = 0;
+    // FSPerfGPUDrivenPBRBindless: the handle the last lookup this frame found, for the GL name and sampler
+    // state it was for, valid while the handle table's epoch is unchanged (fsgpudrivenpbr.cpp texture_handle)
+    mutable U32 mFSGDDCacheFrame = 0;
+    mutable U32 mFSGDDCacheEpoch = 0;
+    mutable U32 mFSGDDCacheName = 0;
+    mutable U32 mFSGDDCacheState[4] = {};
+    mutable U64 mFSGDDCacheHandle = 0;
     // </FS:Trish>
 
 protected:

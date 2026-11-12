@@ -307,6 +307,7 @@ namespace
         }
     };
     std::vector<SortItem> sFSShadowSPSort;  // main thread, reused
+    std::vector<U32> sFSShadowSPOrder;      // indices into it, sorted: moves 4 bytes per swap instead of the item
 
     // Adds a cascade's bit to the batch's entry in list, or a new entry the first time this update
     void record_entry(std::vector<LLPipeline::FSShadowSPEntry>& list, LLDrawInfo* params, U32 bit)
@@ -570,10 +571,16 @@ void LLPipeline::fsShadowSinglePassFinish()
                 item.mCountInv = ~params->mCount;
                 item.mEntry = list[i];
             }
-            std::sort(items.begin(), items.end());
+            std::vector<U32>& order = sFSShadowSPOrder;
+            order.resize(items.size());
+            for (U32 i = 0; i < (U32)order.size(); ++i)
+            {
+                order[i] = i;
+            }
+            std::sort(order.begin(), order.end(), [&items](U32 a, U32 b) { return items[a] < items[b]; });
             for (size_t i = 0; i < list.size(); ++i)
             {
-                list[i] = items[i].mEntry;
+                list[i] = items[order[i]].mEntry;
             }
         }
     }

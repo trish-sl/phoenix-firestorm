@@ -368,6 +368,17 @@ public:
     // </FS:Trish>
     U32 getFSIndicesType() const            { return mIndicesType; }
     bool isFSMapped() const                 { return mMapped; }
+    // <FS:Trish> Starts loading the fields an arena lookup reads (spread over a few cache lines) into the
+    // cache, a few draws ahead of the lookup, so walking a long draw list doesn't wait on each buffer
+    void fsPrefetchArenaFields(U32 slot) const
+    {
+        _mm_prefetch((const char*)&mGLBuffer, _MM_HINT_T0);
+        _mm_prefetch((const char*)&mTypeMask, _MM_HINT_T0);
+        _mm_prefetch((const char*)&mFSArenaEntry[slot < FS_ARENA_SLOTS ? slot : 0], _MM_HINT_T0);
+        _mm_prefetch((const char*)&mFSArenaEpoch[slot < FS_ARENA_SLOTS ? slot : 0], _MM_HINT_T0);
+        _mm_prefetch((const char*)&mMapped, _MM_HINT_T0);
+    }
+    // </FS:Trish>
     // </FS:Trish>
 
 protected:
