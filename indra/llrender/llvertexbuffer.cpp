@@ -858,8 +858,7 @@ void LLVertexBuffer::fsReleaseVAOs()
     mFSUses = 0;
 }
 // </FS:Trish>
-// <FS:Trish> Skin once per frame, see getFSContentSerial()
-LLVertexBuffer::fs_rigged_draw_hook_t LLVertexBuffer::sFSRiggedDrawHook = nullptr;
+// <FS:Trish> see getFSContentSerial()
 static U32 sFSNextContentSerial = 0;
 // </FS:Trish>
 U32 LLVertexBuffer::sFSInstanceCount = 0; // <FS:Trish/> FSPerfShadowSinglePass
@@ -1133,12 +1132,6 @@ void LLVertexBuffer::drawRange(U32 mode, U32 start, U32 end, U32 count, U32 indi
     llassert(mGLBuffer == sGLRenderBuffer);
     llassert(mGLIndices == sGLRenderIndices);
     gGL.syncMatrices();
-    // <FS:Trish> Skin once per frame: capture or reuse this range's skin blends
-    if (sFSRiggedDrawHook && LLGLSLShader::sCurBoundShaderPtr && LLGLSLShader::sCurBoundShaderPtr->mFeatures.hasObjectSkinning)
-    {
-        sFSRiggedDrawHook(this, start, end);
-    }
-    // </FS:Trish>
     STOP_GLERROR;
     // <FS:Trish> FSPerfShadowSinglePass: one instance per sun cascade
     if (sFSInstanceCount)
@@ -1824,7 +1817,7 @@ void LLVertexBuffer::_unmapBuffer()
     }
     fsUseDefaultVAO(); // <FS:Trish/> the upload binds the index buffer
 
-    mFSContentSerial = ++sFSNextContentSerial; // <FS:Trish/> Skin once per frame: vertex data may have changed
+    mFSContentSerial = ++sFSNextContentSerial; // <FS:Trish/> vertex data may have changed
 
     struct SortMappedRegion
     {
