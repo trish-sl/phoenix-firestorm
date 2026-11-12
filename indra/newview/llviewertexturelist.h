@@ -350,4 +350,8 @@ const bool MIPMAP_FALSE = false;
 
 extern LLViewerTextureList gTextureList;
 
+// <FS:Trish> FSTextureBias: what the tracked video memory is made of, for the bias log while it is up
+std::string fs_texture_memory_breakdown();
+// </FS:Trish>
+
 #endif

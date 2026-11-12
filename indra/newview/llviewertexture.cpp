@@ -1018,6 +1018,11 @@ void LLViewerTexture::updateClass()
             s_bias_log_timer.reset();
             LL_INFOS("FSTextureBias") << llformat("Texture discard bias %.2f (cap %.1f), video memory %.0f of %.0f MB used",
                                                   sDesiredDiscardBias, max_bias, sVRAMUsedMegabytes, sVRAMTargetMegabytes) << LL_ENDL;
+            // At the cap and still over: what is holding the memory
+            if (sDesiredDiscardBias >= max_bias - 0.01f && sVRAMUsedMegabytes > sVRAMTargetMegabytes)
+            {
+                LL_INFOS("FSTextureBias") << "At the cap and over target: " << fs_texture_memory_breakdown() << LL_ENDL;
+            }
         }
     }
     // </FS:Trish>
