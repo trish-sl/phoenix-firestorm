@@ -332,14 +332,10 @@ public:
 
     void clone(LLVertexBuffer& target) const;
 
-    // <FS:Trish> Skin once per frame (FSPerfSkinOncePerFrame, newview/fsskinonce.cpp).
-    // Changes whenever vertex data is written; it is drawn from one counter for all buffers,
-    // so a new buffer at a freed buffer's address never repeats the old value.
+    // <FS:Trish> Changes whenever vertex data is written (the GPU-driven draws' arena copies);
+    // it is drawn from one counter for all buffers, so a new buffer at a freed buffer's address
+    // never repeats the old value.
     U32 getFSContentSerial() const          { return mFSContentSerial; }
-    // Called by drawRange() before each draw made with an object-skinning program bound; null
-    // (no call) while the feature is off.
-    typedef void (*fs_rigged_draw_hook_t)(const LLVertexBuffer* vb, U32 start, U32 end);
-    static fs_rigged_draw_hook_t sFSRiggedDrawHook;
     // </FS:Trish>
     // <FS:Trish> Single pass sun shadow cascades (FSPerfShadowSinglePass): while non-zero, drawRange()
     // draws this many instances, one per cascade the batch goes to. Zero everywhere else.

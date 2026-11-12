@@ -11923,7 +11923,7 @@ const LLVOAvatar::MatrixPaletteCache& LLVOAvatar::updateSkinInfoMatrixPalette(co
         entry.mFrame = gFrameCount;
         entry.mUsesLocalOrigin = use_local_origin;
         entry.mJointSerials.clear(); // <FS:Trish/>
-        // <FS:Trish> Skin once per frame: skin blends captured from the old palette are stale
+        // <FS:Trish> A new palette needs uploading again (see fs_palette_uploaded)
         //static U32 sFSPaletteBuildSerial = 0;
         //entry.mFSBuildSerial = ++sFSPaletteBuildSerial;
         entry.mFSBuildSerial = fs_next_palette_build_serial(); // shared with the pose workers

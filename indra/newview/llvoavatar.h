@@ -996,7 +996,7 @@ public:
         std::vector<U64> mJointSerials;
         // </FS:Trish>
 
-        // <FS:Trish> Changes whenever the palette is rebuilt (skin once per frame, fsskinonce.cpp)
+        // <FS:Trish> Changes whenever the palette is rebuilt (palettes already uploaded to a program are skipped)
         U32 mFSBuildSerial = 0;
         // </FS:Trish>
 

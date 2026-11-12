@@ -6087,7 +6087,7 @@
              bottom="-1">
                 <panel
                  follows="left|top"
-                 height="733"
+                 height="703"
                  layout="topleft"
                  left="0"
                  name="experimental_avatar_settings"
@@ -6229,7 +6229,7 @@
                      width="120">
                         <button.commit_callback
                          function="FSExperimental.ResetSection"
-                         parameter="FSPerfAvatarRankHysteresis,FSPerfRiggedPaletteCache,FSPerfAttachmentExtentsCache,FSPerfSkinOncePerFrame,FSPerfParallelSkinPalettes" />
+                         parameter="FSPerfAvatarRankHysteresis,FSPerfRiggedPaletteCache,FSPerfAttachmentExtentsCache,FSPerfParallelSkinPalettes" />
                     </button>
                     <check_box
                      control_name="FSPerfAvatarRankHysteresis"
@@ -6265,17 +6265,6 @@
                      top="337"
                      width="475" />
                     <check_box
-                     control_name="FSPerfSkinOncePerFrame"
-                     follows="left|top"
-                     height="20"
-                     label="Skin rigged meshes once per frame"
-                     layout="topleft"
-                     left="15"
-                     name="fs_fsperfskinonceperframe"
-                     tool_tip="EXPERIMENTAL. Skins rigged mesh avatars, clothing and animesh once per frame and reuses the result in every pass (shadows, reflections, glow, alpha), instead of skinning again in each pass. Helps most in crowds with shadows on. Uses some extra video memory (48 bytes per rigged vertex on screen). Works best with the rigged palette cache. Reloads shaders."
-                     top="367"
-                     width="475" />
-                    <check_box
                      control_name="FSPerfParallelSkinPalettes"
                      enabled_control="FSPerfParallelAvatarUpdate"
                      follows="left|top"
@@ -6285,7 +6274,7 @@
                      left="35"
                      name="fs_fsperfparallelskinpalettes"
                      tool_tip="EXPERIMENTAL. With &apos;Update other avatars on worker threads&apos; on, build the skinning matrices of each avatar&apos;s rigged attachments on its worker too, right after its pose, instead of on the main thread while drawing. The main thread then only checks that no joint moved since, and builds them itself if one did. Saves main thread time with many avatars around."
-                     top="391"
+                     top="361"
                      width="455" />
                     <text
                      follows="left|top"
@@ -6294,7 +6283,7 @@
                      layout="topleft"
                      left="15"
                      name="fs_heading_skin"
-                     top="433"
+                     top="403"
                      width="340">
                         Skin
                     </text>
@@ -6306,7 +6295,7 @@
                      left="370"
                      name="reset_fs_heading_skin"
                      tool_tip="Set every option in &quot;Skin&quot; back to its default value."
-                     top="432"
+                     top="402"
                      width="120">
                         <button.commit_callback
                          function="FSExperimental.ResetSection"
@@ -6321,7 +6310,7 @@
                      left="15"
                      name="fs_fsrenderskinsss"
                      tool_tip="EXPERIMENTAL. Softer, more lifelike skin under strong light: light bleeds slightly through and around the skin, with a reddish falloff at shadow edges and around ears and fingers. Applies to avatar surfaces weighted by how skin-like their colour is. Needs HDR. Turning it on or off rebuilds shaders."
-                     top="459"
+                     top="429"
                      width="475" />
                     <text
                      follows="left|top"
@@ -6330,7 +6319,7 @@
                      left="35"
                      name="fs_fsrenderskinsssstrength_label"
                      tool_tip="EXPERIMENTAL. How much of the diffused light replaces the lit skin. Only the light is diffused: skin texture and highlights stay sharp, so 1 (the physical look) does not blur the face. 0 turns the scattering off."
-                     top="487"
+                     top="457"
                      width="285">
                         Scattering strength
                     </text>
@@ -6347,7 +6336,7 @@
                      min_val="0"
                      name="fs_fsrenderskinsssstrength"
                      tool_tip="EXPERIMENTAL. How much of the diffused light replaces the lit skin. Only the light is diffused: skin texture and highlights stay sharp, so 1 (the physical look) does not blur the face. 0 turns the scattering off."
-                     top="485"
+                     top="455"
                      width="100" />
                     <text
                      follows="left|top"
@@ -6356,7 +6345,7 @@
                      left="35"
                      name="fs_fsrenderskinsssradius_label"
                      tool_tip="EXPERIMENTAL. Scale of the skin diffusion profile. 1 is measured human skin (red light spreads about 6 mm, green and blue stay sharp); 1.5 reads well at portrait distance; larger looks softer and waxier."
-                     top="515"
+                     top="485"
                      width="285">
                         Scattering radius (x human skin)
                     </text>
@@ -6373,7 +6362,7 @@
                      min_val="0.25"
                      name="fs_fsrenderskinsssradius"
                      tool_tip="EXPERIMENTAL. Scale of the skin diffusion profile. 1 is measured human skin (red light spreads about 6 mm, green and blue stay sharp); 1.5 reads well at portrait distance; larger looks softer and waxier."
-                     top="513"
+                     top="483"
                      width="100" />
                     <text
                      follows="left|top"
@@ -6382,7 +6371,7 @@
                      left="35"
                      name="fs_fsrenderskinssstint_label"
                      tool_tip="EXPERIMENTAL. How much further red light scatters than green and blue. 1 gives the reddish glow of human skin at shadow edges, 0 a neutral soft blur."
-                     top="543"
+                     top="513"
                      width="285">
                         Red falloff
                     </text>
@@ -6399,7 +6388,7 @@
                      min_val="0"
                      name="fs_fsrenderskinssstint"
                      tool_tip="EXPERIMENTAL. How much further red light scatters than green and blue. 1 gives the reddish glow of human skin at shadow edges, 0 a neutral soft blur."
-                     top="541"
+                     top="511"
                      width="100" />
                     <text
                      follows="left|top"
@@ -6408,7 +6397,7 @@
                      left="35"
                      name="fs_fsrenderskinssstonematch_label"
                      tool_tip="EXPERIMENTAL. 0 applies scattering to every avatar surface (rigged mesh and the system body), 1 only to surfaces whose colour looks like skin, which keeps it off most clothing. Lower it for non-human or unusually coloured skins."
-                     top="571"
+                     top="541"
                      width="285">
                         Skin colour matching
                     </text>
@@ -6425,7 +6414,7 @@
                      min_val="0"
                      name="fs_fsrenderskinssstonematch"
                      tool_tip="EXPERIMENTAL. 0 applies scattering to every avatar surface (rigged mesh and the system body), 1 only to surfaces whose colour looks like skin, which keeps it off most clothing. Lower it for non-human or unusually coloured skins."
-                     top="569"
+                     top="539"
                      width="100" />
                     <text
                      follows="left|top"
@@ -6434,7 +6423,7 @@
                      left="35"
                      name="fs_fsrenderskinssstranslucency_label"
                      tool_tip="EXPERIMENTAL. Sunlight shining through thin skin lit from behind: ears, fingers and nostrils glow red when the sun is behind the avatar. 1 is the physical amount, 0 is off. Needs sun shadows (thickness is measured in the sun shadow map); the radius above also scales how thick skin can be and still glow."
-                     top="599"
+                     top="569"
                      width="285">
                         Backlit translucency
                     </text>
@@ -6451,7 +6440,7 @@
                      min_val="0"
                      name="fs_fsrenderskinssstranslucency"
                      tool_tip="EXPERIMENTAL. Sunlight shining through thin skin lit from behind: ears, fingers and nostrils glow red when the sun is behind the avatar. 1 is the physical amount, 0 is off. Needs sun shadows (thickness is measured in the sun shadow map); the radius above also scales how thick skin can be and still glow."
-                     top="597"
+                     top="567"
                      width="100" />
                     <text
                      follows="left|top"
@@ -6460,7 +6449,7 @@
                      layout="topleft"
                      left="15"
                      name="fs_heading_hair_and_transparency"
-                     top="639"
+                     top="609"
                      width="340">
                         Hair and transparency
                     </text>
@@ -6472,7 +6461,7 @@
                      left="370"
                      name="reset_fs_heading_hair_and_transparency"
                      tool_tip="Set every option in &quot;Hair and transparency&quot; back to its default value."
-                     top="638"
+                     top="608"
                      width="120">
                         <button.commit_callback
                          function="FSExperimental.ResetSection"
@@ -6487,7 +6476,7 @@
                      left="15"
                      name="fs_fsrenderhairtwopass"
                      tool_tip="EXPERIMENTAL. Draws alpha-blended rigged mesh (hair, layered clothing) as a depth-sorted solid core and a blended soft fringe, so inner layers stop showing through outer ones. Costs roughly two extra draws of rigged alpha. Rebuilds shaders when changed."
-                     top="665"
+                     top="635"
                      width="475" />
                     <text
                      follows="left|top"
@@ -6496,7 +6485,7 @@
                      left="35"
                      name="fs_fsrenderhairalphathreshold_label"
                      tool_tip="EXPERIMENTAL. Alpha at or above which hair counts as solid and is depth sorted. Lower sorts more of each strand but hardens soft edges; higher keeps edges soft but sorts less."
-                     top="693"
+                     top="663"
                      width="285">
                         Hair solid alpha threshold
                     </text>
@@ -6513,7 +6502,7 @@
                      min_val="0.5"
                      name="fs_fsrenderhairalphathreshold"
                      tool_tip="EXPERIMENTAL. Alpha at or above which hair counts as solid and is depth sorted. Lower sorts more of each strand but hardens soft edges; higher keeps edges soft but sorts less."
-                     top="691"
+                     top="661"
                      width="100" />
                 </panel>
             </scroll_container>
