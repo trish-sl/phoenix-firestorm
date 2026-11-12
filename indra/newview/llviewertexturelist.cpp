@@ -33,6 +33,7 @@
 #include "llagent.h"
 #include "llgl.h" // fot gathering stats from GL
 #include "llimagegl.h"
+#include "llvertexbuffer.h" // <FS:Trish/> fs_texture_memory_breakdown
 #include "llimagebmp.h"
 #include "llimagej2c.h"
 #include "llimagetga.h"
@@ -2693,3 +2694,94 @@ bool LLUIImageList::initFromFile()
     }
     return true;
 }
+
+// <FS:Trish> FSTextureBias: what the tracked video memory is made of. With the bias at its cap and
+// memory still over the target, this tells textures that can't shrink (boosted, used on too many
+// faces to be measured, on screen near the camera) from ones still waiting to, and from vertex buffers.
+std::string fs_texture_memory_breakdown()
+{
+    struct Bucket
+    {
+        F64 mb = 0.0;
+        U32 count = 0;
+        void add(F64 m) { mb += m; ++count; }
+    };
+    Bucket lod, lod_full, lod_bigger, lod_many_faces, avatar, boosted, ui;
+    struct Top { F64 mb; LLViewerFetchedTexture* tex; };
+    std::vector<Top> top;
+    F64 listed_mb = 0.0;
+    for (const LLPointer<LLViewerFetchedTexture>& image_ptr : gTextureList)
+    {
+        // get(), not ->: LLPointer's const operator-> gives a const texture, and the getters
+        // used below aren't const
+        LLViewerFetchedTexture* imagep = image_ptr.get();
+        if (!imagep || !imagep->hasGLTexture())
+        {
+            continue;
+        }
+        const F64 mb = (F64)imagep->getTextureMemory().value() / (1024.0 * 1024.0);
+        if (mb <= 0.0)
+        {
+            continue;
+        }
+        listed_mb += mb;
+        const S32 boost = imagep->getBoostLevel();
+        if (boost >= LLGLTexture::BOOST_SUPER_HIGH)
+        {
+            ui.add(mb);
+            continue;
+        }
+        if (boost >= LLGLTexture::BOOST_HIGH)
+        {
+            boosted.add(mb);
+        }
+        else if (boost != LLGLTexture::BOOST_NONE)
+        {
+            avatar.add(mb);
+        }
+        else
+        {
+            lod.add(mb);
+            if (imagep->getDiscardLevel() == 0)
+            {
+                lod_full.add(mb);
+            }
+            if (imagep->getDiscardLevel() < imagep->getDesiredDiscardLevel())
+            {
+                lod_bigger.add(mb);
+            }
+            S32 faces = 0;
+            for (U32 ch = 0; ch < LLRender::NUM_TEXTURE_CHANNELS; ++ch)
+            {
+                faces += imagep->getNumFaces(ch);
+            }
+            if (faces > 1024)
+            {
+                lod_many_faces.add(mb);
+            }
+        }
+        top.push_back({ mb, imagep });
+    }
+    const size_t top_n = llmin(top.size(), (size_t)5);
+    std::partial_sort(top.begin(), top.begin() + top_n, top.end(), [](const Top& a, const Top& b) { return a.mb > b.mb; });
+
+    const F64 gl_mb = (F64)LLImageGL::getTextureBytesAllocated() / (1024.0 * 1024.0);
+    const F64 vb_mb = (F64)LLVertexBuffer::getBytesAllocated() / (1024.0 * 1024.0);
+    std::string out = llformat("textures %.0f MB (%.0f in the texture list), vertex buffers %.0f MB; "
+                               "unboosted %.0f MB in %u (full size %.0f MB, still bigger than wanted %.0f MB in %u, "
+                               "on over 1024 faces %.0f MB in %u), avatar %.0f MB in %u, boosted %.0f MB in %u, UI/HUD %.0f MB in %u; "
+                               "downscales queued %u; largest:",
+                               gl_mb, listed_mb, vb_mb,
+                               lod.mb, lod.count, lod_full.mb, lod_bigger.mb, lod_bigger.count, lod_many_faces.mb, lod_many_faces.count,
+                               avatar.mb, avatar.count, boosted.mb, boosted.count, ui.mb, ui.count,
+                               (U32)gTextureList.mDownScaleQueue.size());
+    for (size_t i = 0; i < top_n; ++i)
+    {
+        LLViewerFetchedTexture* tex = top[i].tex;
+        out += llformat(" %s %dx%d %.0f MB boost %d discard %d wants %d;",
+                        tex->getID().asString().c_str(), tex->getFullWidth(), tex->getFullHeight(), top[i].mb,
+                        (S32)tex->getBoostLevel(), (S32)tex->getDiscardLevel(), (S32)tex->getDesiredDiscardLevel());
+    }
+    return out;
+}
+// </FS:Trish>
