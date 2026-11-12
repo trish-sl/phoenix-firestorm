@@ -29,7 +29,8 @@
 // world matrices of one avatar) and why:
 // - Only motions that return true from LLMotion::canUpdateOffMainThread() (keyframe and its
 //   walk/stand/fall/poser subclasses, head/eye, hand, targeting, walk/fly adjust, emote,
-//   avatar physics, null) are evaluated off the main thread. An avatar with any other active
+//   avatar physics, null, and the body noise, breathing and pelvis fix motions every avatar close
+//   enough runs) are evaluated off the main thread. An avatar with any other active
 //   motion (editing, unknown future motions) is evaluated on the main thread, before the
 //   workers start. The self avatar and UI avatars are never queued.
 // - Those motions write only their own avatar: joints, joint states, pose blenders, visual
