@@ -6538,7 +6538,7 @@
              bottom="-1">
                 <panel
                  follows="left|top"
-                 height="1709"
+                 height="1733"
                  layout="topleft"
                  left="0"
                  name="experimental_performance_settings"
@@ -6716,7 +6716,7 @@
                      width="120">
                         <button.commit_callback
                          function="FSExperimental.ResetSection"
-                         parameter="FSPerfParallelShadowCull,FSPerfParallelShadowCullVerify,FSPerfParallelGeometry,FSPerfParallelGeometryVerify,FSPerfParallelGeometryMinVerts,FSPerfParallelAvatarUpdate,FSPerfParallelAvatarUpdateVerify,FSPerfParallelMainCull,FSPerfParallelMainCullVerify,FSPerfParallelPostSort,FSPerfParallelPostSortVerify,FSPerfParallelPostSortMinGroups,FSPerfParallelTexturePriority,FSPerfParallelTexturePriorityVerify,FSPerfDiskThread,FSPerfBackgroundVolumeFree,FSPerfAudioThread,FSPerfOpenJPEGBufferCacheMB" />
+                         parameter="FSPerfParallelShadowCull,FSPerfParallelShadowCullVerify,FSPerfParallelGeometry,FSPerfParallelGeometryVerify,FSPerfParallelGeometryMinVerts,FSPerfParallelAvatarUpdate,FSPerfParallelAvatarUpdateVerify,FSPerfParallelMainCull,FSPerfParallelMainCullVerify,FSPerfParallelPostSort,FSPerfParallelPostSortVerify,FSPerfParallelPostSortMinGroups,FSPerfParallelTexturePriority,FSPerfParallelTexturePriorityVerify,FSPerfDiskThread,FSPerfBackgroundVolumeFree,FSPerfAudioThread,FSPerfOpenJPEGBufferCacheMB,FSPerfImageBufferPoolMB" />
                     </button>
                     <check_box
                      control_name="FSPerfParallelShadowCull"
@@ -6969,12 +6969,37 @@
                      width="100" />
                     <text
                      follows="left|top"
+                     height="16"
+                     layout="topleft"
+                     left="35"
+                     name="fs_fsperfimagebufferpoolmb_label"
+                     tool_tip="EXPERIMENTAL. How much of the pixel buffers freed by decoded textures is kept, in MB, for the next texture of a similar size instead of being handed back to Windows and fetched fresh, page by page, every time. Saves the bursts of page faults that stall the viewer while many textures decode at once (logging in, arriving somewhere). Kept buffers unused for 30 seconds are handed back. 0 turns it off. Takes effect at once."
+                     top="848"
+                     width="310">
+                        Texture pixel buffers kept for reuse (MB)
+                    </text>
+                    <spinner
+                     control_name="FSPerfImageBufferPoolMB"
+                     decimal_digits="0"
+                     follows="left|top"
+                     height="20"
+                     increment="64"
+                     layout="topleft"
+                     left="330"
+                     max_val="2048"
+                     min_val="0"
+                     name="fs_fsperfimagebufferpoolmb"
+                     tool_tip="EXPERIMENTAL. How much of the pixel buffers freed by decoded textures is kept, in MB, for the next texture of a similar size instead of being handed back to Windows and fetched fresh, page by page, every time. Saves the bursts of page faults that stall the viewer while many textures decode at once (logging in, arriving somewhere). Kept buffers unused for 30 seconds are handed back. 0 turns it off. Takes effect at once."
+                     top="846"
+                     width="100" />
+                    <text
+                     follows="left|top"
                      font="SansSerifBold"
                      height="18"
                      layout="topleft"
                      left="15"
                      name="fs_heading_gpu_driven_draws"
-                     top="864"
+                     top="888"
                      width="340">
                         GPU-driven draws
                     </text>
@@ -6986,7 +7011,7 @@
                      left="370"
                      name="reset_fs_heading_gpu_driven_draws"
                      tool_tip="Set every option in &quot;GPU-driven draws&quot; back to its default value."
-                     top="863"
+                     top="887"
                      width="120">
                         <button.commit_callback
                          function="FSExperimental.ResetSection"
@@ -7002,7 +7027,7 @@
                      left="15"
                      name="fs_fsperfgpudrivendraws"
                      tool_tip="EXPERIMENTAL. Sends the opaque buildings and objects of each shadow map to the graphics card as one multi-draw call instead of one call per object batch, from a copy of their positions kept in video memory. Shadows look the same; saves CPU time in busy scenes. Works together with 'Draw sun shadow cascades in one pass'. Needs OpenGL 4.3 (most NVIDIA, AMD and Intel cards with current drivers; not macOS); otherwise nothing changes."
-                     top="890"
+                     top="914"
                      width="475" />
                     <check_box
                      control_name="FSPerfGPUDrivenDrawsVerify"
@@ -7014,7 +7039,7 @@
                      left="35"
                      name="fs_fsperfgpudrivendrawsverify"
                      tool_tip="Debug. Draws the shadow casters a second time the old way and logs any place where the result would differ, plus draw statistics every 10 seconds. Slows rendering down; for testing only."
-                     top="916"
+                     top="940"
                      width="455" />
                     <text
                      follows="left|top"
@@ -7023,7 +7048,7 @@
                      left="35"
                      name="fs_fsperfgpudrivendrawsarenamb_label"
                      tool_tip="Most video memory the copy of the shadow casters' positions may use. Casters that don't fit are drawn the old way."
-                     top="944"
+                     top="968"
                      width="285">
                         Shadow caster memory (MB)
                     </text>
@@ -7040,7 +7065,7 @@
                      min_val="16"
                      name="fs_fsperfgpudrivendrawsarenamb"
                      tool_tip="Most video memory the copy of the shadow casters' positions may use. Casters that don't fit are drawn the old way."
-                     top="942"
+                     top="966"
                      width="100" />
                     <check_box
                      control_name="FSPerfGPUDrivenPBR"
@@ -7051,7 +7076,7 @@
                      left="15"
                      name="fs_fsperfgpudrivenpbr"
                      tool_tip="EXPERIMENTAL. Draws static opaque PBR (GLTF material) surfaces with a few large multi-draw calls out of a shared vertex arena instead of one draw call each. Looks the same; saves CPU time in busy scenes. Needs OpenGL 4.3. Uses up to the arena size below of video memory. Rebuilds shaders."
-                     top="974"
+                     top="998"
                      width="475" />
                     <check_box
                      control_name="FSPerfGPUDrivenPBRBindless"
@@ -7063,7 +7088,7 @@
                      left="35"
                      name="fs_fsperfgpudrivenpbrbindless"
                      tool_tip="EXPERIMENTAL. With GPU-driven PBR surfaces: uses bindless textures (GL_ARB_bindless_texture) so surfaces with different materials share one draw call. Looks the same; saves more CPU time. Not used where the driver doesn't support it properly. Rebuilds shaders."
-                     top="1000"
+                     top="1024"
                      width="455" />
                     <text
                      follows="left|top"
@@ -7072,7 +7097,7 @@
                      left="35"
                      name="fs_fsperfgpudrivenpbrarenamb_label"
                      tool_tip="EXPERIMENTAL. Most video memory the GPU-driven PBR surfaces may use for their copy of the vertex data, 16 to 2048 MB. Surfaces that don't fit are drawn the old way."
-                     top="1028"
+                     top="1052"
                      width="285">
                         PBR vertex arena (MB)
                     </text>
@@ -7089,7 +7114,7 @@
                      min_val="16"
                      name="fs_fsperfgpudrivenpbrarenamb"
                      tool_tip="EXPERIMENTAL. Most video memory the GPU-driven PBR surfaces may use for their copy of the vertex data, 16 to 2048 MB. Surfaces that don't fit are drawn the old way."
-                     top="1026"
+                     top="1050"
                      width="100" />
                     <check_box
                      control_name="FSPerfGPUDrivenLegacy"
@@ -7100,7 +7125,7 @@
                      left="15"
                      name="fs_fsperfgpudrivenlegacy"
                      tool_tip="EXPERIMENTAL. Draws static opaque non-PBR surfaces (simple, alpha masked and fullbright) with a few large multi-draw calls out of a shared vertex arena, with bindless textures, instead of one draw call and several texture binds each. Looks the same; saves CPU time in busy scenes. Needs OpenGL 4.3 and bindless textures (NVIDIA GPUs only). Uses up to the arena size below of video memory. Rebuilds shaders."
-                     top="1058"
+                     top="1082"
                      width="475" />
                     <text
                      follows="left|top"
@@ -7109,7 +7134,7 @@
                      left="35"
                      name="fs_fsperfgpudrivenlegacyarenamb_label"
                      tool_tip="EXPERIMENTAL. Most video memory the GPU-driven legacy surfaces may use for their copy of the vertex data, 16 to 2048 MB. Surfaces that don't fit are drawn the old way."
-                     top="1086"
+                     top="1110"
                      width="285">
                         Legacy vertex arena (MB)
                     </text>
@@ -7126,7 +7151,7 @@
                      min_val="16"
                      name="fs_fsperfgpudrivenlegacyarenamb"
                      tool_tip="EXPERIMENTAL. Most video memory the GPU-driven legacy surfaces may use for their copy of the vertex data, 16 to 2048 MB. Surfaces that don't fit are drawn the old way."
-                     top="1084"
+                     top="1108"
                      width="100" />
                     <check_box
                      control_name="FSPerfGPUDrivenPBRGroupRuns"
@@ -7137,7 +7162,7 @@
                      left="35"
                      name="fs_fsperfgpudrivenpbrgroupruns"
                      tool_tip="EXPERIMENTAL. Applies to GPU-driven PBR surfaces and GPU-driven legacy material surfaces: draws them grouped instead of in the stock order. PBR: every surface with bindless textures in one multi-draw, the others one run per material. Legacy materials: every GPU-driven surface in one multi-draw. The surfaces drawn the old way follow. Far fewer draw calls and texture binds in busy scenes. Only where two surfaces lie at exactly the same depth can the other one show."
-                     top="1116"
+                     top="1140"
                      width="455" />
                     <check_box
                      control_name="FSPerfGPUDrivenMaterials"
@@ -7148,7 +7173,7 @@
                      left="15"
                      name="fs_fsperfgpudrivenmaterials"
                      tool_tip="EXPERIMENTAL. Draws static opaque surfaces with legacy normal or specular maps (or shine on a material) with a few large multi-draw calls out of a shared vertex arena, with bindless textures, instead of one draw call, several texture binds and material settings each. Looks the same; saves CPU time in busy scenes. Needs OpenGL 4.3 and bindless textures (NVIDIA GPUs only). Uses up to the arena size below of video memory. Rebuilds shaders."
-                     top="1146"
+                     top="1170"
                      width="475" />
                     <text
                      follows="left|top"
@@ -7157,7 +7182,7 @@
                      left="35"
                      name="fs_fsperfgpudrivenmaterialsarenamb_label"
                      tool_tip="EXPERIMENTAL. Most video memory the GPU-driven legacy material surfaces may use for their copy of the vertex data, 16 to 2048 MB. Surfaces that don't fit are drawn the old way."
-                     top="1174"
+                     top="1198"
                      width="285">
                         Material vertex arena (MB)
                     </text>
@@ -7174,7 +7199,7 @@
                      min_val="16"
                      name="fs_fsperfgpudrivenmaterialsarenamb"
                      tool_tip="EXPERIMENTAL. Most video memory the GPU-driven legacy material surfaces may use for their copy of the vertex data, 16 to 2048 MB. Surfaces that don't fit are drawn the old way."
-                     top="1172"
+                     top="1196"
                      width="100" />
                     <check_box
                      control_name="FSPerfGPUDrivenShadowAlpha"
@@ -7186,7 +7211,7 @@
                      left="15"
                      name="fs_fsperfgpudrivenshadowalpha"
                      tool_tip="EXPERIMENTAL. Sends the alpha tested shadow casters (leaves, fences, grass, cut-out textures, alpha masked PBR materials) of each shadow map to the graphics card as one multi-draw call with bindless textures, instead of one call and several texture binds per object batch. Shadows look the same; saves CPU time in busy scenes. Works together with 'Draw sun shadow cascades in one pass'; checked by 'Verify multi-draw shadows'. Needs OpenGL 4.3 and bindless textures (NVIDIA GPUs only); otherwise nothing changes. Rebuilds shaders."
-                     top="1204"
+                     top="1228"
                      width="475" />
                     <text
                      follows="left|top"
@@ -7195,7 +7220,7 @@
                      left="35"
                      name="fs_fsperfgpudrivenshadowalphaarenamb_label"
                      tool_tip="EXPERIMENTAL. Most video memory the copy of the alpha tested shadow casters' vertex data may use, 16 to 2048 MB. Casters that don't fit are drawn the old way."
-                     top="1232"
+                     top="1256"
                      width="285">
                         Alpha shadow caster memory (MB)
                     </text>
@@ -7212,7 +7237,7 @@
                      min_val="16"
                      name="fs_fsperfgpudrivenshadowalphaarenamb"
                      tool_tip="EXPERIMENTAL. Most video memory the copy of the alpha tested shadow casters' vertex data may use, 16 to 2048 MB. Casters that don't fit are drawn the old way."
-                     top="1230"
+                     top="1254"
                      width="100" />
                     <text
                      follows="left|top"
@@ -7221,7 +7246,7 @@
                      layout="topleft"
                      left="15"
                      name="fs_heading_render_thread"
-                     top="1272"
+                     top="1296"
                      width="340">
                         Render thread
                     </text>
@@ -7233,7 +7258,7 @@
                      left="370"
                      name="reset_fs_heading_render_thread"
                      tool_tip="Set every option in &quot;Render thread&quot; back to its default value."
-                     top="1271"
+                     top="1295"
                      width="120">
                         <button.commit_callback
                          function="FSExperimental.ResetSection"
@@ -7248,7 +7273,7 @@
                      left="15"
                      name="fs_fsrenderthread"
                      tool_tip="EXPERIMENTAL. Windows only, takes effect after a restart. The main thread hands its OpenGL work to a render thread, which talks to the graphics driver while the main thread already prepares the next frame. Can raise the frame rate when the main thread is the bottleneck. The picture is the same; if something renders wrongly or the viewer stalls, turn it off."
-                     top="1298"
+                     top="1322"
                      width="475" />
                     <text
                      follows="left|top"
@@ -7257,7 +7282,7 @@
                      layout="topleft"
                      left="15"
                      name="fs_heading_shaders"
-                     top="1340"
+                     top="1364"
                      width="340">
                         Shaders
                     </text>
@@ -7269,7 +7294,7 @@
                      left="370"
                      name="reset_fs_heading_shaders"
                      tool_tip="Set every option in &quot;Shaders&quot; back to its default value."
-                     top="1339"
+                     top="1363"
                      width="120">
                         <button.commit_callback
                          function="FSExperimental.ResetSection"
@@ -7284,7 +7309,7 @@
                      left="15"
                      name="fs_fsperfparallelshadercompile"
                      tool_tip="EXPERIMENTAL. Shorter pauses when graphics settings change and shaders are rebuilt, because the graphics driver compiles them on several threads at once. Needs a driver that supports parallel shader compile (current NVIDIA and AMD drivers, Mesa). Without that support nothing changes. Applies from the next shader rebuild."
-                     top="1366"
+                     top="1390"
                      width="475" />
                     <text
                      follows="left|top"
@@ -7293,7 +7318,7 @@
                      layout="topleft"
                      left="15"
                      name="fs_heading_user_interface"
-                     top="1408"
+                     top="1432"
                      width="340">
                         User interface
                     </text>
@@ -7305,7 +7330,7 @@
                      left="370"
                      name="reset_fs_heading_user_interface"
                      tool_tip="Set every option in &quot;User interface&quot; back to its default value."
-                     top="1407"
+                     top="1431"
                      width="120">
                         <button.commit_callback
                          function="FSExperimental.ResetSection"
@@ -7318,7 +7343,7 @@
                      left="35"
                      name="fs_fsrenderuicap_label"
                      tool_tip="EXPERIMENTAL. Draws the interface into its own image and redraws it only when needed: every frame while you use it (mouse over it, typing into it, dragging a window), at most this many times a second when something in it changes, otherwise a few times a second. Saves a large part of the main thread's frame when windows and chat are open. 0 draws the interface every frame as before."
-                     top="1436"
+                     top="1460"
                      width="285">
                         UI redraw cap (per second, 0 = every frame)
                     </text>
@@ -7334,7 +7359,7 @@
                      min_val="0"
                      name="fs_fsrenderuicap"
                      tool_tip="EXPERIMENTAL. Draws the interface into its own image and redraws it only when needed: every frame while you use it (mouse over it, typing into it, dragging a window), at most this many times a second when something in it changes, otherwise a few times a second. Saves a large part of the main thread's frame when windows and chat are open. 0 draws the interface every frame as before."
-                     top="1434"
+                     top="1458"
                      width="100" />
                     <text
                      follows="left|top"
@@ -7343,7 +7368,7 @@
                      left="35"
                      name="fs_fsrenderuiidlerate_label"
                      tool_tip="EXPERIMENTAL. With the redraw cap on, how often the interface is redrawn while nothing uses it. Most changes (text, counters, chat) show up at this rate."
-                     top="1464"
+                     top="1488"
                      width="285">
                         UI idle refresh (per second)
                     </text>
@@ -7360,7 +7385,7 @@
                      min_val="0.5"
                      name="fs_fsrenderuiidlerate"
                      tool_tip="EXPERIMENTAL. With the redraw cap on, how often the interface is redrawn while nothing uses it. Most changes (text, counters, chat) show up at this rate."
-                     top="1462"
+                     top="1486"
                      width="100" />
                     <text
                      follows="left|top"
@@ -7369,7 +7394,7 @@
                      layout="topleft"
                      left="15"
                      name="fs_heading_uploads_inventory"
-                     top="1504"
+                     top="1528"
                      width="340">
                         Uploads and inventory
                     </text>
@@ -7381,7 +7406,7 @@
                      left="370"
                      name="reset_fs_heading_uploads_inventory"
                      tool_tip="Set every option in &quot;Uploads and inventory&quot; back to its default value."
-                     top="1503"
+                     top="1527"
                      width="120">
                         <button.commit_callback
                          function="FSExperimental.ResetSection"
@@ -7396,7 +7421,7 @@
                      left="35"
                      name="fs_fsperfparalleltextureencode"
                      tool_tip="The viewer freezes while it compresses a texture for upload, about a second per large texture, and a material upload compresses up to four. With this on, each texture is compressed on several cores and the maps of a material at the same time, so the freeze is several times shorter. Applies to textures, materials, snapshots and mesh textures."
-                     top="1527"
+                     top="1551"
                      width="455" />
                     <check_box
                      control_name="FSPerfInventoryLazySort"
@@ -7407,7 +7432,7 @@
                      left="35"
                      name="fs_fsperfinventorylazysort"
                      tool_tip="Opening the inventory, switching its tabs or changing the sort order sorted every folder at once, a freeze of a few hundred milliseconds with large inventories. With this on, open folders are sorted right away and each closed folder when you open it. With folders sorted by date everything is still sorted at once, since that order depends on what is inside them."
-                     top="1550"
+                     top="1574"
                      width="455" />
                     <text
                      follows="left|top"
@@ -7416,7 +7441,7 @@
                      layout="topleft"
                      left="15"
                      name="perf_heading_other"
-                     top="1592"
+                     top="1616"
                      width="340">
                         Other
                     </text>
@@ -7428,7 +7453,7 @@
                      left="370"
                      name="reset_perf_heading_other"
                      tool_tip="Set every option in &quot;Other&quot; back to its default value."
-                     top="1591"
+                     top="1615"
                      width="120">
                         <button.commit_callback
                          function="FSExperimental.ResetSection"
@@ -7443,7 +7468,7 @@
                      left="15"
                      name="perf_audiothrottlechecks"
                      tool_tip="EXPERIMENTAL. Re-check whether each sound source is muted or allowed by parcel rules 4 times a second, or right away when the mute list, parcel or your position changes, instead of every frame."
-                     top="1615"
+                     top="1639"
                      width="475" />
                     <check_box
                      control_name="FSPerfInventoryIdleThrottle"
@@ -7454,7 +7479,7 @@
                      left="15"
                      name="perf_inventoryidlethrottle"
                      tool_tip="EXPERIMENTAL. Inventory panels that are not on screen update their folder views twice a second instead of every frame."
-                     top="1637"
+                     top="1661"
                      width="475" />
                     <check_box
                      control_name="FSPerfHoverPickThrottle"
@@ -7465,7 +7490,7 @@
                      left="15"
                      name="fs_fsperfhoverpickthrottle"
                      tool_tip="EXPERIMENTAL. While the mouse, its buttons and the camera stay still, the viewer reuses what it found under the mouse for up to a tenth of a second instead of casting a ray through the scene every frame. Something moving under a still mouse is noticed within that time."
-                     top="1667"
+                     top="1691"
                      width="475" />
                 </panel>
             </scroll_container>

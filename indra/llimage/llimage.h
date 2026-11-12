@@ -193,6 +193,13 @@ protected:
 public:
     // </FS:Trish>
 
+    // <FS:Trish> Reuse of large pixel buffers (FSPerfImageBufferPoolMB): how much of the buffers freed by
+    // images, in MB, is kept for the next image of a similar size instead of going back to the OS. 0 = off.
+    static std::atomic<U32> sFSBufferPoolMB;
+    // Gives kept buffers unused for a while back to the OS; cheap, call every frame
+    static void fsTrimBufferPool();
+    // </FS:Trish>
+
     // <FS:Beq> [FIRE-36494] Image allocation failure telemetry
     using allocation_failure_callback_t = void (*)(const LLImageAllocationFailureInfo&);
     static void setAllocationFailureCallback(allocation_failure_callback_t callback);
