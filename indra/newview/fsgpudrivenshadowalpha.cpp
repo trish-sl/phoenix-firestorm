@@ -578,6 +578,7 @@ void fsGDDShadowAlphaCollect(U32 kind, std::vector<LLDrawInfo*>& batches, F32 fi
     size_t out = 0;
     for (size_t i = 0; i < batches.size(); ++i)
     {
+        sArena.prefetchAhead(batches.data() + i, (ptrdiff_t)(batches.size() - i));
         if (!collect(kind, batches[i], 1, fixed_cutoff))
         {
             batches[out++] = batches[i];
@@ -594,8 +595,28 @@ void fsGDDShadowAlphaCollectSP(U32 kind, std::vector<LLPipeline::FSShadowSPEntry
     }
     LL_PROFILE_ZONE_SCOPED_CATEGORY_PIPELINE;
     size_t out = 0;
-    for (size_t i = 0; i < list.size(); ++i)
+    const size_t count = list.size();
+    for (size_t i = 0; i < count; ++i)
     {
+        // as prefetchAhead, through the entries
+        if (i + 16 < count && list[i + 16].mParams)
+        {
+            _mm_prefetch((const char*)list[i + 16].mParams, _MM_HINT_T0);
+        }
+        if (i + 8 < count && list[i + 8].mParams)
+        {
+            if (const LLVertexBuffer* vb = list[i + 8].mParams->mVertexBuffer.get())
+            {
+                sArena.prefetchBuffer(vb);
+            }
+        }
+        if (i + 4 < count && list[i + 4].mParams)
+        {
+            if (const LLVertexBuffer* vb = list[i + 4].mParams->mVertexBuffer.get())
+            {
+                sArena.prefetchEntry(vb);
+            }
+        }
         if (!collect(kind, list[i].mParams, list[i].mMask, -1.f))
         {
             list[out++] = list[i];

@@ -352,6 +352,26 @@ namespace
         size_t i = 0;
         while (i < count)
         {
+            // The draw infos, buffers and arena entries are all over the heap: start loading them a few
+            // draws ahead (each step needs the one before it in cache), so the lookups don't wait on memory
+            if (i + 16 < count)
+            {
+                _mm_prefetch((const char*)items[i + 16].mParams, _MM_HINT_T0);
+            }
+            if (i + 8 < count)
+            {
+                if (const LLVertexBuffer* ahead = items[i + 8].mParams->mVertexBuffer.get())
+                {
+                    sArena.prefetchBuffer(ahead);
+                }
+            }
+            if (i + 4 < count)
+            {
+                if (const LLVertexBuffer* ahead = items[i + 4].mParams->mVertexBuffer.get())
+                {
+                    sArena.prefetchEntry(ahead);
+                }
+            }
             const Item& first = items[i];
             LLVertexBuffer* vb = first.mParams->mVertexBuffer.get();
             const LLMatrix4* model = first.mParams->mModelMatrix;

@@ -889,6 +889,64 @@ namespace
         }
     };
 
+    // A map keyed by GL object name, looked up on every VAO bind. Drivers hand out small, dense names, so
+    // those live in flat arrays (an index, no hashing); a large name, should a driver use them, goes to a
+    // hash map.
+    template <typename V>
+    struct NameMap
+    {
+        static constexpr GLuint DENSE_LIMIT = 1u << 20;
+        std::vector<V> mDense;
+        std::vector<U8> mHas;
+        std::unordered_map<GLuint, V> mSparse;
+
+        const V* find(GLuint name) const
+        {
+            if (name < DENSE_LIMIT)
+            {
+                return name < mHas.size() && mHas[name] ? &mDense[name] : nullptr;
+            }
+            auto it = mSparse.find(name);
+            return it != mSparse.end() ? &it->second : nullptr;
+        }
+        // Value initialised the first time, as std::unordered_map::operator[]
+        V& operator[](GLuint name)
+        {
+            if (name >= DENSE_LIMIT)
+            {
+                return mSparse[name];
+            }
+            if (name >= mHas.size())
+            {
+                const size_t size = std::min<size_t>(DENSE_LIMIT, std::max<size_t>((size_t)name + 1, mHas.size() * 2));
+                mHas.resize(size, 0);
+                mDense.resize(size);
+            }
+            if (!mHas[name])
+            {
+                mHas[name] = 1;
+                mDense[name] = V();
+            }
+            return mDense[name];
+        }
+        void erase(GLuint name)
+        {
+            if (name >= DENSE_LIMIT)
+            {
+                mSparse.erase(name);
+            }
+            else if (name < mHas.size())
+            {
+                mHas[name] = 0;
+            }
+        }
+        void clear()
+        {
+            std::fill(mHas.begin(), mHas.end(), (U8)0);
+            mSparse.clear();
+        }
+    };
+
     struct Shadow
     {
         bool mViewportOk = false;
@@ -938,8 +996,8 @@ namespace
             GLuint mBuffer = 0;
             U32 mGen = 0;
         };
-        std::unordered_map<GLuint, EBOEntry> mEBO;
-        std::unordered_map<GLuint, U32> mBufferGen; // only buffers deleted at least once
+        NameMap<EBOEntry> mEBO;
+        NameMap<U32> mBufferGen;                    // only buffers deleted at least once
         bool mCurEBOOk = false;
         bool mCurEBODirty = false;
         GLuint mCurEBO = 0;
@@ -955,8 +1013,8 @@ namespace
         {
             return 0;
         }
-        auto it = sSh.mBufferGen.find(buffer);
-        return it == sSh.mBufferGen.end() ? 0 : it->second;
+        const U32* gen = sSh.mBufferGen.find(buffer);
+        return gen ? *gen : 0;
     }
 
     void setVAOEBO(GLuint vao, GLuint buffer)
@@ -995,10 +1053,10 @@ namespace
         }
         sSh.mVAO = vao;
         sSh.mVAOOk = true;
-        auto it = sSh.mEBO.find(vao);
+        const Shadow::EBOEntry* entry = sSh.mEBO.find(vao);
         // known only while its buffer hasn't been deleted since it was attached
-        sSh.mCurEBOOk = it != sSh.mEBO.end() && it->second.mGen == bufferGen(it->second.mBuffer);
-        sSh.mCurEBO = sSh.mCurEBOOk ? it->second.mBuffer : 0;
+        sSh.mCurEBOOk = entry && entry->mGen == bufferGen(entry->mBuffer);
+        sSh.mCurEBO = sSh.mCurEBOOk ? entry->mBuffer : 0;
         sSh.mCurEBODirty = false;
     }
 
@@ -2818,7 +2876,7 @@ namespace
     // which GL allows; a blocking read of a result that isn't in yet is
     // synchronous, as it was.
 
-    std::unordered_map<GLuint, U64> sQueryIssued;           // main: id -> generation of its latest end
+    NameMap<U64> sQueryIssued;                              // main: id -> generation of its latest end
     std::unordered_map<GLenum, GLuint> sQueryActive;        // main: target -> open query
     U64 sQueryGen = 0;                                      // main
     struct QueryResult
@@ -2834,7 +2892,7 @@ namespace
         U64 mEndNs;         // when its end was replayed
     };
     std::mutex sQueryResultMutex;
-    std::unordered_map<GLuint, QueryResult> sQueryResults;  // id -> result of its latest collected generation
+    NameMap<QueryResult> sQueryResults;                     // id -> result of its latest collected generation
     std::deque<PendingQuery> sQueryPending;                 // render: ended, not collected
     std::unordered_map<GLuint, U64> sQueryRenderGen;        // render: id -> latest ended generation (0 while open)
 
@@ -3043,8 +3101,8 @@ namespace
     template <typename T>
     bool cachedQueryRead(GLuint id, GLenum pname, T* params)
     {
-        auto it = sQueryIssued.find(id);
-        if (it == sQueryIssued.end() || !params)
+        const U64* issued = sQueryIssued.find(id);
+        if (!issued || !params)
         {
             return false;
         }
@@ -3052,10 +3110,10 @@ namespace
         U64 value = 0;
         {
             std::lock_guard<std::mutex> lock(sQueryResultMutex);
-            auto r = sQueryResults.find(id);
-            if (r != sQueryResults.end() && r->second.mGen == it->second)
+            const QueryResult* r = sQueryResults.find(id);
+            if (r && r->mGen == *issued)
             {
-                if (r->second.mDropped)
+                if (r->mDropped)
                 {   // the render thread gave up on it (2 s): the GPU has long finished, so call it available
                     // without asking the driver, and let the driver answer the result itself
                     if (pname == GL_QUERY_RESULT_AVAILABLE)
@@ -3066,7 +3124,7 @@ namespace
                     return false;
                 }
                 have = true;
-                value = r->second.mValue;
+                value = r->mValue;
             }
         }
         if (!have && sQueryEndUnsubmitted)

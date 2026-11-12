@@ -479,6 +479,7 @@ namespace
 
         for (LLCullResult::drawinfo_iterator i = begin; i != end; )
         {
+            sArena.prefetchAhead(i, end - i);
             LLDrawInfo* pparams = *i;
             LLCullResult::increment_iterator(i, end);
             if (!pparams)

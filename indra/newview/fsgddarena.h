@@ -102,6 +102,41 @@ public:
     FSGDDArenaEntry* find(LLVertexBuffer* vb, U32 frame, U32* reason = nullptr);
     // The entry of vb if it is there and current, without copying anything.
     FSGDDArenaEntry* peek(const LLVertexBuffer* vb);
+    // For walking long draw lists: starts loading what find() will read for vb into the cache. Call
+    // prefetchBuffer some draws ahead, then prefetchEntry for a nearer one (whose buffer is loaded by then).
+    void prefetchBuffer(const LLVertexBuffer* vb) const { vb->fsPrefetchArenaFields(mSlot); }
+    void prefetchEntry(const LLVertexBuffer* vb) const
+    {
+        if (const void* entry = vb->getFSArenaEntry(mSlot, mEpoch))
+        {
+            _mm_prefetch((const char*)entry, _MM_HINT_T0);
+        }
+    }
+    // Both of the above for a walk over an array of draw info pointers (LLCullResult::drawinfo_iterator):
+    // next is the one about to be handled, left how many remain from it. Draw infos, buffers and entries are
+    // all over the heap, so each is started a few draws ahead, once the one it is read through is loaded.
+    template <typename INFO>
+    void prefetchAhead(INFO* const* next, ptrdiff_t left) const
+    {
+        if (left > 16 && next[16])
+        {
+            _mm_prefetch((const char*)next[16], _MM_HINT_T0);
+        }
+        if (left > 8 && next[8])
+        {
+            if (const LLVertexBuffer* vb = next[8]->mVertexBuffer.get())
+            {
+                prefetchBuffer(vb);
+            }
+        }
+        if (left > 4 && next[4])
+        {
+            if (const LLVertexBuffer* vb = next[4]->mVertexBuffer.get())
+            {
+                prefetchEntry(vb);
+            }
+        }
+    }
     void beginFrame(U32 frame);
     // Points the attribute locations of the held types (formats as LLVertexBuffer::setupVertexBuffer) at the
     // arena and binds the index buffer. Only the types in attrib_mask (LLVertexBuffer::MAP_*) are set up.

@@ -336,6 +336,10 @@ namespace
     U32 sStatUnlocks = 0;
     S32 sBindlessTested = 0;                                    // 0 not yet, 1 works, -1 doesn't
     U32 sLastHandleSweep = 0;
+    // Moves on whenever a handle stops being usable (dropped, or made non resident), which invalidates the
+    // handles textures remember for the frame (LLViewerTexture::mFSGDDCacheHandle). Main thread only.
+    U32 sHandleEpoch = 1;
+    static_assert(sizeof(SamplerState) == sizeof(LLViewerTexture::mFSGDDCacheState), "cache layout");
 
     // As LLTexUnit::setTextureAddressModeFast and setTextureFilteringOptionFast would set the texture up.
     SamplerState sampler_state(const LLImageGL* gl)
@@ -372,6 +376,7 @@ namespace
     // sHandleMutex held, main thread.
     void drop_slots(std::vector<HandleSlot>& slots)
     {
+        ++sHandleEpoch;
 #if FS_GDD_BINDLESS_API
         for (HandleSlot& slot : slots)
         {
@@ -806,6 +811,21 @@ namespace
             return 0;
         }
         const SamplerState state = sampler_state(gl);
+        // Every pass of the frame asks again, for every material: after the first, no lock and no table search
+        if (tex->mFSGDDCacheFrame == frame && tex->mFSGDDCacheEpoch == sHandleEpoch && tex->mFSGDDCacheName == name &&
+            !memcmp(tex->mFSGDDCacheState, &state, sizeof(state)))
+        {
+            return tex->mFSGDDCacheHandle;
+        }
+        auto remember = [tex, frame, name, &state](GLuint64 handle)
+        {
+            tex->mFSGDDCacheFrame = frame;
+            tex->mFSGDDCacheEpoch = sHandleEpoch;
+            tex->mFSGDDCacheName = name;
+            memcpy(tex->mFSGDDCacheState, &state, sizeof(state));
+            tex->mFSGDDCacheHandle = handle;
+            return handle;
+        };
         make_queued_handles(frame);
 
         std::lock_guard<std::mutex> lock(sHandleMutex);
@@ -841,7 +861,7 @@ namespace
                     ++sResident;
                 }
                 slot.mLastFrame = frame;
-                return slot.mHandle;
+                return remember(slot.mHandle);
             }
         }
 
@@ -911,6 +931,7 @@ namespace
                 }
                 if (idle >= FS_GDD_HANDLE_IDLE_FRAMES && slot.mResident)
                 {
+                    ++sHandleEpoch;
                     fsMakeNonResident(slot.mHandle);
                     slot.mResident = false;
                     --sResident;
@@ -1351,6 +1372,7 @@ namespace
 
         for (LLCullResult::drawinfo_iterator i = begin; i != end; )
         {
+            sArena.prefetchAhead(i, end - i);
             LLDrawInfo& params = **i;
             LLCullResult::increment_iterator(i, end);
             ++sStatBatches;

@@ -4658,7 +4658,9 @@ bool LLPipeline::postSortBuildRenderMapParallel(LLCamera& camera)
 
             sFSPostSortGroups.push_back(group);
 
-            if (hasRenderType(LLPipeline::RENDER_TYPE_PASS_ALPHA))
+            // The alpha group lists are only read by the alpha pool (depth sorted alpha), which shadow passes
+            // don't draw: skip the two draw map searches per group in every shadow cascade
+            if (!sShadowRender && hasRenderType(LLPipeline::RENDER_TYPE_PASS_ALPHA))
             {
                 LLSpatialGroup::draw_map_t::iterator alpha = group->mDrawMap.find(LLRenderPass::PASS_ALPHA);
 
@@ -16587,8 +16589,22 @@ static void bucketShadowCull(LLCullResult& src, LLCamera& cam, LLCullResult& dst
 {
     dst.clear();
 
+    // <FS:Trish> Every cascade walks all of the union's groups, which are all over the heap: start loading
+    // each group's flags and bounds a few groups ahead, so the tests don't wait on memory
+    auto prefetch_group = [](LLCullResult::sg_iterator ahead)
+    {
+        _mm_prefetch((const char*)*ahead, _MM_HINT_T0);
+        _mm_prefetch((const char*)(*ahead)->getObjectBounds(), _MM_HINT_T0);
+    };
+    // </FS:Trish>
     for (LLCullResult::sg_iterator i = src.beginVisibleGroups(), end = src.endVisibleGroups(); i != end; ++i)
     {
+        // <FS:Trish>
+        if (end - i > 8)
+        {
+            prefetch_group(i + 8);
+        }
+        // </FS:Trish>
         LLSpatialGroup* group = *i;
         // <FS:Trish>
         //if (!group->isDead() &&
@@ -16604,6 +16620,12 @@ static void bucketShadowCull(LLCullResult& src, LLCamera& cam, LLCullResult& dst
 
     for (LLCullResult::sg_iterator i = src.beginDrawableGroups(), end = src.endDrawableGroups(); i != end; ++i)
     {
+        // <FS:Trish>
+        if (end - i > 8)
+        {
+            prefetch_group(i + 8);
+        }
+        // </FS:Trish>
         LLSpatialGroup* group = *i;
         // <FS:Trish>
         //if (!group->isDead() &&
