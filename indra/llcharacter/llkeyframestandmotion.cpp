@@ -94,7 +94,11 @@ LLMotion::LLMotionInitStatus LLKeyframeStandMotion::onInitialize(LLCharacter *ch
 
     // load keyframe data, setup pose and joint states
     LLMotion::LLMotionInitStatus status = LLKeyframeMotion::onInitialize(character);
-    if ( status == STATUS_FAILURE )
+    // <FS:Trish> Still loading (STATUS_HOLD) has no pose yet, so the joint lookups below would fail and the
+    // controller would mark the stand bad for everyone; return and let it be initialized again once loaded
+    //if ( status == STATUS_FAILURE )
+    if (status != STATUS_SUCCESS)
+    // </FS:Trish>
     {
         return status;
     }
