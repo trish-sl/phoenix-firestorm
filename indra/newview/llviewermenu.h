@@ -79,8 +79,12 @@ bool enable_object_delete();
 
 // Buy either contents or object itself
 void handle_buy();
-void handle_take(bool take_separate = false);
-void handle_take_copy();
+// <FS:Trish> Take (Copy) into the folder selected in the inventory window: into_folder, when not null
+//void handle_take(bool take_separate = false);
+//void handle_take_copy();
+void handle_take(bool take_separate = false, const LLUUID& into_folder = LLUUID::null);
+void handle_take_copy(const LLUUID& into_folder = LLUUID::null);
+// </FS:Trish>
 void handle_look_at_selection(const LLSD& param);
 void handle_script_info();
 // <FS:Ansariel> Option to try via exact position
