@@ -2016,6 +2016,7 @@ void LLShaderMgr::initAttribsAndUniforms()
     mReservedUniforms.push_back("fs_water_fog_vtw1");
     mReservedUniforms.push_back("fs_water_fog_vtw2");
     // </FS:Trish>
+    mReservedUniforms.push_back("fs_ssr_half_map"); // <FS:Trish/>
 
     llassert(mReservedUniforms.size() == END_RESERVED_UNIFORMS);
 

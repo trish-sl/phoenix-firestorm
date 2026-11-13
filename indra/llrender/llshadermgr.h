@@ -384,6 +384,7 @@ public:
         FS_WATER_FOG_VIEW_TO_WORLD1,        // "fs_water_fog_vtw1"
         FS_WATER_FOG_VIEW_TO_WORLD2,        // "fs_water_fog_vtw2"
         // </FS:Trish>
+        FS_SSR_HALF_MAP,                    // "fs_ssr_half_map" <FS:Trish/> half-resolution SSR (FSRenderSSRHalfRes)
         END_RESERVED_UNIFORMS
     } eGLSLReservedUniforms;
     // clang-format on

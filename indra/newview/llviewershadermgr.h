@@ -287,6 +287,7 @@ extern LLGLSLShader         gFSNISUpscaleProgram; // <FS:Trish/> NVIDIA Image Sc
 extern LLGLSLShader         gFSLocalTonemapLumProgram; // <FS:Trish/> Local tone mapping
 extern LLGLSLShader         gFSSkinSSSProgram; // <FS:Trish/>
 extern LLGLSLShader         gFSGTAOHalfProgram; // <FS:Trish/> Half-resolution GTAO
+extern LLGLSLShader         gFSSSRHalfProgram; // <FS:Trish/> Half-resolution SSR
 extern LLGLSLShader         gExposureProgram;
 extern LLGLSLShader         gExposureProgramNoFade;
 extern LLGLSLShader         gLuminanceProgram;

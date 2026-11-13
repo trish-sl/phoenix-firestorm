@@ -27999,6 +27999,17 @@ Change of this parameter will affect the layout of buttons in notification toast
       <key>Value</key>
       <real>1.0</real>
     </map>
+    <key>FSRenderSSRHalfRes</key>
+    <map>
+      <key>Comment</key>
+      <string>EXPERIMENTAL. Trace the screen-space reflections of opaque surfaces at half resolution, once per 2x2 pixels, before the lighting pass, and upsample them there with a depth and normal aware filter instead of tracing every pixel. Roughly a quarter of the reflection cost; reflections are slightly softer on fine normal map detail. Needs RenderScreenSpaceReflections. Alpha and water keep tracing per pixel. Rebuilds the shaders.</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>Boolean</string>
+      <key>Value</key>
+      <integer>0</integer>
+    </map>
     <key>FSRenderGTAOHalfRes</key>
     <map>
       <key>Comment</key>

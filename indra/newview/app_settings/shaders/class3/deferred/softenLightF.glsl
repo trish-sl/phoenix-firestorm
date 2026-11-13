@@ -97,6 +97,74 @@ uniform int cube_snapshot;
 
 uniform float sky_hdr_scale;
 
+#ifdef FS_SSR_HALF
+// Screen-space reflections traced at half resolution beforehand (fsSSRHalfF.glsl): texel t
+// holds the march of full-resolution pixel 2t. Each pixel blends the 2x2 texels around it by
+// distance, and by how well the traced pixel's depth and normal match its own, so a
+// reflection doesn't bleed across a silhouette or onto a differently facing surface.
+uniform sampler2D fs_ssr_half_map;
+uniform vec2 fs_ssr_full_res;
+
+bool isFarDepth(float d);
+
+void sampleReflectionProbesFSHalfSSR(inout vec3 ambenv, inout vec3 glossenv,
+        vec2 tc, vec3 pos, vec3 norm, float glossiness, vec3 amblit, vec4 ssr);
+void sampleReflectionProbesLegacyFSHalfSSR(inout vec3 ambenv, inout vec3 glossenv, inout vec3 legacyenv,
+        vec2 tc, vec3 pos, vec3 norm, float glossiness, float envIntensity, vec3 amblit, vec4 ssr);
+
+vec4 fsSSRHalfUpsample(vec3 pos, vec3 norm)
+{
+    if (cube_snapshot != 0)
+    {
+        return vec4(0); // probe captures don't use screen-space reflections
+    }
+    ivec2 hi_max = textureSize(fs_ssr_half_map, 0) - 1;
+    vec2 c = (gl_FragCoord.xy - 0.5) * 0.5;
+    vec2 base_f = floor(c);
+    vec2 f = c - base_f;
+    ivec2 base = ivec2(base_f);
+
+    float z = max(-pos.z, 1e-4);
+    float inv_tol = 1.0 / (0.01 + 0.02 * z);
+    vec3 n = normalize(norm);
+
+    vec4 sum = vec4(0);
+    float sum_w = 0.0;
+    vec4 best = vec4(0);
+    float best_score = 1e30;
+    for (int i = 0; i < 4; ++i)
+    {
+        ivec2 o = ivec2(i & 1, i >> 1);
+        ivec2 t = clamp(base + o, ivec2(0), hi_max);
+        vec2 stc = (vec2(min(t * 2, ivec2(fs_ssr_full_res) - 1)) + 0.5) / fs_ssr_full_res;
+        float sd = getDepth(stc);
+        if (isFarDepth(sd))
+        {
+            continue;
+        }
+        float rel = abs(-getPositionWithDepth(stc, sd).z - z) * inv_tol;
+        float nd = max(dot(getNorm(stc).xyz, n), 0.0);
+        nd *= nd;
+        nd *= nd;
+        nd *= nd; // nd^8: reflections change fast with the normal
+
+        vec2 tent = mix(vec2(1.0) - f, f, vec2(o));
+        float w = tent.x * tent.y * nd / (1.0 + rel * rel);
+        vec4 s = texelFetch(fs_ssr_half_map, t, 0);
+        sum += w * s;
+        sum_w += w;
+
+        float score = rel + 4.0 * (1.0 - nd);
+        if (score < best_score)
+        {
+            best_score = score;
+            best = s;
+        }
+    }
+    return sum_w > 1e-4 ? sum / sum_w : best;
+}
+#endif
+
 void calcHalfVectors(vec3 lv, vec3 n, vec3 v, out vec3 h, out vec3 l, out float nh, out float nl, out float nv, out float vh, out float lightDist);
 float blinnPhongLobe(float nh, float glossiness);
 void calcDiffuseSpecular(vec3 baseColor, float metallic, inout vec3 diffuseColor, inout vec3 specularColor);
@@ -279,7 +347,11 @@ void main()
         // PBR IBL
         float gloss      = 1.0 - perceptualRoughness;
 
+#ifdef FS_SSR_HALF
+        sampleReflectionProbesFSHalfSSR(irradiance, radiance, tc, pos.xyz, gb.normal, gloss, amblit_linear, fsSSRHalfUpsample(pos.xyz, gb.normal));
+#else
         sampleReflectionProbes(irradiance, radiance, tc, pos.xyz, gb.normal, gloss, false, amblit_linear);
+#endif
 
         // A normal map can aim the reflection below the surface it sits on, where the probe
         // returns radiance arriving through the geometry. The forward path tests against
@@ -344,7 +416,11 @@ void main()
         vec3 glossenv = vec3(0);
         vec3 legacyenv = vec3(0);
 
+#ifdef FS_SSR_HALF
+        sampleReflectionProbesLegacyFSHalfSSR(irradiance, glossenv, legacyenv, tc, pos.xyz, gb.normal, spec.a, envIntensity, amblit_linear, fsSSRHalfUpsample(pos.xyz, gb.normal));
+#else
         sampleReflectionProbesLegacy(irradiance, glossenv, legacyenv, tc, pos.xyz, gb.normal, spec.a, envIntensity, false, amblit_linear);
+#endif
 
         adjustIrradiance(irradiance, ambocc);
 
