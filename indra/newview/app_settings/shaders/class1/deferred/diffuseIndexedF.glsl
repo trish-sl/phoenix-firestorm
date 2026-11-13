@@ -50,8 +50,15 @@ vec4 encodeNormal(vec3 n, float env, float gbuffer_flag);
 
 vec3 linear_to_srgb(vec3 c);
 
+#ifdef FS_FADE_IN
+void fsFadeIn(); // fsFadeInF.glsl
+#endif
+
 void main()
 {
+#ifdef FS_FADE_IN
+    fsFadeIn();
+#endif
     mirrorClip(vary_position);
     vec3 col = vertex_color.rgb * diffuseLookup(vary_texcoord0.xy).rgb;
 

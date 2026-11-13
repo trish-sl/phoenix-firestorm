@@ -287,6 +287,11 @@ public:
 
     F32             mDistanceWRTCamera;
 
+    // <FS:Trish> Fade-in (FSRenderFadeIn): gFrameTimeSeconds when registerFace first put one of its
+    // faces in a batch, -1 before that
+    F32             mFSFadeStart = -1.f;
+    // </FS:Trish>
+
     static F32 sCurPixelAngle; //current pixels per radian
 
 private:

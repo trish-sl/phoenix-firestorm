@@ -152,6 +152,10 @@ public:
     // False means unknown.
     bool mFSGlowFree = false;
     // </FS:Trish>
+    // <FS:Trish> Fade-in (FSRenderFadeIn): while the faces of this batch are fading into view, when
+    // their object's fade began (LLDrawable::mFSFadeStart); -1 for a batch that isn't fading
+    F32 mFSFadeStart = -1.f;
+    // </FS:Trish>
     // <FS:Trish> FSPerfShadowSinglePass: the sun shadow update that last recorded this batch, the list and
     // the index it went to there, so later cascades add their bit to that entry instead of a duplicate
     U32 mFSShadowSPStamp = 0;

@@ -100,8 +100,15 @@ float fsSpecularAARoughness(float perceptualRoughness, vec3 n, vec3 mapNormal);
 
 uniform mat3 normal_matrix;
 
+#ifdef FS_FADE_IN
+void fsFadeIn(); // fsFadeInF.glsl
+#endif
+
 void main()
 {
+#ifdef FS_FADE_IN
+    fsFadeIn();
+#endif
 
     vec4 basecolor = texture(diffuseMap, base_color_texcoord.xy).rgba;
     basecolor.rgb = srgb_to_linear(basecolor.rgb);

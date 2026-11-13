@@ -107,8 +107,15 @@ vec3 calcLegacyPointLightDiffuse(vec3 diffuse,
                     vec3 lp, vec3 ld, vec3 lightColor,
                     float lightSize, float falloff, float is_pointlight);
 
+#ifdef FS_FADE_IN
+void fsFadeIn(); // fsFadeInF.glsl
+#endif
+
 void main()
 {
+#ifdef FS_FADE_IN
+    fsFadeIn();
+#endif
     mirrorClip(vary_position);
 
     vec2 frag = vary_fragcoord.xy/vary_fragcoord.z*0.5+0.5;

@@ -2023,6 +2023,7 @@ void LLShaderMgr::initAttribsAndUniforms()
     mReservedUniforms.push_back("fs_indirect_gi_history");
     mReservedUniforms.push_back("fs_indirect_bent_history");
     // </FS:Trish>
+    mReservedUniforms.push_back("fs_fade_hide"); // <FS:Trish/> fade-in
 
     llassert(mReservedUniforms.size() == END_RESERVED_UNIFORMS);
 

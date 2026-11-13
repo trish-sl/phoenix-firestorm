@@ -3890,7 +3890,7 @@
              bottom="-1">
                 <panel
                  follows="left|top"
-                 height="1392"
+                 height="1486"
                  layout="topleft"
                  left="0"
                  name="experimental_rendering_settings"
@@ -4721,8 +4721,70 @@
                      height="18"
                      layout="topleft"
                      left="15"
-                     name="rendering_heading"
+                     name="fs_heading_fade_in"
                      top="1138"
+                     width="340">
+                        Fade-in
+                    </text>
+                    <button
+                     follows="left|top"
+                     height="19"
+                     label="Reset to default"
+                     layout="topleft"
+                     left="370"
+                     name="reset_fs_heading_fade_in"
+                     tool_tip="Set every option in &quot;Fade-in&quot; back to its default value."
+                     top="1137"
+                     width="120">
+                        <button.commit_callback
+                         function="FSExperimental.ResetSection"
+                         parameter="FSRenderFadeIn,FSRenderFadeInTime" />
+                    </button>
+                    <check_box
+                     control_name="FSRenderFadeIn"
+                     follows="left|top"
+                     height="20"
+                     label="Fade in new objects"
+                     layout="topleft"
+                     left="15"
+                     name="fs_fsrenderfadein"
+                     tool_tip="EXPERIMENTAL. Objects dissolve smoothly into view once they have loaded, the way games fade in streamed scenery, instead of popping in. Applies after login, teleports and when new objects come into range. Attachments and HUDs are not faded. Very little GPU cost."
+                     top="1164"
+                     width="475" />
+                    <text
+                     follows="left|top"
+                     height="18"
+                     layout="topleft"
+                     left="35"
+                     name="fs_fsrenderfadeintime_label"
+                     tool_tip="EXPERIMENTAL. How many seconds a new object takes to fade fully into view."
+                     top="1192"
+                     width="285">
+                        Fade time (seconds)
+                    </text>
+                    <spinner
+                     control_name="FSRenderFadeInTime"
+                     decimal_digits="1"
+                     enabled_control="FSRenderFadeIn"
+                     follows="left|top"
+                     height="20"
+                     increment="0.1"
+                     layout="topleft"
+                     left="330"
+                     max_val="3"
+                     min_val="0.1"
+                     name="fs_fsrenderfadeintime"
+                     tool_tip="EXPERIMENTAL. How many seconds a new object takes to fade fully into view."
+                     top="1190"
+                     width="100" />
+                    <text
+                     follows="left|top"
+                     font="SansSerifBold"
+                     height="18"
+                     layout="topleft"
+                     left="15"
+                     name="rendering_heading"
+                     top="1232"
                      width="340">
                         Rendering workarounds
                     </text>
@@ -4734,7 +4796,7 @@
                      left="370"
                      name="reset_rendering_heading"
                      tool_tip="Set every option in &quot;Rendering and diagnostics&quot; back to its default value."
-                     top="1137"
+                     top="1231"
                      width="120">
                         <button.commit_callback
                          function="FSExperimental.ResetSection"
@@ -4749,7 +4811,7 @@
                      left="15"
                      name="render_alpha_blend_shadows"
                      tool_tip="Render alpha-blended objects into shadow maps; animated transparent effects may be expensive shadow casters"
-                     top="1161"
+                     top="1255"
                      width="475" />
                     <check_box
                      control_name="RLVaDebugSphereUseOpaqueDepth"
@@ -4760,7 +4822,7 @@
                      left="15"
                      name="rlva_debug_sphere_opaque_depth"
                      tool_tip="Use a pre-alpha depth snapshot so alpha wearables do not punch through the RLVa sphere effect"
-                     top="1189"
+                     top="1283"
                      width="475" />
                     <check_box
                      control_name="RenderAMDDisableShaderCache"
@@ -4771,7 +4833,7 @@
                      left="15"
                      name="render_amd_disable_shader_cache"
                      tool_tip="Bypass viewer shader binary caching on Windows AMD; restart required"
-                     top="1235"
+                     top="1329"
                      width="475" />
                     <check_box
                      control_name="RenderAMDDisableTextureThreading"
@@ -4782,7 +4844,7 @@
                      left="15"
                      name="render_amd_disable_texture_threading"
                      tool_tip="Force main-thread texture and media uploads on Windows AMD; restart required"
-                     top="1258"
+                     top="1352"
                      width="475" />
                     <check_box
                      control_name="RenderRiggedDirectNormals"
@@ -4793,7 +4855,7 @@
                      left="15"
                      name="render_rigged_direct_normals"
                      tool_tip="Transform rigged mesh normals and tangents as directions; restart required"
-                     top="1281"
+                     top="1375"
                      width="475" />
                     <check_box
                      control_name="RenderRiggedLocalOrigin"
@@ -4804,7 +4866,7 @@
                      left="15"
                      name="render_rigged_local_origin"
                      tool_tip="Test avatar-root-relative rigged mesh skinning; restart required"
-                     top="1304"
+                     top="1398"
                      width="475" />
                     <check_box
                      control_name="RenderRiggedPreciseMath"
@@ -4815,7 +4877,7 @@
                      left="15"
                      name="render_rigged_precise_math"
                      tool_tip="Test precise arithmetic and invariant positions in skinning shaders; restart required and may reduce performance"
-                     top="1327"
+                     top="1421"
                      width="475" />
                     <check_box
                      control_name="RenderGLMultiThreadedTexturesNVIDIA"
@@ -4826,7 +4888,7 @@
                      left="15"
                      name="render_nvidia_threaded_textures"
                      tool_tip="Create textures on a background OpenGL context on NVIDIA GPUs, whatever threaded textures is set to; restart required"
-                     top="1350"
+                     top="1444"
                      width="475" />
                 </panel>
             </scroll_container>

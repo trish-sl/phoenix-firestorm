@@ -342,8 +342,15 @@ float getShadow(vec3 pos, vec3 norm)
 #endif
 }
 
+#ifdef FS_FADE_IN
+void fsFadeIn(); // fsFadeInF.glsl
+#endif
+
 void main()
 {
+#ifdef FS_FADE_IN
+    fsFadeIn();
+#endif
     // diffcol == diffuse map combined with vertex color
     vec4 diffcol = texture(diffuseMap, vary_texcoord0.xy);
     diffcol.rgb *= vertex_color.rgb;

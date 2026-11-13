@@ -53,6 +53,10 @@
 #include "llglcommonfunc.h"
 #include "llvoavatar.h"
 #include "llviewershadermgr.h"
+// <FS:Trish> Fade-in
+#include "llappviewer.h" // gFrameTimeSeconds
+#include "llframetimer.h"
+// </FS:Trish>
 
 S32 LLDrawPool::sNumDrawPools = 0;
 
@@ -566,7 +570,61 @@ void LLRenderPass::pushRiggedMaskBatches(U32 type, bool texture, bool batch_text
 void LLRenderPass::applyModelMatrix(const LLDrawInfo& params)
 {
     applyModelMatrix(params.mModelMatrix);
+    fsApplyFadeIn(params); // <FS:Trish/>
 }
+
+// <FS:Trish> Fade-in (FSRenderFadeIn): an object's batches carry the time its faces were first
+// batched for as long as it fades in (LLVolumeGeometryManager::registerFace); the world programs
+// dissolve it into view with a screen-door pattern (fsFadeInF.glsl) as this falls from 1 to 0
+// static
+F32 LLRenderPass::fsFadeInHidden(const LLDrawInfo& params)
+{
+    if (params.mFSFadeStart < 0.f)
+    {
+        return 0.f;
+    }
+    static LLCachedControl<F32> fade_time(gSavedSettings, "FSRenderFadeInTime", 0.6f);
+    const F32 duration = fade_time;
+    const F32 elapsed = (F32)gFrameTimeSeconds - params.mFSFadeStart;
+    if (duration <= 0.f || elapsed >= duration)
+    {
+        return 0.f;
+    }
+    const F32 x = llmax(elapsed, 0.f) / duration;
+    return 1.f - x * x * (3.f - 2.f * x); // smoothstep: eases in and out of the dissolve
+}
+
+// static
+void LLRenderPass::fsApplyFadeIn(const LLDrawInfo& params)
+{
+    static LLCachedControl<bool> fade_in(gSavedSettings, "FSRenderFadeIn", false);
+    if (!fade_in)
+    {
+        return;
+    }
+    LLGLSLShader* shader = LLGLSLShader::sCurBoundShaderPtr;
+    if (!shader)
+    {
+        return;
+    }
+    const F32 hidden = fsFadeInHidden(params);
+
+    // Nearly every batch leaves it at 0, so the program is only touched when the value or the
+    // program changes (once a frame at least, in case a program was rebuilt and lost it)
+    static LLGLSLShader* last_shader = nullptr;
+    static F32 last_hidden = 0.f;
+    static U32 last_frame = 0;
+    const U32 frame = LLFrameTimer::getFrameCount();
+    if (shader == last_shader && hidden == last_hidden && frame == last_frame)
+    {
+        return;
+    }
+    last_shader = shader;
+    last_hidden = hidden;
+    last_frame = frame;
+    shader->uniform1f(LLShaderMgr::FS_FADE_HIDE, hidden);
+}
+// </FS:Trish>
 
 void LLRenderPass::applyModelMatrix(const LLMatrix4* model_matrix)
 {

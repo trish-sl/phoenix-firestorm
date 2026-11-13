@@ -86,8 +86,15 @@ vec4 applySkyAndWaterFog(vec3 pos, vec3 additive, vec3 atten, vec4 color);
 
 void mirrorClip(vec3 pos);
 
+#ifdef FS_FADE_IN
+void fsFadeIn(); // fsFadeInF.glsl
+#endif
+
 void main()
 {
+#ifdef FS_FADE_IN
+    fsFadeIn();
+#endif
     mirrorClip(vary_position);
 #ifdef IS_ALPHA
     waterClip(vary_position.xyz);

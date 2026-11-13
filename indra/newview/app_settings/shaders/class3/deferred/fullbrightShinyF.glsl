@@ -55,8 +55,15 @@ void applyLegacyEnv(inout vec3 color, vec3 legacyenv, vec4 spec, vec3 pos, vec3 
 
 void mirrorClip(vec3 pos);
 
+#ifdef FS_FADE_IN
+void fsFadeIn(); // fsFadeInF.glsl
+#endif
+
 void main()
 {
+#ifdef FS_FADE_IN
+    fsFadeIn();
+#endif
     mirrorClip(vary_position);
 #ifdef HAS_DIFFUSE_LOOKUP
     vec4 color = diffuseLookup(vary_texcoord0.xy);

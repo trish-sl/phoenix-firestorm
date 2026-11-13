@@ -41,8 +41,15 @@ void mirrorClip(vec3 pos);
 
 vec4 encodeNormal(vec3 n, float env, float gbuffer_flag);
 
+#ifdef FS_FADE_IN
+void fsFadeIn(); // fsFadeInF.glsl
+#endif
+
 void main()
 {
+#ifdef FS_FADE_IN
+    fsFadeIn();
+#endif
     mirrorClip(vary_position);
 
     vec4 col = texture(diffuseMap, vary_texcoord0.xy) * vertex_color;

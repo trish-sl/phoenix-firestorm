@@ -156,8 +156,15 @@ vec3 pbrCalcPointLightOrSpotLight(vec3 diffuseColor, vec3 specularColor,
                     vec3 lightColor,
                     float lightSize, float falloff, float is_pointlight, float ambiance);
 
+#ifdef FS_FADE_IN
+void fsFadeIn(); // fsFadeInF.glsl
+#endif
+
 void main()
 {
+#ifdef FS_FADE_IN
+    fsFadeIn();
+#endif
 
     vec3 color = vec3(0,0,0);
 

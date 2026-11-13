@@ -46,8 +46,15 @@ float filterSpecularRoughness(float perceptualRoughness, vec3 n);
 float fsSpecularAARoughness(float perceptualRoughness, vec3 n, vec3 mapNormal);
 #endif
 
+#ifdef FS_FADE_IN
+void fsFadeIn(); // fsFadeInF.glsl
+#endif
+
 void main()
 {
+#ifdef FS_FADE_IN
+    fsFadeIn();
+#endif
     vec4 col = texture(diffuseMap, vary_texcoord0.xy);
 
     vec3 norm = texture(bumpMap, vary_texcoord0.xy).rgb * 2.0 - 1.0;

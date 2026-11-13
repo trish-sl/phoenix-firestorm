@@ -176,12 +176,14 @@ namespace
         R_HANDLE,
         R_NORMALS,
         R_RANGE,
+        R_FADING,                       // fading in (FSRenderFadeIn)
         R_ARENA,                        // + FSGDDArena::EFail
         R_COUNT = R_ARENA + FSGDDArena::FAIL_COUNT
     };
     const char* reason_name(U32 reason)
     {
-        static const char* names[] = { "rigged", "empty", "no texture", "texture without handle", "no normals", "index range" };
+        static const char* names[] = { "rigged", "empty", "no texture", "texture without handle", "no normals", "index range",
+                                       "fading in" };
         return reason < R_ARENA ? names[reason] : FSGDDArena::failName(reason - R_ARENA);
     }
 
@@ -503,6 +505,10 @@ namespace
             else if (!params.mCount || params.mVertexBuffer.isNull())
             {   // pushBatch draws nothing for these; it may still bind, so it gets them
                 reason = R_EMPTY;
+            }
+            else if (LLRenderPass::fsFadeInHidden(params) > 0.f)
+            {   // <FS:Trish/> fade-in: its fs_fade_hide uniform is set per batch, the stock way
+                reason = R_FADING;
             }
             else
             {

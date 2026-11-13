@@ -432,6 +432,21 @@ static void add_specular_aa(LLGLSLShader* shader)
 }
 // </FS:Trish>
 
+// <FS:Trish> Fade-in (FSRenderFadeIn): the screen-door dissolve (fsFadeInF.glsl) for the world
+// G-buffer and alpha programs, never the HUD ones. Call before make_rigged_variant so the skinned
+// copy gets the define and the file too.
+static void add_fade_in(LLGLSLShader* shader)
+{
+    static LLCachedControl<bool> enabled(gSavedSettings, "FSRenderFadeIn", false);
+
+    if (enabled)
+    {
+        shader->addPermutation("FS_FADE_IN", "1");
+        shader->mShaderFiles.push_back(make_pair("deferred/fsFadeInF.glsl", GL_FRAGMENT_SHADER));
+    }
+}
+// </FS:Trish>
+
 // <FS:Trish> Two-pass rigged alpha (FSRenderHairTwoPass, see LLDrawPoolAlpha::renderRiggedAlphaTwoPass):
 // FS_HAIR goes on the rigged world alpha shaders only. make_rigged_variant copies the defines, so the
 // static shader takes it off again before it is built.
@@ -1833,6 +1848,7 @@ bool LLViewerShaderMgr::loadShadersDeferred()
         gDeferredDiffuseProgram.mFeatures.mIndexedTextureChannels = LLGLSLShader::sIndexedTextureChannels;
         gDeferredDiffuseProgram.mShaderLevel = mShaderLevel[SHADER_DEFERRED];
         add_common_permutations(&gDeferredDiffuseProgram);
+        add_fade_in(&gDeferredDiffuseProgram); // <FS:Trish/>
         success = make_rigged_variant(gDeferredDiffuseProgram, gDeferredSkinnedDiffuseProgram);
         success = success && gDeferredDiffuseProgram.createShader();
     }
@@ -1846,6 +1862,7 @@ bool LLViewerShaderMgr::loadShadersDeferred()
         gDeferredDiffuseAlphaMaskProgram.mFeatures.mIndexedTextureChannels = LLGLSLShader::sIndexedTextureChannels;
         gDeferredDiffuseAlphaMaskProgram.mShaderLevel = mShaderLevel[SHADER_DEFERRED];
         add_common_permutations(&gDeferredDiffuseAlphaMaskProgram);
+        add_fade_in(&gDeferredDiffuseAlphaMaskProgram); // <FS:Trish/>
         success = make_rigged_variant(gDeferredDiffuseAlphaMaskProgram, gDeferredSkinnedDiffuseAlphaMaskProgram);
         success = success && gDeferredDiffuseAlphaMaskProgram.createShader();
     }
@@ -1858,6 +1875,7 @@ bool LLViewerShaderMgr::loadShadersDeferred()
         gDeferredNonIndexedDiffuseAlphaMaskProgram.mShaderFiles.push_back(make_pair("deferred/diffuseAlphaMaskF.glsl", GL_FRAGMENT_SHADER));
         gDeferredNonIndexedDiffuseAlphaMaskProgram.mShaderLevel = mShaderLevel[SHADER_DEFERRED];
         add_common_permutations(&gDeferredNonIndexedDiffuseAlphaMaskProgram);
+        add_fade_in(&gDeferredNonIndexedDiffuseAlphaMaskProgram); // <FS:Trish/>
         success = gDeferredNonIndexedDiffuseAlphaMaskProgram.createShader();
         llassert(success);
     }
@@ -1870,6 +1888,7 @@ bool LLViewerShaderMgr::loadShadersDeferred()
         gDeferredNonIndexedDiffuseAlphaMaskNoColorProgram.mShaderFiles.push_back(make_pair("deferred/diffuseAlphaMaskNoColorF.glsl", GL_FRAGMENT_SHADER));
         gDeferredNonIndexedDiffuseAlphaMaskNoColorProgram.mShaderLevel = mShaderLevel[SHADER_DEFERRED];
         add_common_permutations(&gDeferredNonIndexedDiffuseAlphaMaskNoColorProgram);
+        add_fade_in(&gDeferredNonIndexedDiffuseAlphaMaskNoColorProgram); // <FS:Trish/>
         success = gDeferredNonIndexedDiffuseAlphaMaskNoColorProgram.createShader();
         llassert(success);
     }
@@ -1882,6 +1901,7 @@ bool LLViewerShaderMgr::loadShadersDeferred()
         gDeferredBumpProgram.mShaderFiles.push_back(make_pair("deferred/bumpF.glsl", GL_FRAGMENT_SHADER));
         gDeferredBumpProgram.mShaderLevel = mShaderLevel[SHADER_DEFERRED];
         add_common_permutations(&gDeferredBumpProgram);
+        add_fade_in(&gDeferredBumpProgram); // <FS:Trish/>
         add_specular_aa(&gDeferredBumpProgram); // <FS:Trish/>
         success = make_rigged_variant(gDeferredBumpProgram, gDeferredSkinnedBumpProgram);
         success = success && gDeferredBumpProgram.createShader();
@@ -1950,6 +1970,7 @@ bool LLViewerShaderMgr::loadShadersDeferred()
 
             add_common_permutations(&gDeferredMaterialProgram[i]);
             add_specular_aa(&gDeferredMaterialProgram[i]); // <FS:Trish/>
+            add_fade_in(&gDeferredMaterialProgram[i]); // <FS:Trish/>
 
             gDeferredMaterialProgram[i].mFeatures.hasSrgb = true;
             gDeferredMaterialProgram[i].mFeatures.calculatesAtmospherics = true;
@@ -2006,6 +2027,7 @@ bool LLViewerShaderMgr::loadShadersDeferred()
         gDeferredPBROpaqueProgram.clearPermutations();
 
         add_common_permutations(&gDeferredPBROpaqueProgram);
+        add_fade_in(&gDeferredPBROpaqueProgram); // <FS:Trish/>
         add_specular_aa(&gDeferredPBROpaqueProgram); // <FS:Trish/>
 
         success = make_rigged_variant(gDeferredPBROpaqueProgram, gDeferredSkinnedPBROpaqueProgram);
@@ -2119,6 +2141,7 @@ bool LLViewerShaderMgr::loadShadersDeferred()
 
         shader->mShaderLevel = mShaderLevel[SHADER_DEFERRED];
         add_specular_aa(shader); // <FS:Trish/>
+        add_fade_in(shader); // <FS:Trish/>
         // <FS:Trish> Two-pass rigged alpha
         //success = make_rigged_variant(*shader, gDeferredSkinnedPBRAlphaProgram);
         success = make_rigged_variant_fs_hair(*shader, gDeferredSkinnedPBRAlphaProgram);
@@ -2556,6 +2579,12 @@ bool LLViewerShaderMgr::loadShadersDeferred()
                 shader->addPermutation("FS_WBOIT", "1");
             }
             // </FS:Trish>
+            // <FS:Trish> Fade-in
+            if (!hud)
+            {
+                add_fade_in(shader);
+            }
+            // </FS:Trish>
 
             shader->mShaderLevel = mShaderLevel[SHADER_DEFERRED];
 
@@ -2663,6 +2692,7 @@ bool LLViewerShaderMgr::loadShadersDeferred()
         gDeferredFullbrightProgram.mShaderLevel = mShaderLevel[SHADER_DEFERRED];
 
         add_common_permutations(&gDeferredFullbrightProgram);
+        add_fade_in(&gDeferredFullbrightProgram); // <FS:Trish/>
 
         success = make_rigged_variant(gDeferredFullbrightProgram, gDeferredSkinnedFullbrightProgram);
         success = gDeferredFullbrightProgram.createShader();
@@ -2706,6 +2736,7 @@ bool LLViewerShaderMgr::loadShadersDeferred()
         gDeferredFullbrightAlphaMaskProgram.mShaderLevel = mShaderLevel[SHADER_DEFERRED];
 
         add_common_permutations(&gDeferredFullbrightAlphaMaskProgram);
+        add_fade_in(&gDeferredFullbrightAlphaMaskProgram); // <FS:Trish/>
 
         success = make_rigged_variant(gDeferredFullbrightAlphaMaskProgram, gDeferredSkinnedFullbrightAlphaMaskProgram);
         success = success && gDeferredFullbrightAlphaMaskProgram.createShader();
@@ -2751,6 +2782,7 @@ bool LLViewerShaderMgr::loadShadersDeferred()
         gDeferredFullbrightAlphaMaskAlphaProgram.addPermutation("IS_ALPHA", "1");
 
         add_common_permutations(&gDeferredFullbrightAlphaMaskAlphaProgram);
+        add_fade_in(&gDeferredFullbrightAlphaMaskAlphaProgram); // <FS:Trish/>
 
         gDeferredFullbrightAlphaMaskAlphaProgram.mShaderLevel = mShaderLevel[SHADER_DEFERRED];
         // <FS:Trish> Two-pass rigged alpha
@@ -2806,6 +2838,7 @@ bool LLViewerShaderMgr::loadShadersDeferred()
         gDeferredFullbrightShinyProgram.mFeatures.hasReflectionProbes = true;
 
         add_common_permutations(&gDeferredFullbrightShinyProgram);
+        add_fade_in(&gDeferredFullbrightShinyProgram); // <FS:Trish/>
 
         success = make_rigged_variant(gDeferredFullbrightShinyProgram, gDeferredSkinnedFullbrightShinyProgram);
         success = success && gDeferredFullbrightShinyProgram.createShader();

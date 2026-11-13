@@ -164,6 +164,10 @@
     <real>60.0</real>
     <key>FSRenderExposureRangeLimit</key>
     <real>1.5</real>
+    <key>FSRenderFadeIn</key>
+    <boolean>0</boolean>
+    <key>FSRenderFadeInTime</key>
+    <real>0.6</real>
     <key>FSRenderFoliage</key>
     <boolean>1</boolean>
     <key>FSRenderGTAO</key>

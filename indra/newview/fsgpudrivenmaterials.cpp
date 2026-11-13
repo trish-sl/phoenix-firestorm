@@ -155,13 +155,14 @@ namespace
         R_HANDLE,
         R_ATTRIBUTES,
         R_RANGE,
+        R_FADING,                       // fading in (FSRenderFadeIn)
         R_ARENA,                        // + FSGDDArena::EFail
         R_COUNT = R_ARENA + FSGDDArena::FAIL_COUNT
     };
     const char* reason_name(U32 reason)
     {
         static const char* names[] = { "rigged", "empty", "no texture", "texture without handle",
-                                       "attributes the program reads", "index range" };
+                                       "attributes the program reads", "index range", "fading in" };
         return reason < R_ARENA ? names[reason] : FSGDDArena::failName(reason - R_ARENA);
     }
 
@@ -499,6 +500,10 @@ namespace
             else if (!params.mCount || params.mVertexBuffer.isNull())
             {   // the stock loop would still bind for these; it gets them
                 reason = R_EMPTY;
+            }
+            else if (LLRenderPass::fsFadeInHidden(params) > 0.f)
+            {   // <FS:Trish/> fade-in: its fs_fade_hide uniform is set per batch, the stock way
+                reason = R_FADING;
             }
             else
             {

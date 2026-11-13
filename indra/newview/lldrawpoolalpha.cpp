@@ -1131,6 +1131,10 @@ void LLDrawPoolAlpha::renderAlpha(U32 mask, bool depth_only, bool rigged, EWBOIT
                         reset_minimum_alpha = true;
                     }
 
+                    // <FS:Trish> Fade-in: applyModelMatrix set it before this batch's program was bound
+                    LLRenderPass::fsApplyFadeIn(params);
+                    // </FS:Trish>
+
                     params.mVertexBuffer->setBuffer();
                     params.mVertexBuffer->drawRange(LLRender::TRIANGLES, params.mStart, params.mEnd, params.mCount, params.mOffset);
                     stop_glerror();

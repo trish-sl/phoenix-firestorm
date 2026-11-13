@@ -390,6 +390,7 @@ public:
         FS_INDIRECT_BENT_MAP,               // "fs_indirect_bent"
         FS_INDIRECT_GI_HISTORY,             // "fs_indirect_gi_history"
         FS_INDIRECT_BENT_HISTORY,           // "fs_indirect_bent_history"
+        FS_FADE_HIDE,                       // "fs_fade_hide" <FS:Trish/> fade-in (FSRenderFadeIn)
         // </FS:Trish>
         END_RESERVED_UNIFORMS
     } eGLSLReservedUniforms;

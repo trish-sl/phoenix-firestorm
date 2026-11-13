@@ -180,6 +180,7 @@ namespace
         R_RIGGED,
         R_EMPTY,
         R_RANGE,
+        R_FADING,                       // fading in (FSRenderFadeIn)
         R_ARENA,                        // + FSGDDArena::EFail
         R_BOUND_MEDIA = R_ARENA + FSGDDArena::FAIL_COUNT,
         R_BOUND_TEXTURE,
@@ -187,7 +188,7 @@ namespace
     };
     const char* reason_name(U32 reason)
     {
-        static const char* names[] = { "no material", "rigged", "empty", "index range" };
+        static const char* names[] = { "no material", "rigged", "empty", "index range", "fading in" };
         if (reason < R_ARENA)
         {
             return names[reason];
@@ -1391,6 +1392,10 @@ namespace
             else if (!params.mCount || params.mVertexBuffer.isNull())
             {
                 reason = R_EMPTY;
+            }
+            else if (LLRenderPass::fsFadeInHidden(params) > 0.f)
+            {   // <FS:Trish/> fade-in: its fs_fade_hide uniform is set per batch, the stock way
+                reason = R_FADING;
             }
             else
             {

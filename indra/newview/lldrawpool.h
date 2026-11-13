@@ -354,6 +354,12 @@ public:
     static void applyModelMatrix(const LLDrawInfo& params);
     // For rendering that doesn't use LLDrawInfo for some reason
     static void applyModelMatrix(const LLMatrix4* model_matrix);
+    // <FS:Trish> Fade-in (FSRenderFadeIn): the part of a batch's object still hidden this frame
+    // (1 just arrived, 0 fully shown), and its upload to the bound program's fs_fade_hide uniform,
+    // which applyModelMatrix(params) does for every batch
+    static F32 fsFadeInHidden(const LLDrawInfo& params);
+    static void fsApplyFadeIn(const LLDrawInfo& params);
+    // </FS:Trish>
     void pushBatches(U32 type, bool texture = true, bool batch_textures = false);
     void pushUntexturedBatches(U32 type);
 

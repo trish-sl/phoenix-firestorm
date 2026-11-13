@@ -252,6 +252,8 @@ namespace
         { "FSRenderSpecularAA", CL, VM },
         { "FSRenderSpecularAAStrength", CL, VM },
         { "FSRenderSpecularAAThreshold", CL, VM },
+        { "FSRenderFadeIn", CL, VM },
+        { "FSRenderFadeInTime", CL, VM },
         { "FSRenderGTAO", CM, VL },
         { "FSRenderGTAORadius", CL, VM },
         { "FSRenderGTAOIntensity", CL, VM },

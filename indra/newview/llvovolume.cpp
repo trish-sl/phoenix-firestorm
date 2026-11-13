@@ -5943,6 +5943,25 @@ void LLVolumeGeometryManager::registerFace(LLSpatialGroup* group, LLFace* facep,
         return;
     }
 
+    // <FS:Trish> Fade-in (FSRenderFadeIn): an object fades into view from the first time its faces
+    // are batched, which is when it is ready to be drawn. Its batches carry that time while the fade
+    // lasts and so are kept apart from batches of objects that arrived at another time. Attachments
+    // and HUDs come and go with their avatar and stay as they are.
+    F32 fade_start = -1.f;
+    {
+        if (drawable->mFSFadeStart < 0.f)
+        {
+            drawable->mFSFadeStart = (F32)gFrameTimeSeconds;
+        }
+        static LLCachedControl<bool> fade_in(gSavedSettings, "FSRenderFadeIn", false);
+        static LLCachedControl<F32> fade_time(gSavedSettings, "FSRenderFadeInTime", 0.6f);
+        if (fade_in && !pObj->isAttachment() && (F32)gFrameTimeSeconds - drawable->mFSFadeStart < (F32)fade_time)
+        {
+            fade_start = drawable->mFSFadeStart;
+        }
+    }
+    // </FS:Trish>
+
     if (rigged)
     {
         // rigged meshes ignore their model matrix
@@ -6062,7 +6081,8 @@ void LLVolumeGeometryManager::registerFace(LLSpatialGroup* group, LLFace* facep,
         info->mModelMatrix == model_mat &&
         info->mShaderMask == shader_mask &&
         info->mAvatar == facep->mAvatar &&
-        info->getSkinHash() == facep->getSkinHash())
+        info->getSkinHash() == facep->getSkinHash() &&
+        info->mFSFadeStart == fade_start) // <FS:Trish/> fade-in
     {
         info->mCount += facep->getIndicesCount();
         info->mEnd += facep->getGeomCount();
@@ -6096,6 +6116,7 @@ void LLVolumeGeometryManager::registerFace(LLSpatialGroup* group, LLFace* facep,
         draw_info->mBump  = bump;
         draw_info->mShiny = shiny;
         draw_info->mFSGlowFree = glow_free; // <FS:Trish/>
+        draw_info->mFSFadeStart = fade_start; // <FS:Trish/> fade-in
 
         static const float alpha[4] =
         {
