@@ -26,7 +26,8 @@
     <string name="indicator_visual_none">none</string>
     <string name="indicator_tooltip">Performance cost: [COST]. Visual impact: [VISUAL].</string>
     <!-- Settings on the preset tabs that presets leave alone: driver workarounds and skinning tests that need a restart -->
-    <string name="preset_excluded_settings">RenderAMDDisableShaderCache,RenderAMDDisableTextureThreading,RenderRiggedDirectNormals,RenderRiggedLocalOrigin,RenderRiggedPreciseMath,FSDecodedTextureCache,FSDecodedTextureCacheMode,FSDecodedTextureCacheRegions,FSDecodedTextureCacheSizeMB,FSDecodedTextureCacheMinSize,FSDecodedTextureCacheUncompressed,FSPrioritizeTextureDecodes,FSLowPriorityTextureThreads,FSTextureUseLiveVRAM,FSTextureBiasSoftZone,RenderTextureMemoryUsageBias,TextureFetchPipelineDiagnostics,FSTextureFetchSelfHeal,FSExperimentalRepairAnimations,FSExperimentalSyncAnimationClock,FSAvatarCloudFastRetry,FSAvatarRetryEmptyAppearance,FSAvatarDropStaleAppearance</string>
+    <string name="preset_excluded_settings">FSDecodedTextureCacheMode,FSDecodedTextureCacheRegions,FSDecodedTextureCacheSizeMB,FSDecodedTextureCacheMinSize,FSDecodedTextureCacheUncompressed,FSLowPriorityTextureThreads,FSTextureUseLiveVRAM,FSTextureBiasSoftZone,RenderTextureMemoryUsageBias,TextureFetchPipelineDiagnostics,FSTextureFetchSelfHeal,FSExperimentalRepairAnimations,FSExperimentalSyncAnimationClock,FSAvatarDropStaleAppearance</string>
+    <string name="preset_extra_settings">FSFetchOfflineIMsWhileOnline,FSBuildClientUndo,FSChatHistoryLinesShown</string>
     <text
      follows="left|top|right"
      height="18"
@@ -139,7 +140,7 @@
              bottom="-1">
                 <panel
                  follows="left|top"
-                 height="848"
+                 height="899"
                  layout="topleft"
                  left="0"
                  name="experimental_general_settings"
@@ -562,6 +563,42 @@
                      name="mass_object_edit_workers"
                      top="805"
                      width="100" />
+                    <check_box
+                     control_name="FSBuildClientUndo"
+                     follows="left|top"
+                     height="20"
+                     label="Client side build undo"
+                     layout="topleft"
+                     left="15"
+                     name="fs_fsbuildclientundo"
+                     tool_tip="Keep an undo history of build tool moves, rotations and resizes. Ctrl+Z/Ctrl+Y step through it, even after deselecting; the simulator's own undo is used when it is empty."
+                     top="831"
+                     width="475" />
+                    <text
+                     follows="left|top"
+                     height="18"
+                     layout="topleft"
+                     left="35"
+                     name="fs_fschathistorylinesshown_label"
+                     tool_tip="How many of the most recent chat log lines a conversation or nearby chat shows when it opens. 0: all the viewer recalls (about 200), as standard."
+                     top="859"
+                     width="285">
+                        Chat history lines shown on open
+                    </text>
+                    <spinner
+                     control_name="FSChatHistoryLinesShown"
+                     decimal_digits="0"
+                     follows="left|top"
+                     height="20"
+                     increment="10"
+                     layout="topleft"
+                     left="330"
+                     max_val="200"
+                     min_val="0"
+                     name="fs_fschathistorylinesshown"
+                     tool_tip="How many of the most recent chat log lines a conversation or nearby chat shows when it opens. 0: all the viewer recalls (about 200), as standard."
+                     top="857"
+                     width="100" />
                 </panel>
             </scroll_container>
         </panel>
@@ -956,7 +993,7 @@
              bottom="-1">
                 <panel
                  follows="left|top"
-                 height="3682"
+                 height="3710"
                  layout="topleft"
                  left="0"
                  name="experimental_effects_settings"
@@ -3703,7 +3740,7 @@
                      width="120">
                         <button.commit_callback
                          function="FSExperimental.ResetSection"
-                         parameter="FSRenderSnellsWindow,FSRenderHalation,FSRenderAnamorphicStreaks,FSRenderFoliage,FSRenderFoliageStrength" />
+                         parameter="FSRenderSnellsWindow,FSRenderHalation,FSRenderAnamorphicStreaks,FSRenderFoliage,FSRenderFoliageStrength,FSRenderSeaHorizon" />
                     </button>
                     <text
                      follows="left|top"
@@ -3819,6 +3856,17 @@
                      tool_tip="EXPERIMENTAL. Strength of the sunlight seen through backlit leaves and grass."
                      top="3640"
                      width="100" />
+                    <check_box
+                     control_name="FSRenderSeaHorizon"
+                     follows="left|top"
+                     height="20"
+                     label="Sea to the horizon"
+                     layout="topleft"
+                     left="15"
+                     name="fs_fsrenderseahorizon"
+                     tool_tip="With the camera above water and away from mainland, the sea reaches the horizon, mirroring the sky, instead of ending at the draw distance with sky showing below the horizon."
+                     top="3668"
+                     width="475" />
                 </panel>
             </scroll_container>
         </panel>
@@ -3842,7 +3890,7 @@
              bottom="-1">
                 <panel
                  follows="left|top"
-                 height="1369"
+                 height="1392"
                  layout="topleft"
                  left="0"
                  name="experimental_rendering_settings"
@@ -4769,6 +4817,17 @@
                      tool_tip="Test precise arithmetic and invariant positions in skinning shaders; restart required and may reduce performance"
                      top="1327"
                      width="475" />
+                    <check_box
+                     control_name="RenderGLMultiThreadedTexturesNVIDIA"
+                     follows="left|top"
+                     height="20"
+                     label="Always use threaded textures on NVIDIA"
+                     layout="topleft"
+                     left="15"
+                     name="render_nvidia_threaded_textures"
+                     tool_tip="Create textures on a background OpenGL context on NVIDIA GPUs, whatever threaded textures is set to; restart required"
+                     top="1350"
+                     width="475" />
                 </panel>
             </scroll_container>
         </panel>
@@ -4792,7 +4851,7 @@
              bottom="-1">
                 <panel
                  follows="left|top"
-                 height="1448"
+                 height="1476"
                  layout="topleft"
                  left="0"
                  name="experimental_shadows_settings"
@@ -5803,7 +5862,7 @@
                      width="120">
                         <button.commit_callback
                          function="FSExperimental.ResetSection"
-                         parameter="FSRenderSpotShadowCount" />
+                         parameter="FSRenderSpotShadowCount,RenderSpotShadowMaxResolution" />
                     </button>
                     <text
                      follows="left|top"
@@ -5829,6 +5888,31 @@
                      name="fs_fsrenderspotshadowcount"
                      tool_tip="EXPERIMENTAL. How many projectors cast shadows at once (2 is the standard viewer, up to 6). Each one past two renders another shadow map every update (see the projector shadow update interval) and uses about 16 MB of video memory at 2048 pixels. Needs projector shadows on."
                      top="1406"
+                     width="100" />
+                    <text
+                     follows="left|top"
+                     height="18"
+                     layout="topleft"
+                     left="35"
+                     name="fs_renderspotshadowmaxresolution_label"
+                     tool_tip="Largest width and height, in pixels, of the projector shadow maps, which otherwise follow the screen width. 0: no limit, as standard."
+                     top="1436"
+                     width="285">
+                        Projector shadow map size limit
+                    </text>
+                    <spinner
+                     control_name="RenderSpotShadowMaxResolution"
+                     decimal_digits="0"
+                     follows="left|top"
+                     height="20"
+                     increment="256"
+                     layout="topleft"
+                     left="330"
+                     max_val="8192"
+                     min_val="0"
+                     name="fs_renderspotshadowmaxresolution"
+                     tool_tip="Largest width and height, in pixels, of the projector shadow maps, which otherwise follow the screen width. 0: no limit, as standard."
+                     top="1434"
                      width="100" />
                 </panel>
             </scroll_container>
@@ -6645,7 +6729,7 @@
              bottom="-1">
                 <panel
                  follows="left|top"
-                 height="1733"
+                 height="1937"
                  layout="topleft"
                  left="0"
                  name="experimental_performance_settings"
@@ -7599,6 +7683,139 @@
                      tool_tip="EXPERIMENTAL. While the mouse, its buttons and the camera stay still, the viewer reuses what it found under the mouse for up to a tenth of a second instead of casting a ray through the scene every frame. Something moving under a still mouse is noticed within that time."
                      top="1691"
                      width="475" />
+                    <text
+                     follows="left|top"
+                     font="SansSerifBold"
+                     height="18"
+                     layout="topleft"
+                     left="15"
+                     name="fs_heading_scene_updates"
+                     top="1733"
+                     width="340">
+                        Scene updates
+                    </text>
+                    <button
+                     follows="left|top"
+                     height="19"
+                     label="Reset to default"
+                     layout="topleft"
+                     left="370"
+                     name="reset_fs_heading_scene_updates"
+                     tool_tip="Set every option in &quot;Scene updates&quot; back to its default value."
+                     top="1732"
+                     width="120">
+                        <button.commit_callback
+                         function="FSExperimental.ResetSection"
+                         parameter="FSPerfVertexArrayObjects,FSPerfRebuildNearestFirst,RenderReflectionProbeSharedShadows,RenderReflectionProbeRefreshFrameInterval,RenderReflectionProbeMinRefresh,RenderHiddenAvatarUpdatePeriod" />
+                    </button>
+                    <check_box
+                     control_name="FSPerfVertexArrayObjects"
+                     follows="left|top"
+                     height="20"
+                     label="Vertex array objects"
+                     layout="topleft"
+                     left="15"
+                     name="fs_fsperfvertexarrayobjects"
+                     tool_tip="Vertex buffers drawn more than once keep a vertex array object per shader layout, so a draw binds one object instead of setting up its buffers and attributes again. Off: the standard path."
+                     top="1761"
+                     width="475" />
+                    <check_box
+                     control_name="FSPerfRebuildNearestFirst"
+                     follows="left|top"
+                     height="20"
+                     label="Rebuild nearest objects first"
+                     layout="topleft"
+                     left="15"
+                     name="fs_fsperfrebuildnearestfirst"
+                     tool_tip="When geometry updates (level of detail changes, new objects) can't all be done in one frame, do the ones in view and nearest the camera first, so the objects around you sharpen before distant ones. Off: the standard order."
+                     top="1787"
+                     width="475" />
+                    <check_box
+                     control_name="RenderReflectionProbeSharedShadows"
+                     follows="left|top"
+                     height="20"
+                     label="Share sun shadows between probe faces"
+                     layout="topleft"
+                     left="15"
+                     name="fs_renderreflectionprobesharedshadows"
+                     tool_tip="Render the sun shadows once per reflection probe update and share them between its 12 face renders, instead of rendering them for every face. Off: the standard path."
+                     top="1813"
+                     width="475" />
+                    <text
+                     follows="left|top"
+                     height="18"
+                     layout="topleft"
+                     left="35"
+                     name="fs_renderreflectionproberefreshframeinterval_label"
+                     tool_tip="While refreshing a reflection probe that is already complete, render one cube face every this many frames. New probes, the sky probe and moving probes still update every frame. 1 is standard."
+                     top="1841"
+                     width="285">
+                        Frames per face when refreshing a probe
+                    </text>
+                    <spinner
+                     control_name="RenderReflectionProbeRefreshFrameInterval"
+                     decimal_digits="0"
+                     follows="left|top"
+                     height="20"
+                     increment="1"
+                     layout="topleft"
+                     left="330"
+                     max_val="12"
+                     min_val="1"
+                     name="fs_renderreflectionproberefreshframeinterval"
+                     tool_tip="While refreshing a reflection probe that is already complete, render one cube face every this many frames. New probes, the sky probe and moving probes still update every frame. 1 is standard."
+                     top="1839"
+                     width="100" />
+                    <text
+                     follows="left|top"
+                     height="18"
+                     layout="topleft"
+                     left="35"
+                     name="fs_renderreflectionprobeminrefresh_label"
+                     tool_tip="A complete reflection probe that doesn't move is not re-rendered until this many seconds after its last refresh. Sky changes still refresh it. 0 is standard."
+                     top="1869"
+                     width="285">
+                        Shortest time between probe refreshes (s)
+                    </text>
+                    <spinner
+                     control_name="RenderReflectionProbeMinRefresh"
+                     decimal_digits="0"
+                     follows="left|top"
+                     height="20"
+                     increment="5"
+                     layout="topleft"
+                     left="330"
+                     max_val="120"
+                     min_val="0"
+                     name="fs_renderreflectionprobeminrefresh"
+                     tool_tip="A complete reflection probe that doesn't move is not re-rendered until this many seconds after its last refresh. Sky changes still refresh it. 0 is standard."
+                     top="1867"
+                     width="100" />
+                    <text
+                     follows="left|top"
+                     height="18"
+                     layout="topleft"
+                     left="35"
+                     name="fs_renderhiddenavatarupdateperiod_label"
+                     tool_tip="Avatars outside the camera view are fully updated every this many frames (at most 2 with sun shadows on). 1 is standard, every frame."
+                     top="1897"
+                     width="285">
+                        Frames between off-screen avatar updates
+                    </text>
+                    <spinner
+                     control_name="RenderHiddenAvatarUpdatePeriod"
+                     decimal_digits="0"
+                     follows="left|top"
+                     height="20"
+                     increment="1"
+                     layout="topleft"
+                     left="330"
+                     max_val="16"
+                     min_val="1"
+                     name="fs_renderhiddenavatarupdateperiod"
+                     tool_tip="Avatars outside the camera view are fully updated every this many frames (at most 2 with sun shadows on). 1 is standard, every frame."
+                     top="1895"
+                     width="100" />
                 </panel>
             </scroll_container>
         </panel>

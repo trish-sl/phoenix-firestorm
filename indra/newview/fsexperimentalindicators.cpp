@@ -80,6 +80,8 @@ namespace
         { "FSRenderNeighborAdjacentOnly", CS, VN },
         { "FSExperimentalReleaseNonAdjacentRegions", CS, VN },
         { "FSFetchOfflineIMsWhileOnline", CL, VN },
+        { "FSBuildClientUndo", CL, VN },
+        { "FSChatHistoryLinesShown", CS, VN },
         { "FSOfflineIMFetchIntervalSeconds", CL, VN },
         { "FSAvatarPositionRefreshIntervalSeconds", CL, VN },
         { "FSDebugDcThreshold", CL, VN },
@@ -240,6 +242,7 @@ namespace
         { "FSRenderStarExtinction", CL, VM },
         { "FSRenderTwilightBands", CL, VM },
         { "FSRenderSnellsWindow", CL, VM },
+        { "FSRenderSeaHorizon", CL, VM },
         { "FSRenderHalation", CL, VM },
         { "FSRenderAnamorphicStreaks", CL, VM },
         { "FSRenderFoliage", CL, VM },
@@ -282,6 +285,7 @@ namespace
         { "RLVaDebugSphereUseOpaqueDepth", CL, VN },
         { "RenderAMDDisableShaderCache", CL, VN },
         { "RenderAMDDisableTextureThreading", CM, VN },
+        { "RenderGLMultiThreadedTexturesNVIDIA", CS, VN },
         { "RenderRiggedDirectNormals", CL, VN },
         { "RenderRiggedLocalOrigin", CL, VN },
         { "RenderRiggedPreciseMath", CL, VN },
@@ -325,6 +329,7 @@ namespace
         { "FSRenderColoredShadowAbsorption", CL, VM },
         { "FSRenderColoredShadowsProjectors", CM, VM },
         { "FSRenderSpotShadowCount", CH, VM },
+        { "RenderSpotShadowMaxResolution", CS, VN },
 
         // Textures
         { "FSDecodedTextureCache", CS, VN },
@@ -414,6 +419,12 @@ namespace
         { "FSPerfAudioThrottleChecks", CS, VN },
         { "FSPerfInventoryIdleThrottle", CS, VN },
         { "FSPerfHoverPickThrottle", CS, VN },
+        { "FSPerfVertexArrayObjects", CS, VN },
+        { "FSPerfRebuildNearestFirst", CS, VN },
+        { "RenderReflectionProbeSharedShadows", CS, VN },
+        { "RenderReflectionProbeRefreshFrameInterval", CS, VN },
+        { "RenderReflectionProbeMinRefresh", CS, VN },
+        { "RenderHiddenAvatarUpdatePeriod", CS, VN },
 
         // Logging
         { "FSHitchLogThresholdMs", CL, VN },

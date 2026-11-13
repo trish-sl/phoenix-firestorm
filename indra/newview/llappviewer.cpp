@@ -3646,6 +3646,32 @@ bool LLAppViewer::initConfiguration()
         }
         // </FS>
 
+        // <FS:Trish> A fresh install starts on the built-in Trish Recommended Mid experimental preset.
+        // Settings it doesn't list keep their defaults; Stock Firestorm in the preset bar goes back to stock.
+        {
+            const std::string preset_path = gDirUtilp->getExpandedFilename(LL_PATH_APP_SETTINGS, "experimental_presets", "Trish%20Recommended%20Mid.xml");
+            llifstream preset_file(preset_path.c_str());
+            LLSD preset;
+            if (preset_file.is_open() && LLSDSerialize::fromXML(preset, preset_file) != LLSDParser::PARSE_FAILURE
+                && preset.has("Settings") && preset["Settings"].isMap())
+            {
+                const LLSD& preset_settings = preset["Settings"];
+                for (LLSD::map_const_iterator it = preset_settings.beginMap(); it != preset_settings.endMap(); ++it)
+                {
+                    if (LLControlVariable* control = gSavedSettings.getControl(it->first))
+                    {
+                        control->setValue(it->second);
+                    }
+                }
+                LL_INFOS("AppInit") << "First run: applied experimental preset " << preset_path << LL_ENDL;
+            }
+            else
+            {
+                LL_WARNS("AppInit") << "First run: cannot read experimental preset " << preset_path << LL_ENDL;
+            }
+        }
+        // </FS:Trish>
+
 
         gSavedSettings.setBOOL("FirstRunThisInstall", false);
     }

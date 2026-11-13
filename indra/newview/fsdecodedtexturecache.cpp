@@ -1243,6 +1243,7 @@ private:
     static constexpr const char* PRESET_STOCK = "stock";
     static constexpr const char* PRESET_BUILTIN_PREFIX = "builtin:";
     static constexpr const char* PRESET_USER_PREFIX = "user:";
+    static constexpr const char* PRESET_DEFAULT_BUILTIN = "Trish Recommended Mid";
     static constexpr S32 PRESET_VERSION = 1;
     static constexpr size_t PRESET_NAME_MAX_LENGTH = 64;
 
@@ -1316,6 +1317,21 @@ private:
         for (const VectorComponent& component : mVectorComponents)
         {
             add(gSavedSettings.getControl(component.mSetting));
+        }
+
+        // Settings on tabs presets don't walk (General), listed in the panel's preset_extra_settings
+        if (hasString("preset_extra_settings"))
+        {
+            std::vector<std::string> list;
+            boost::split(list, getString("preset_extra_settings"), boost::is_any_of(","));
+            for (std::string name : list)
+            {
+                LLStringUtil::trim(name);
+                if (!name.empty())
+                {
+                    add(gSavedSettings.getControl(name));
+                }
+            }
         }
         return controls;
     }
@@ -1486,7 +1502,12 @@ private:
             }
         }
 
-        if (selection.empty() || !mPresetCombo->selectByValue(LLSD(selection)))
+        // Nothing chosen yet: the preset a fresh install starts on (LLAppViewer::initConfiguration)
+        if (selection.empty())
+        {
+            selection = std::string(PRESET_BUILTIN_PREFIX) + PRESET_DEFAULT_BUILTIN;
+        }
+        if (!mPresetCombo->selectByValue(LLSD(selection)))
         {
             mPresetCombo->selectFirstItem();
         }

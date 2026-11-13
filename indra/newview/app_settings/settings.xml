@@ -11361,7 +11361,7 @@ Change of this parameter will affect the layout of buttons in notification toast
       <key>Type</key>
       <string>Boolean</string>
       <key>Value</key>
-      <integer>1</integer>
+      <integer>0</integer>
     </map>
   <key>RenderShadowMinCasterTexels</key>
     <map>
@@ -12262,7 +12262,7 @@ Change of this parameter will affect the layout of buttons in notification toast
     <key>Type</key>
     <string>U32</string>
     <key>Value</key>
-    <integer>4</integer>
+    <integer>1</integer>
   </map>
   <key>RenderSpotShadowMaxResolution</key>
   <map>
@@ -12273,7 +12273,7 @@ Change of this parameter will affect the layout of buttons in notification toast
     <key>Type</key>
     <string>U32</string>
     <key>Value</key>
-    <integer>2048</integer>
+    <integer>0</integer>
   </map>
   <key>RenderSpotShadowOffset</key>
   <map>
@@ -12757,7 +12757,7 @@ Change of this parameter will affect the layout of buttons in notification toast
       <key>Type</key>
       <string>Boolean</string>
       <key>Value</key>
-      <integer>1</integer>
+      <integer>0</integer>
     </map>
     <key>RenderGLMultiThreadedMedia</key>
     <map>
@@ -13380,7 +13380,7 @@ Change of this parameter will affect the layout of buttons in notification toast
     <key>Type</key>
     <string>F32</string>
     <key>Value</key>
-    <real>10.0</real>
+    <real>0.0</real>
   </map>
   <key>FSDecodedTextureCache</key>
   <map>
@@ -13391,7 +13391,7 @@ Change of this parameter will affect the layout of buttons in notification toast
     <key>Type</key>
     <string>Boolean</string>
     <key>Value</key>
-    <integer>1</integer>
+    <integer>0</integer>
   </map>
   <key>FSDecodedTextureCacheSizeMB</key>
   <map>
@@ -13457,7 +13457,7 @@ Change of this parameter will affect the layout of buttons in notification toast
     <key>Type</key>
     <string>Boolean</string>
     <key>Value</key>
-    <integer>1</integer>
+    <integer>0</integer>
   </map>
   <key>RenderReflectionProbeRefreshFrameInterval</key>
   <map>
@@ -13468,7 +13468,7 @@ Change of this parameter will affect the layout of buttons in notification toast
     <key>Type</key>
     <string>U32</string>
     <key>Value</key>
-    <integer>3</integer>
+    <integer>1</integer>
   </map>
   <key>RenderReflectionProbeSharedShadows</key>
   <map>
@@ -13479,7 +13479,7 @@ Change of this parameter will affect the layout of buttons in notification toast
     <key>Type</key>
     <string>Boolean</string>
     <key>Value</key>
-    <integer>1</integer>
+    <integer>0</integer>
   </map>
   <key>RenderReflectionProbeLevel</key>
   <map>
@@ -14349,7 +14349,7 @@ Change of this parameter will affect the layout of buttons in notification toast
       <key>Type</key>
       <string>Boolean</string>
       <key>Value</key>
-      <integer>1</integer>
+      <integer>0</integer>
     </map>
     <key>RenderRiggedDirectNormals</key>
     <map>
@@ -14360,7 +14360,7 @@ Change of this parameter will affect the layout of buttons in notification toast
       <key>Type</key>
       <string>Boolean</string>
       <key>Value</key>
-      <integer>1</integer>
+      <integer>0</integer>
     </map>
     <key>RenderRiggedPreciseMath</key>
     <map>
@@ -14371,7 +14371,7 @@ Change of this parameter will affect the layout of buttons in notification toast
       <key>Type</key>
       <string>Boolean</string>
       <key>Value</key>
-      <integer>1</integer>
+      <integer>0</integer>
     </map>
     <key>RenderAMDDisableTextureThreading</key>
     <map>
@@ -14382,7 +14382,7 @@ Change of this parameter will affect the layout of buttons in notification toast
       <key>Type</key>
       <string>Boolean</string>
       <key>Value</key>
-      <integer>1</integer>
+      <integer>0</integer>
     </map>
     <key>RenderAMDDisableShaderCache</key>
     <map>
@@ -14393,7 +14393,7 @@ Change of this parameter will affect the layout of buttons in notification toast
       <key>Type</key>
       <string>Boolean</string>
       <key>Value</key>
-      <integer>1</integer>
+      <integer>0</integer>
     </map>
     <key>RenderShaderCacheEnabled</key>
     <map>
@@ -26710,7 +26710,7 @@ Change of this parameter will affect the layout of buttons in notification toast
       <key>Type</key>
       <string>Boolean</string>
       <key>Value</key>
-      <integer>1</integer>
+      <integer>0</integer>
     </map>
     <key>FSAvatarDropStaleAppearance</key>
     <map>
@@ -26732,7 +26732,7 @@ Change of this parameter will affect the layout of buttons in notification toast
       <key>Type</key>
       <string>Boolean</string>
       <key>Value</key>
-      <integer>1</integer>
+      <integer>0</integer>
     </map>
     <key>FSSnapshotWaitForTextures</key>
     <map>
@@ -26743,7 +26743,7 @@ Change of this parameter will affect the layout of buttons in notification toast
       <key>Type</key>
       <string>Boolean</string>
       <key>Value</key>
-      <integer>1</integer>
+      <integer>0</integer>
     </map>
     <key>FSSnapshotTextureWaitTimeout</key>
     <map>
@@ -26765,7 +26765,7 @@ Change of this parameter will affect the layout of buttons in notification toast
       <key>Type</key>
       <string>Boolean</string>
       <key>Value</key>
-      <integer>1</integer>
+      <integer>0</integer>
     </map>
     <key>FSBuildUndoDepth</key>
     <map>
@@ -28793,7 +28793,7 @@ Change of this parameter will affect the layout of buttons in notification toast
       <key>Type</key>
       <string>Boolean</string>
       <key>Value</key>
-      <integer>1</integer>
+      <integer>0</integer>
     </map>
     <key>FSRenderUICap</key>
     <map>
@@ -28870,7 +28870,7 @@ Change of this parameter will affect the layout of buttons in notification toast
       <key>Type</key>
       <string>U32</string>
       <key>Value</key>
-      <integer>3</integer>
+      <integer>4</integer>
     </map>
     <key>FSImpostorUpdateBudget</key>
     <map>
@@ -28881,7 +28881,7 @@ Change of this parameter will affect the layout of buttons in notification toast
       <key>Type</key>
       <string>U32</string>
       <key>Value</key>
-      <integer>1</integer>
+      <integer>0</integer>
     </map>
     <key>FSImpostorMinInterval</key>
     <map>
@@ -28925,7 +28925,7 @@ Change of this parameter will affect the layout of buttons in notification toast
       <key>Type</key>
       <string>Boolean</string>
       <key>Value</key>
-      <integer>1</integer>
+      <integer>0</integer>
     </map>
     <key>FSHitchStackMs</key>
     <map>
@@ -28980,7 +28980,7 @@ Change of this parameter will affect the layout of buttons in notification toast
       <key>Type</key>
       <string>U32</string>
       <key>Value</key>
-      <integer>2</integer>
+      <integer>4</integer>
     </map>
     <key>FSRenderProbeAvatars</key>
     <map>
@@ -29523,7 +29523,7 @@ Change of this parameter will affect the layout of buttons in notification toast
       <key>Type</key>
       <string>F32</string>
       <key>Value</key>
-      <real>1.0</real>
+      <real>0.0</real>
     </map>
     <key>FSRenderSnellsWindow</key>
     <map>
@@ -29534,7 +29534,7 @@ Change of this parameter will affect the layout of buttons in notification toast
       <key>Type</key>
       <string>F32</string>
       <key>Value</key>
-      <real>1.0</real>
+      <real>0.0</real>
     </map>
     <key>FSRenderHalation</key>
     <map>
@@ -29556,7 +29556,7 @@ Change of this parameter will affect the layout of buttons in notification toast
       <key>Type</key>
       <string>Boolean</string>
       <key>Value</key>
-      <integer>1</integer>
+      <integer>0</integer>
     </map>
     <key>FSRenderFoliageStrength</key>
     <map>
@@ -29600,7 +29600,7 @@ Change of this parameter will affect the layout of buttons in notification toast
       <key>Type</key>
       <string>F32</string>
       <key>Value</key>
-      <real>0.8</real>
+      <real>0.0</real>
     </map>
     <key>FSRenderMoonCorona</key>
     <map>
@@ -29611,7 +29611,7 @@ Change of this parameter will affect the layout of buttons in notification toast
       <key>Type</key>
       <string>F32</string>
       <key>Value</key>
-      <real>1.0</real>
+      <real>0.0</real>
     </map>
     <key>FSRenderMoonGlade</key>
     <map>
@@ -29633,7 +29633,7 @@ Change of this parameter will affect the layout of buttons in notification toast
       <key>Type</key>
       <string>F32</string>
       <key>Value</key>
-      <real>1.0</real>
+      <real>0.0</real>
     </map>
     <key>FSRenderSunDiscDetail</key>
     <map>
@@ -29644,7 +29644,7 @@ Change of this parameter will affect the layout of buttons in notification toast
       <key>Type</key>
       <string>Boolean</string>
       <key>Value</key>
-      <integer>1</integer>
+      <integer>0</integer>
     </map>
     <key>FSRenderStarExtinction</key>
     <map>
@@ -29655,7 +29655,7 @@ Change of this parameter will affect the layout of buttons in notification toast
       <key>Type</key>
       <string>Boolean</string>
       <key>Value</key>
-      <integer>1</integer>
+      <integer>0</integer>
     </map>
     <key>FSRenderFilmGrain</key>
     <map>
@@ -29787,7 +29787,7 @@ Change of this parameter will affect the layout of buttons in notification toast
       <key>Type</key>
       <string>Boolean</string>
       <key>Value</key>
-      <integer>1</integer>
+      <integer>0</integer>
     </map>
     <key>FSPerfGroupRebuildBudgetMs</key>
     <map>
@@ -29831,7 +29831,7 @@ Change of this parameter will affect the layout of buttons in notification toast
       <key>Type</key>
       <string>Boolean</string>
       <key>Value</key>
-      <integer>1</integer>
+      <integer>0</integer>
     </map>
     <key>FSTextureMaxDiscardBias</key>
     <map>
@@ -29853,7 +29853,7 @@ Change of this parameter will affect the layout of buttons in notification toast
       <key>Type</key>
       <string>U32</string>
       <key>Value</key>
-      <integer>50</integer>
+      <integer>0</integer>
     </map>
     <key>FSPerfProfileLogInterval</key>
     <map>
@@ -30747,7 +30747,7 @@ Change of this parameter will affect the layout of buttons in notification toast
       <key>Type</key>
       <string>Boolean</string>
       <key>Value</key>
-      <integer>1</integer>
+      <integer>0</integer>
     </map>
     <key>FSOfflineIMFetchIntervalSeconds</key>
     <map>
