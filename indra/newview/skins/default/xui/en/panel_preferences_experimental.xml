@@ -565,7 +565,7 @@
              bottom="-1">
                 <panel
                  follows="left|top"
-                 height="430"
+                 height="456"
                  layout="topleft"
                  left="0"
                  name="experimental_photo_settings"
@@ -594,7 +594,7 @@
                      width="120">
                         <button.commit_callback
                          function="FSExperimental.ResetSection"
-                         parameter="RenderResolutionMultiplier,FSSnapshotWaitForTextures,FSSnapshotTextureWaitTimeout,RenderScreenSpaceReflections,RenderScreenSpaceReflectionIterations,RenderScreenSpaceReflectionRayStep,RenderScreenSpaceReflectionGlossySamples,RenderScreenSpaceReflectionDistanceBias,RenderScreenSpaceReflectionDepthRejectBias,FSRenderSSRHiZ,FSRenderSSRConeTrace,FSRenderSSRHiZSteps,FSRenderSSRThickness,FSRenderSSREdgeFade" />
+                         parameter="RenderResolutionMultiplier,FSSnapshotWaitForTextures,FSSnapshotTextureWaitTimeout,RenderScreenSpaceReflections,RenderScreenSpaceReflectionIterations,RenderScreenSpaceReflectionRayStep,RenderScreenSpaceReflectionGlossySamples,RenderScreenSpaceReflectionDistanceBias,RenderScreenSpaceReflectionDepthRejectBias,FSRenderSSRHiZ,FSRenderSSRConeTrace,FSRenderSSRHalfRes,FSRenderSSRHiZSteps,FSRenderSSRThickness,FSRenderSSREdgeFade" />
                     </button>
                     <text
                      follows="left|top"
@@ -823,6 +823,18 @@
                      tool_tip="EXPERIMENTAL. Glossy surfaces trace one reflection ray and blur its result by the surface's roughness, instead of averaging several scattered rays. Smoother and cheaper; needs hierarchical screen space reflections."
                      top="306"
                      width="455" />
+                    <check_box
+                     control_name="FSRenderSSRHalfRes"
+                     enabled_control="RenderScreenSpaceReflections"
+                     follows="left|top"
+                     height="20"
+                     label="Trace reflections at half resolution"
+                     layout="topleft"
+                     left="15"
+                     name="fs_fsrenderssrhalfres"
+                     tool_tip="EXPERIMENTAL. Traces the screen space reflections of opaque surfaces once per 2x2 pixels and upsamples them with a depth and normal aware filter, instead of tracing every pixel. Roughly a quarter of the reflection cost; reflections are slightly softer on fine normal map detail. Alpha and water still trace every pixel. Rebuilds shaders."
+                     top="332"
+                     width="475" />
                     <text
                      follows="left|top"
                      height="18"
@@ -830,7 +842,7 @@
                      left="35"
                      name="fs_fsrenderssrhizsteps_label"
                      tool_tip="EXPERIMENTAL. Most steps one hierarchical reflection ray may take. Each step skips a whole empty region, so 32 reaches across the screen; more finds reflections behind objects more often at higher cost."
-                     top="334"
+                     top="360"
                      width="285">
                         Hierarchical reflection steps
                     </text>
@@ -847,7 +859,7 @@
                      min_val="4"
                      name="fs_fsrenderssrhizsteps"
                      tool_tip="EXPERIMENTAL. Most steps one hierarchical reflection ray may take. Each step skips a whole empty region, so 32 reaches across the screen; more finds reflections behind objects more often at higher cost."
-                     top="332"
+                     top="358"
                      width="100" />
                     <text
                      follows="left|top"
@@ -856,7 +868,7 @@
                      left="35"
                      name="fs_fsrenderssrthickness_label"
                      tool_tip="EXPERIMENTAL. How far a reflection ray may pass behind a surface and still count as hitting it. Raise if reflections of solid objects have holes; lower if thin objects (posts, railings) smear into the reflection behind them."
-                     top="362"
+                     top="388"
                      width="285">
                         Reflection hit thickness (m)
                     </text>
@@ -873,7 +885,7 @@
                      min_val="0.01"
                      name="fs_fsrenderssrthickness"
                      tool_tip="EXPERIMENTAL. How far a reflection ray may pass behind a surface and still count as hitting it. Raise if reflections of solid objects have holes; lower if thin objects (posts, railings) smear into the reflection behind them."
-                     top="360"
+                     top="386"
                      width="100" />
                     <text
                      follows="left|top"
@@ -882,7 +894,7 @@
                      left="35"
                      name="fs_fsrenderssredgefade_label"
                      tool_tip="EXPERIMENTAL. Share of the screen over which reflections fade into the reflection probes as they near the screen edge. 0 turns the fade off."
-                     top="390"
+                     top="416"
                      width="285">
                         Reflection screen edge fade
                     </text>
@@ -899,7 +911,7 @@
                      min_val="0"
                      name="fs_fsrenderssredgefade"
                      tool_tip="EXPERIMENTAL. Share of the screen over which reflections fade into the reflection probes as they near the screen edge. 0 turns the fade off."
-                     top="388"
+                     top="414"
                      width="100" />
                 </panel>
             </scroll_container>

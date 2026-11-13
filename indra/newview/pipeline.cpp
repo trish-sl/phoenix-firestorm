@@ -1632,6 +1632,7 @@ void LLPipeline::releaseScreenBuffers()
     mRT->deferredLight.release();
     mRT->lightMap.release(); // <FS:Trish/>
     mMainRT.fsGTAOHalf.release(); // <FS:Trish/> Half-resolution GTAO
+    mMainRT.fsSSRHalf.release(); // <FS:Trish/> Half-resolution SSR
     mRlvSphereDepth.release();
 
     mAuxillaryRT.screen.release();
@@ -11510,6 +11511,84 @@ static void fs_bind_gtao_half(LLGLSLShader& sun_shader, LLRenderTarget* gtao_hal
 }
 // </FS:Trish>
 
+// <FS:Trish> Half-resolution SSR (FSRenderSSRHalfRes). Traces the opaque surfaces' screen-space
+// reflections once per 2x2 pixels into mMainRT.fsSSRHalf (fsSSRHalfF.glsl), for the soften
+// pass's upsample to read instead of tracing every pixel. Call with the screen bound, before the
+// soften program is bound: the pass nests its own target. Returns the target, or null when the soften program traces per pixel
+// (setting off, SSR off, the pass did not build, or a probe capture).
+static LLRenderTarget* fs_render_ssr_half(LLRenderTarget* screen)
+{
+    LLRenderTarget& target = gPipeline.mMainRT.fsSSRHalf;
+    if (!gFSSSRHalfProgram.isComplete() || !gDeferredSoftenProgram.mDefines.count("FS_SSR_HALF"))
+    {
+        if (target.isComplete())
+        {
+            target.release();
+        }
+        return nullptr;
+    }
+    if (gCubeSnapshot)
+    {
+        return nullptr;
+    }
+
+    const U32 full_x = screen->getWidth();
+    const U32 full_y = screen->getHeight();
+    const U32 res_x = (full_x + 1) / 2;
+    const U32 res_y = (full_y + 1) / 2;
+    if (!target.isComplete() || target.getWidth() != res_x || target.getHeight() != res_y)
+    {
+        if (!target.allocate(res_x, res_y, GL_RGBA16F))
+        {
+            target.release();
+            return nullptr;
+        }
+    }
+
+    LL_PROFILE_ZONE_NAMED_CATEGORY_PIPELINE("renderDeferredLighting - ssr half");
+    LL_PROFILE_GPU_ZONE("ssr half");
+
+    static LLStaticHashedString s_full_res("fs_ssr_full_res");
+    LLGLSLShader& shader = gFSSSRHalfProgram;
+    target.bindTarget();
+    gPipeline.bindDeferredShader(shader); // the g-buffer, the scene map and hi-Z, the SSR settings
+    shader.uniform2f(s_full_res, (GLfloat)full_x, (GLfloat)full_y);
+    // the march works in full-resolution pixels; bindDeferredShader set screen_res to the g-buffer
+    shader.uniform2f(LLShaderMgr::DEFERRED_SCREEN_RES, (GLfloat)full_x, (GLfloat)full_y);
+    shader.uniform4fv(LLShaderMgr::WATER_WATERPLANE, 1, LLDrawPoolAlpha::sWaterPlane.mV); // wet shoreline
+    {
+        LLGLDisable blend(GL_BLEND);
+        LLGLDepthTest depth(GL_FALSE, GL_FALSE);
+        gPipeline.mScreenTriangleVB->setBuffer();
+        gPipeline.mScreenTriangleVB->drawArrays(LLRender::TRIANGLES, 0, 3);
+    }
+    gPipeline.unbindDeferredShader(shader);
+    target.flush();
+    return &target;
+}
+
+// The soften program's upsample reads the half-resolution SSR as fs_ssr_half_map
+static void fs_bind_ssr_half(LLGLSLShader& soften, LLRenderTarget* ssr_half, LLRenderTarget* screen)
+{
+    const S32 channel = soften.getTextureChannel(LLShaderMgr::FS_SSR_HALF_MAP);
+    if (channel < 0)
+    {
+        return;
+    }
+    static LLStaticHashedString s_full_res("fs_ssr_full_res");
+    soften.uniform2f(s_full_res, (GLfloat)screen->getWidth(), (GLfloat)screen->getHeight());
+    if (ssr_half)
+    {
+        soften.bindTexture(LLShaderMgr::FS_SSR_HALF_MAP, ssr_half, false, LLTexUnit::TFO_POINT);
+    }
+    else
+    {
+        // probe captures: the upsample returns early there, but the sampler still needs a 2D texture
+        gGL.getTexUnit(channel)->bindFast(LLViewerFetchedTexture::sBlackImagep);
+    }
+}
+// </FS:Trish>
+
 void LLPipeline::renderDeferredLighting()
 {
     LL_PROFILE_ZONE_SCOPED_CATEGORY_PIPELINE;
@@ -11748,9 +11827,15 @@ void LLPipeline::renderDeferredLighting()
         {  // apply sunlight contribution
             LLGLSLShader &soften_shader = gDeferredSoftenProgram;
 
+            // <FS:Trish> Half-resolution SSR, traced before the soften program; the pass nests its
+            // own target and returns to the screen
+            LLRenderTarget* fs_ssr_half = fs_render_ssr_half(screen_target);
+            // </FS:Trish>
+
             LL_PROFILE_ZONE_NAMED_CATEGORY_PIPELINE("renderDeferredLighting - atmospherics");
             LL_PROFILE_GPU_ZONE("atmospherics");
             bindDeferredShader(soften_shader);
+            fs_bind_ssr_half(soften_shader, fs_ssr_half, screen_target); // <FS:Trish/>
 
             static LLCachedControl<F32> ssao_scale(gSavedSettings, "RenderSSAOIrradianceScale", 0.5f);
             static LLCachedControl<F32> ssao_max(gSavedSettings, "RenderSSAOIrradianceMax", 0.25f);

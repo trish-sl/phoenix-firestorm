@@ -228,6 +228,7 @@ LLGLSLShader            gFSNISUpscaleProgram; // <FS:Trish/> NVIDIA Image Scalin
 LLGLSLShader            gFSLocalTonemapLumProgram; // <FS:Trish/> Local tone mapping
 LLGLSLShader            gFSSkinSSSProgram; // <FS:Trish/>
 LLGLSLShader            gFSGTAOHalfProgram; // <FS:Trish/> Half-resolution GTAO
+LLGLSLShader            gFSSSRHalfProgram; // <FS:Trish/> Half-resolution SSR
 LLGLSLShader            gDeferredPostGammaCorrectProgram;
 LLGLSLShader            gLegacyPostGammaCorrectProgram;
 LLGLSLShader            gExposureProgram;
@@ -1678,6 +1679,7 @@ bool LLViewerShaderMgr::loadShadersDeferred()
         gDeferredMultiSpotLightProgram.unload();
         gDeferredSunProgram.unload();
         gFSGTAOHalfProgram.unload(); // <FS:Trish/> Half-resolution GTAO
+        gFSSSRHalfProgram.unload(); // <FS:Trish/> Half-resolution SSR
         gDeferredBlurLightProgram.unload();
         gDeferredSoftenProgram.unload();
         gDeferredShadowProgram.unload();
@@ -1740,6 +1742,7 @@ bool LLViewerShaderMgr::loadShadersDeferred()
         gFSLocalTonemapLumProgram.unload(); // <FS:Trish/> Local tone mapping
         gFSSkinSSSProgram.unload(); // <FS:Trish/>
         gFSGTAOHalfProgram.unload(); // <FS:Trish/> Half-resolution GTAO
+        gFSSSRHalfProgram.unload(); // <FS:Trish/> Half-resolution SSR
         // <FS:Trish> WBOIT
         gFSWBOITCompositeProgram.unload();
         gFSAlphaWBOITShaders = false;
@@ -2897,7 +2900,38 @@ bool LLViewerShaderMgr::loadShadersDeferred()
         }
         // </FS:Trish>
 
-        // <FS:Trish> Coloured shadows: sunlight through translucent casters
+        // <FS:Trish> Half-resolution SSR: the opaque surfaces' reflections are traced once per 2x2
+        // pixels beforehand (fsSSRHalfF.glsl), and the soften pass upsamples them instead of
+        // tracing per pixel. Built with the same features, so it decodes the G-buffer the same way.
+        gFSSSRHalfProgram.unload();
+        static LLCachedControl<bool> ssr_half(gSavedSettings, "FSRenderSSRHalfRes", false);
+        if (ssr_half && gSavedSettings.getBOOL("RenderScreenSpaceReflections") && gDeferredSoftenProgram.mFeatures.hasReflectionProbes)
+        {
+            gFSSSRHalfProgram.mName = "FS SSR Half Resolution";
+            gFSSSRHalfProgram.mFeatures = gDeferredSoftenProgram.mFeatures;
+            gFSSSRHalfProgram.mShaderFiles.clear();
+            gFSSSRHalfProgram.clearPermutations();
+            add_common_permutations(&gFSSSRHalfProgram);
+            gFSSSRHalfProgram.mShaderFiles.push_back(make_pair("deferred/postDeferredNoTCV.glsl", GL_VERTEX_SHADER));
+            gFSSSRHalfProgram.mShaderFiles.push_back(make_pair("deferred/fsSSRHalfF.glsl", GL_FRAGMENT_SHADER));
+            if (wet_shore)
+            {
+                gFSSSRHalfProgram.mShaderFiles.push_back(make_pair("deferred/fsWetShoreF.glsl", GL_FRAGMENT_SHADER));
+                gFSSSRHalfProgram.addPermutation("FS_WET_SHORE", "1");
+            }
+            gFSSSRHalfProgram.mShaderLevel = gDeferredSoftenProgram.mShaderLevel;
+            if (gFSSSRHalfProgram.createShader())
+            {
+                gDeferredSoftenProgram.addPermutation("FS_SSR_HALF", "1");
+            }
+            else
+            {
+                LL_WARNS("ShaderLoading") << "FS SSR half resolution failed to build, reflections stay full resolution" << LL_ENDL;
+                gFSSSRHalfProgram.unload();
+            }
+        }
+
+        // Coloured shadows: sunlight through translucent casters
         //success = gDeferredSoftenProgram.createShader();
         if (gFSColoredShadowShaders)
         {

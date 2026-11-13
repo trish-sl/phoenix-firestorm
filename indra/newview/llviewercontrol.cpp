@@ -1531,6 +1531,7 @@ void settings_setup_listeners()
     setting_setup_signal_listener(gSavedSettings, "FSRenderGTAO", handleSetShaderChanged); // <FS:Trish/>
     setting_setup_signal_listener(gSavedSettings, "FSRenderGTAOSlices", handleSetShaderChanged); // <FS:Trish/>
     setting_setup_signal_listener(gSavedSettings, "FSRenderGTAOHalfRes", handleSetShaderChanged); // <FS:Trish/>
+    setting_setup_signal_listener(gSavedSettings, "FSRenderSSRHalfRes", handleSetShaderChanged); // <FS:Trish/>
     setting_setup_signal_listener(gSavedSettings, "FSRenderSkinSSS", handleSetShaderChanged); // <FS:Trish/>
     setting_setup_signal_listener(gSavedSettings, "FSRenderFoliage", handleSetShaderChanged); // <FS:Trish/>
     setting_setup_signal_listener(gSavedSettings, "FSPerfBatchedLocalLights", handleSetShaderChanged); // <FS:Trish/>

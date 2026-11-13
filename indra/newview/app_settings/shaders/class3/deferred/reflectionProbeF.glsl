@@ -953,8 +953,10 @@ void tapHeroProbe(inout vec3 glossenv, vec3 pos, vec3 norm, float glossiness)
 
 
 
-void doProbeSample(inout vec3 ambenv, inout vec3 glossenv,
-        vec2 tc, vec3 pos, vec3 norm, float glossiness, bool transparent, vec3 amblit)
+// fs_given: the screen-space reflection was traced beforehand (the half-resolution SSR pass,
+// FSRenderSSRHalfRes) and arrives in fs_ssr, in place of tracing it here
+void fsDoProbeSample(inout vec3 ambenv, inout vec3 glossenv,
+        vec2 tc, vec3 pos, vec3 norm, float glossiness, bool transparent, vec3 amblit, bool fs_given, vec4 fs_ssr)
 {
     // TODO - don't hard code lods
     float reflection_lods = max_probe_lod;
@@ -989,7 +991,11 @@ void doProbeSample(inout vec3 ambenv, inout vec3 glossenv,
         // refnormpersp, not norm: the march takes the same dominant direction the probe tap
         // above was bent to, so the two reflections being blended below agree about where they
         // are looking.
-        if (transparent)
+        if (fs_given)
+        {
+            ssr = fs_ssr;
+        }
+        else if (transparent)
         {
             tapScreenSpaceReflection(1, tc, pos, norm, refnormpersp, ssr, sceneMap, 1);
             ssr.a *= glossiness;
@@ -1005,6 +1011,21 @@ void doProbeSample(inout vec3 ambenv, inout vec3 glossenv,
 #endif
 
     tapHeroProbe(glossenv, pos, norm, glossiness);
+}
+
+void doProbeSample(inout vec3 ambenv, inout vec3 glossenv,
+        vec2 tc, vec3 pos, vec3 norm, float glossiness, bool transparent, vec3 amblit)
+{
+    fsDoProbeSample(ambenv, glossenv, tc, pos, norm, glossiness, transparent, amblit, false, vec4(0));
+}
+
+// sampleReflectionProbes for an opaque surface whose screen-space reflection was traced
+// beforehand at half resolution (softenLightF with FS_SSR_HALF)
+void sampleReflectionProbesFSHalfSSR(inout vec3 ambenv, inout vec3 glossenv,
+        vec2 tc, vec3 pos, vec3 norm, float glossiness, vec3 amblit, vec4 ssr)
+{
+    preProbeSample(pos);
+    fsDoProbeSample(ambenv, glossenv, tc, pos, norm, glossiness, false, amblit, true, ssr);
 }
 
 void sampleReflectionProbes(inout vec3 ambenv, inout vec3 glossenv,
@@ -1078,8 +1099,8 @@ vec4 sampleReflectionProbesDebug(vec3 pos)
     return col;
 }
 
-void sampleReflectionProbesLegacy(inout vec3 ambenv, inout vec3 glossenv, inout vec3 legacyenv,
-        vec2 tc, vec3 pos, vec3 norm, float glossiness, float envIntensity, bool transparent, vec3 amblit)
+void fsSampleReflectionProbesLegacy(inout vec3 ambenv, inout vec3 glossenv, inout vec3 legacyenv,
+        vec2 tc, vec3 pos, vec3 norm, float glossiness, float envIntensity, bool transparent, vec3 amblit, bool fs_given, vec4 fs_ssr)
 {
     float reflection_lods = max_probe_lod;
     preProbeSample(pos);
@@ -1136,7 +1157,11 @@ void sampleReflectionProbesLegacy(inout vec3 ambenv, inout vec3 glossenv, inout 
 
         vec3 ssrDir = normalize(refnormpersp);
 
-        if (transparent)
+        if (fs_given)
+        {
+            ssr = fs_ssr; // traced beforehand along the same mirror direction
+        }
+        else if (transparent)
         {
             tapScreenSpaceReflection(1, tc, pos, norm, ssrDir, ssr, sceneMap, 1);
             ssr.a *= glossiness;
@@ -1153,6 +1178,20 @@ void sampleReflectionProbesLegacy(inout vec3 ambenv, inout vec3 glossenv, inout 
 
     tapHeroProbe(glossenv, pos, norm, glossiness);
     tapHeroProbe(legacyenv, pos, norm, 1.0);
+}
+
+void sampleReflectionProbesLegacy(inout vec3 ambenv, inout vec3 glossenv, inout vec3 legacyenv,
+        vec2 tc, vec3 pos, vec3 norm, float glossiness, float envIntensity, bool transparent, vec3 amblit)
+{
+    fsSampleReflectionProbesLegacy(ambenv, glossenv, legacyenv, tc, pos, norm, glossiness, envIntensity, transparent, amblit, false, vec4(0));
+}
+
+// sampleReflectionProbesLegacy for an opaque surface whose screen-space reflection was traced
+// beforehand at half resolution (softenLightF with FS_SSR_HALF)
+void sampleReflectionProbesLegacyFSHalfSSR(inout vec3 ambenv, inout vec3 glossenv, inout vec3 legacyenv,
+        vec2 tc, vec3 pos, vec3 norm, float glossiness, float envIntensity, vec3 amblit, vec4 ssr)
+{
+    fsSampleReflectionProbesLegacy(ambenv, glossenv, legacyenv, tc, pos, norm, glossiness, envIntensity, false, amblit, true, ssr);
 }
 
 void applyGlossEnv(inout vec3 color, vec3 glossenv, vec4 spec, vec3 pos, vec3 norm)
