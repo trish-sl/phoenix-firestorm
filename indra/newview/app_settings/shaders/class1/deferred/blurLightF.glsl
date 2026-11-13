@@ -45,6 +45,9 @@ float getDepth(vec2 pos_screen);
 bool isFarDepth(float d);
 float ndcZFromScreenDepth(float d);
 vec4 getNorm(vec2 pos_screen);
+#if defined(FS_CONTACT_SHADOWS)
+float fsContactShadowTerm(float shadow, vec3 pos, vec3 norm); // fsShadowExtrasF.glsl, applied after the blur
+#endif
 
 void main()
 {
@@ -130,6 +133,9 @@ void main()
 
     col /= defined_weight.xyxx;
     //col.y *= col.y;
+#if defined(FS_CONTACT_SHADOWS)
+    col.r = fsContactShadowTerm(col.r, pos, norm.xyz); // only in the second (vertical) pass
+#endif
 
     frag_color = max(col, vec4(0));
 
