@@ -47,23 +47,23 @@ namespace
     // the option is there to make frames faster.
     enum class Cost : U8 { Saves, Low, Moderate, High, Count };
 
-    // How much the option improves the picture. None also covers options that trade a little
+    // How much the option improves the picture. Little also covers options that trade a little
     // quality for speed, and everything that isn't about the picture at all.
-    enum class Visual : U8 { Large, Moderate, None, Count };
+    enum class VisualImpact : U8 { Large, Moderate, Little, Count };
 
     constexpr Cost CS = Cost::Saves;
     constexpr Cost CL = Cost::Low;
     constexpr Cost CM = Cost::Moderate;
     constexpr Cost CH = Cost::High;
-    constexpr Visual VL = Visual::Large;
-    constexpr Visual VM = Visual::Moderate;
-    constexpr Visual VN = Visual::None;
+    constexpr VisualImpact VL = VisualImpact::Large;
+    constexpr VisualImpact VM = VisualImpact::Moderate;
+    constexpr VisualImpact VN = VisualImpact::Little;
 
     struct Rating
     {
         const char* mSetting;
         Cost mCost;
-        Visual mVisual;
+        VisualImpact mVisual;
     };
 
     // Rough GPU costs measured on an RTX 5060 Ti at about 1920x1000 set the scale: high is a
@@ -449,9 +449,9 @@ namespace
         return colors[(S32)cost];
     }
 
-    const LLColor4& visualColor(Visual visual)
+    const LLColor4& visualColor(VisualImpact visual)
     {
-        static const LLColor4 colors[(S32)Visual::Count] =
+        static const LLColor4 colors[(S32)VisualImpact::Count] =
         {
             LLColor4(0.3f, 0.8f, 0.3f, 1.f),    // large: green
             LLColor4(0.95f, 0.8f, 0.2f, 1.f),   // moderate: yellow
@@ -490,7 +490,7 @@ namespace
     {
         "indicator_cost_saves", "indicator_cost_low", "indicator_cost_moderate", "indicator_cost_high"
     };
-    const char* const VISUAL_STRINGS[(S32)Visual::Count] =
+    const char* const VISUAL_STRINGS[(S32)VisualImpact::Count] =
     {
         "indicator_visual_large", "indicator_visual_moderate", "indicator_visual_none"
     };
@@ -500,7 +500,7 @@ namespace
         return panel->hasString(name) ? panel->getString(name) : std::string();
     }
 
-    // Draws "Cost: o saves o low ... Visual: [] large ..." on one line
+    // Draws "Cost: o saves o low ... VisualImpact: [] large ..." on one line
     class IndicatorLegend : public LLView
     {
     public:
@@ -513,7 +513,7 @@ namespace
             {
                 mCostNames[i] = panelString(panel, COST_STRINGS[i]);
             }
-            for (S32 i = 0; i < (S32)Visual::Count; ++i)
+            for (S32 i = 0; i < (S32)VisualImpact::Count; ++i)
             {
                 mVisualNames[i] = panelString(panel, VISUAL_STRINGS[i]);
             }
@@ -547,10 +547,10 @@ namespace
 
             x += GROUP_GAP;
             text(mVisualLabel);
-            for (S32 i = 0; i < (S32)Visual::Count; ++i)
+            for (S32 i = 0; i < (S32)VisualImpact::Count; ++i)
             {
                 x += ITEM_GAP;
-                drawSquare(x, center_y, visualColor((Visual)i), alpha);
+                drawSquare(x, center_y, visualColor((VisualImpact)i), alpha);
                 x += SQUARE_SIZE + SHAPE_TEXT_GAP;
                 text(mVisualNames[i]);
             }
@@ -560,7 +560,7 @@ namespace
         std::string mCostLabel;
         std::string mVisualLabel;
         std::string mCostNames[(S32)Cost::Count];
-        std::string mVisualNames[(S32)Visual::Count];
+        std::string mVisualNames[(S32)VisualImpact::Count];
     };
 }
 
@@ -568,7 +568,7 @@ namespace
 class FSSettingIndicator : public LLView
 {
 public:
-    FSSettingIndicator(const LLView::Params& p, LLUICtrl* ctrl, Cost cost, Visual visual)
+    FSSettingIndicator(const LLView::Params& p, LLUICtrl* ctrl, Cost cost, VisualImpact visual)
     :   LLView(p),
         mCtrl(ctrl->getHandle()),
         mCost(cost),
@@ -591,7 +591,7 @@ public:
 private:
     LLHandle<LLUICtrl> mCtrl;
     Cost mCost;
-    Visual mVisual;
+    VisualImpact mVisual;
 };
 
 void FSExperimentalIndicators::build(LLPanel* panel)
