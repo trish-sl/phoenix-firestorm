@@ -44,6 +44,8 @@ namespace FSDiskThread
 
     // Runs work on the disk thread and then done on the main thread (the main loop's work queue).
     // False when the thread isn't enabled or is shutting down: the caller does the work itself.
+    // done is copied, run and destroyed only on the main thread, so it may hold LLPointers to
+    // main thread objects. work's captures are destroyed on the disk thread: keep them thread safe.
     bool post(std::function<void()> work, std::function<void()> done);
 
     // Runs work on the disk thread, nothing afterwards. False as above.
