@@ -132,12 +132,25 @@ namespace FSDiskThread
         {
             return false;
         }
-        return enqueue([work = std::move(work), done = std::move(done), mainq]() mutable
+        // done captures main thread objects (LLPointer counts aren't atomic), so the disk thread
+        // must never copy or destroy it: it only passes this holder on (an atomic count), and the
+        // main thread takes done out, runs it and destroys it.
+        auto holder = std::make_shared<std::function<void()>>(std::move(done));
+        return enqueue([work = std::move(work), holder, mainq]() mutable
             {
                 work();
                 // If the main loop's queue is gone (shutting down), the follow up is dropped, as any
                 // other work posted to it then
-                LL::WorkQueue::postMaybe(mainq, std::move(done));
+                if (!LL::WorkQueue::postMaybe(mainq, [holder]()
+                        {
+                            std::function<void()> fn;
+                            fn.swap(*holder);
+                            fn();
+                        }))
+                {
+                    // shortcut: leaks done at shutdown rather than destroy it on this thread
+                    new std::shared_ptr<std::function<void()>>(holder);
+                }
             });
     }
 
