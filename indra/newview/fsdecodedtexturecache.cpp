@@ -918,6 +918,7 @@ void FSDecodedTextureCache::evictIfNeeded()
 
 class FSPanelPreferenceExperimental : public LLPanelPreference
 {
+    LOG_CLASS(FSPanelPreferenceExperimental);   // GCC: the base class's log typedef is private
 public:
     FSPanelPreferenceExperimental()
     {
