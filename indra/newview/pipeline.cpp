@@ -9378,14 +9378,22 @@ void LLPipeline::tonemap(LLRenderTarget* src, LLRenderTarget* dst, bool gamma_co
             bindLocalTonemap(shader, local_tonemap);
 
             // Night vision: fades in through twilight, from the sun a little above the horizon
-            // to about six degrees below it
-            static LLCachedControl<F32> night_vision(gSavedSettings, "FSRenderNightVision", 0.5f);
+            // to about six degrees below it, or wherever the sky gives little light (night
+            // presets that keep the sun up, with dark sunlight and ambient colours)
+            static LLCachedControl<F32> night_vision(gSavedSettings, "FSRenderNightVision", 0.8f);
             static LLStaticHashedString s_night_vision("fs_night_vision");
             F32 night = 0.f;
             if (night_vision > 0.f)
             {
                 const F32 t = llclamp((0.05f - LLEnvironment::instance().getSunDirection().mV[VZ]) / 0.15f, 0.f, 1.f);
-                night = llmin((F32)night_vision, 1.f) * t * t * (3.f - 2.f * t);
+                F32 sky_light = psky->getAmbientColorClamped().brightness();
+                if (LLEnvironment::instance().getIsSunUp())
+                {
+                    sky_light += psky->getSunlightColorClamped().brightness();
+                }
+                const F32 d = 1.f - llclamp((sky_light - 0.12f) / 0.33f, 0.f, 1.f);
+                const F32 gate = llmax(t * t * (3.f - 2.f * t), d * d * (3.f - 2.f * d));
+                night = llmin((F32)night_vision, 1.f) * gate;
             }
             shader->uniform1f(s_night_vision, night);
         }

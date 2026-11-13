@@ -29539,13 +29539,13 @@ Change of this parameter will affect the layout of buttons in notification toast
     <key>FSRenderNightVision</key>
     <map>
       <key>Comment</key>
-      <string>EXPERIMENTAL. Sky: at night, dark parts of the image lose their colour and shift toward blue, as the eye does in the dark. Lit parts keep their colour. 0 is off.</string>
+      <string>EXPERIMENTAL. Sky: at night (or under a sky preset that gives little light), dark parts of the image lose their colour, shift toward blue and soften slightly, as the eye does in the dark; reds darken more than blues. Lit parts keep their colour. 0 is off.</string>
       <key>Persist</key>
       <integer>1</integer>
       <key>Type</key>
       <string>F32</string>
       <key>Value</key>
-      <real>0.5</real>
+      <real>0.8</real>
     </map>
     <key>FSRenderMoonCorona</key>
     <map>

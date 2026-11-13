@@ -3605,7 +3605,7 @@
                      max_val="1"
                      min_val="0"
                      name="night_vision"
-                     tool_tip="EXPERIMENTAL. At night, dark parts of the image lose their colour and shift toward blue, as the eye does in the dark. Lit parts keep their colour. 0 is off."
+                     tool_tip="EXPERIMENTAL. At night, or under a sky preset that gives little light, dark parts of the image lose their colour, shift toward blue and soften slightly, as the eye does in the dark; reds darken more than blues. Lit parts keep their colour. 0 is off."
                      top="3348"
                      width="100" />
                     <text
