@@ -107,11 +107,6 @@ uniform vec2 fs_ssr_full_res;
 
 bool isFarDepth(float d);
 
-void sampleReflectionProbesFSHalfSSR(inout vec3 ambenv, inout vec3 glossenv,
-        vec2 tc, vec3 pos, vec3 norm, float glossiness, vec3 amblit, vec4 ssr);
-void sampleReflectionProbesLegacyFSHalfSSR(inout vec3 ambenv, inout vec3 glossenv, inout vec3 legacyenv,
-        vec2 tc, vec3 pos, vec3 norm, float glossiness, float envIntensity, vec3 amblit, vec4 ssr);
-
 vec4 fsSSRHalfUpsample(vec3 pos, vec3 norm)
 {
     if (cube_snapshot != 0)
@@ -162,6 +157,80 @@ vec4 fsSSRHalfUpsample(vec3 pos, vec3 norm)
         }
     }
     return sum_w > 1e-4 ? sum / sum_w : best;
+}
+#endif
+
+#if defined(FS_SSR_HALF) || defined(FS_INDIRECT)
+void sampleReflectionProbesFS(inout vec3 ambenv, inout vec3 glossenv,
+        vec2 tc, vec3 pos, vec3 norm, vec3 amb_norm, float glossiness, vec3 amblit, bool ssr_given, vec4 ssr);
+void sampleReflectionProbesLegacyFS(inout vec3 ambenv, inout vec3 glossenv, inout vec3 legacyenv,
+        vec2 tc, vec3 pos, vec3 norm, vec3 amb_norm, float glossiness, float envIntensity, vec3 amblit, bool ssr_given, vec4 ssr);
+#endif
+
+#ifdef FS_INDIRECT
+// Bent normals and one bounce of screen-space indirect light (FSRenderBentNormals,
+// FSRenderSSGI), found at half resolution beforehand (fsIndirectHalfF.glsl) and blended with the
+// last frames (fsIndirectTemporalF.glsl). Texel t holds full-resolution pixel 2t:
+//  fs_indirect_gi:   rgb the light bouncing in from nearby surfaces, a the view depth
+//  fs_indirect_bent: xyz how far the open directions lean away from the normal (view space),
+//                    a the view depth
+// Each pixel blends the 2x2 texels around it by distance and by how close their depth is to its
+// own, so neither bleeds across a silhouette.
+uniform sampler2D fs_indirect_gi;
+uniform sampler2D fs_indirect_bent;
+uniform vec4 fs_indirect_params;    // x: indirect light strength (0: off), y: bent normal strength (0: off)
+
+void fsIndirectUpsample(vec3 pos, out vec3 gi, out vec3 bend)
+{
+    gi = vec3(0);
+    bend = vec3(0);
+    if (cube_snapshot != 0)
+    {
+        return; // probe captures: the pass does not run for them
+    }
+    ivec2 hi_max = textureSize(fs_indirect_gi, 0) - 1;
+    vec2 c = (gl_FragCoord.xy - 0.5) * 0.5;
+    vec2 base_f = floor(c);
+    vec2 f = c - base_f;
+    ivec2 base = ivec2(base_f);
+
+    float z = max(-pos.z, 1e-4);
+    float inv_tol = 1.0 / (0.01 + 0.02 * z);
+
+    vec3 sum_gi = vec3(0);
+    vec3 sum_bend = vec3(0);
+    float sum_w = 0.0;
+    float best_rel = 1e30;
+    for (int i = 0; i < 4; ++i)
+    {
+        ivec2 o = ivec2(i & 1, i >> 1);
+        ivec2 t = clamp(base + o, ivec2(0), hi_max);
+        vec4 g = texelFetch(fs_indirect_gi, t, 0);
+        if (g.a <= 0.0)
+        {
+            continue; // sky under that texel
+        }
+        vec4 b = texelFetch(fs_indirect_bent, t, 0);
+        float rel = abs(g.a - z) * inv_tol;
+        vec2 tent = mix(vec2(1.0) - f, f, vec2(o));
+        float w = tent.x * tent.y / (1.0 + rel * rel * 4.0);
+        sum_gi += w * g.rgb;
+        sum_bend += w * b.xyz;
+        sum_w += w;
+        if (rel < best_rel)
+        {
+            best_rel = rel;
+            gi = g.rgb;
+            bend = b.xyz;
+        }
+    }
+    if (sum_w > 1e-4)
+    {
+        gi = sum_gi / sum_w;
+        bend = sum_bend / sum_w;
+    }
+    gi *= fs_indirect_params.x;
+    bend *= fs_indirect_params.y;
 }
 #endif
 
@@ -330,6 +399,27 @@ void main()
 
     vec3  radiance  = vec3(0);
 
+    // Firestorm inputs to the ambient and reflection terms below: the half-resolution SSR, the
+    // bent normal the irradiance lobe looks along, and the bounced light
+    vec4 fs_ssr = vec4(0);
+    bool fs_ssr_given = false;
+    vec3 fs_amb_norm = gb.normal;
+    vec3 fs_gi = vec3(0);
+    if (needs_atmos)
+    {
+#ifdef FS_SSR_HALF
+        fs_ssr = fsSSRHalfUpsample(pos.xyz, gb.normal);
+        fs_ssr_given = true;
+#endif
+#ifdef FS_INDIRECT
+        vec3 fs_bend;
+        fsIndirectUpsample(pos.xyz, fs_gi, fs_bend);
+        // The bend was measured on the depth buffer's surface; added to the shading normal, it
+        // keeps the normal map's detail and leans it the way the open sky is
+        fs_amb_norm = normalize(gb.normal + fs_bend);
+#endif
+    }
+
     if (is_pbr)
     {
         vec3 orm = spec.rgb;
@@ -347,8 +437,8 @@ void main()
         // PBR IBL
         float gloss      = 1.0 - perceptualRoughness;
 
-#ifdef FS_SSR_HALF
-        sampleReflectionProbesFSHalfSSR(irradiance, radiance, tc, pos.xyz, gb.normal, gloss, amblit_linear, fsSSRHalfUpsample(pos.xyz, gb.normal));
+#if defined(FS_SSR_HALF) || defined(FS_INDIRECT)
+        sampleReflectionProbesFS(irradiance, radiance, tc, pos.xyz, gb.normal, fs_amb_norm, gloss, amblit_linear, fs_ssr_given, fs_ssr);
 #else
         sampleReflectionProbes(irradiance, radiance, tc, pos.xyz, gb.normal, gloss, false, amblit_linear);
 #endif
@@ -380,6 +470,8 @@ void main()
         color = pbrBaseLight(diffuseColor, specularColor, metallic, v, gb.normal, perceptualRoughness, light_dir, sunlit_linear, scol, radiance, irradiance, colorEmissive, visibility, additive, atten, micro);
         // Light through the leaf takes its colour twice, so it comes out more saturated
         color += fs_leaf_light * diffuseColor * diffuseColor / max(dot(diffuseColor, vec3(0.3333)), 0.05);
+        // Light bounced from nearby surfaces, on the diffuse albedo like the ambient light
+        color += fs_gi * diffuseColor;
     }
     else if (GET_GBUFFER_FLAG(gb.gbufferFlag, GBUFFER_FLAG_HAS_HDRI))
     {
@@ -416,13 +508,14 @@ void main()
         vec3 glossenv = vec3(0);
         vec3 legacyenv = vec3(0);
 
-#ifdef FS_SSR_HALF
-        sampleReflectionProbesLegacyFSHalfSSR(irradiance, glossenv, legacyenv, tc, pos.xyz, gb.normal, spec.a, envIntensity, amblit_linear, fsSSRHalfUpsample(pos.xyz, gb.normal));
+#if defined(FS_SSR_HALF) || defined(FS_INDIRECT)
+        sampleReflectionProbesLegacyFS(irradiance, glossenv, legacyenv, tc, pos.xyz, gb.normal, fs_amb_norm, spec.a, envIntensity, amblit_linear, fs_ssr_given, fs_ssr);
 #else
         sampleReflectionProbesLegacy(irradiance, glossenv, legacyenv, tc, pos.xyz, gb.normal, spec.a, envIntensity, false, amblit_linear);
 #endif
 
         adjustIrradiance(irradiance, ambocc);
+        irradiance += fs_gi; // light bounced from nearby surfaces (FSRenderSSGI)
 
         // The environment lobes get the same ambient visibility the diffuse one does.
         // adjustIrradiance spends the screen-space buffer on irradiance alone, so a legacy

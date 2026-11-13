@@ -866,6 +866,7 @@ public:
         // </FS:Trish>
         LLRenderTarget          fsGTAOHalf; // <FS:Trish/> Half-resolution GTAO, allocated on use (main pack only)
         LLRenderTarget          fsSSRHalf; // <FS:Trish/> Half-resolution SSR, allocated on use (main pack only)
+        LLRenderTarget          fsIndirectHalf; // <FS:Trish/> Bent normals and indirect light before the temporal blend, two attachments
 
         //sun shadow map
         LLRenderTarget          shadow[4];
@@ -910,6 +911,11 @@ public:
     LLRenderTarget          mFSSpotVolumeHistory[2];
     U32                     mFSSpotVolumeHistoryIndex = 0;
     U32                     mFSSpotVolumeHistoryFrame = 0; // frame the history was last written, 0 none
+    // </FS:Trish>
+    // <FS:Trish> FSRenderBentNormals, FSRenderSSGI: this frame's blended result and the last frame's, swapped each frame
+    LLRenderTarget          mFSIndirectHistory[2];
+    U32                     mFSIndirectHistoryIndex = 0;
+    U32                     mFSIndirectHistoryFrame = 0; // frame the history was last written, 0 none
     // </FS:Trish>
     static constexpr U32    FS_BLOOM_MAX_LEVELS = 8;
     LLRenderTarget          mBloomLevels[FS_BLOOM_MAX_LEVELS];

@@ -3842,7 +3842,7 @@
              bottom="-1">
                 <panel
                  follows="left|top"
-                 height="1257"
+                 height="1369"
                  layout="topleft"
                  left="0"
                  name="experimental_rendering_settings"
@@ -3959,7 +3959,7 @@
                      width="120">
                         <button.commit_callback
                          function="FSExperimental.ResetSection"
-                         parameter="FSRenderGTAO,FSRenderGTAORadius,FSRenderGTAOIntensity,FSRenderGTAOSlices,FSRenderGTAOHalfRes" />
+                         parameter="FSRenderGTAO,FSRenderGTAORadius,FSRenderGTAOIntensity,FSRenderGTAOSlices,FSRenderGTAOHalfRes,FSRenderBentNormals,FSRenderBentNormalStrength,FSRenderSSGI,FSRenderSSGIStrength,FSRenderSSGIRadius" />
                     </button>
                     <check_box
                      control_name="FSRenderGTAO"
@@ -4063,6 +4063,80 @@
                      tool_tip="EXPERIMENTAL. Computes GTAO once per 2x2 pixels and upsamples it along depth and normal edges, so it does not bleed across silhouettes. Saves most of the GTAO cost; very fine creases get slightly softer."
                      top="272"
                      width="455" />
+                    <check_box
+                     control_name="FSRenderBentNormals"
+                     follows="left|top"
+                     height="20"
+                     label="Bent normals for ambient light"
+                     layout="topleft"
+                     left="15"
+                     name="fs_fsrenderbentnormals"
+                     tool_tip="EXPERIMENTAL. Looks up the ambient light in the direction each point sees the most open space, instead of straight out from the surface. Stops ambient light leaking into creases, folds and corners. Found at half resolution together with the indirect light below; cheap on its own. Rebuilds shaders."
+                     top="300"
+                     width="475" />
+                    <check_box
+                     control_name="FSRenderSSGI"
+                     follows="left|top"
+                     height="20"
+                     label="Indirect light bounce (half resolution)"
+                     layout="topleft"
+                     left="15"
+                     name="fs_fsrenderssgi"
+                     tool_tip="EXPERIMENTAL. One bounce of light from nearby surfaces on screen: a red wall tints the floor next to it, sunlit ground lights the underside of things, a neon sign lights its surroundings. Found at half resolution and blended over several frames, so it settles in a moment after fast movement. Only what is on screen can bounce light. Rebuilds shaders."
+                     top="328"
+                     width="475" />
+                    <text
+                     follows="left|top"
+                     height="18"
+                     layout="topleft"
+                     left="35"
+                     name="fs_fsrenderssgistrength_label"
+                     tool_tip="EXPERIMENTAL. How much bounced light is added. 1 is the physically based amount."
+                     top="358"
+                     width="285">
+                        Indirect light strength
+                    </text>
+                    <spinner
+                     control_name="FSRenderSSGIStrength"
+                     decimal_digits="2"
+                     enabled_control="FSRenderSSGI"
+                     follows="left|top"
+                     height="20"
+                     increment="0.05"
+                     layout="topleft"
+                     left="330"
+                     max_val="4"
+                     min_val="0"
+                     name="fs_fsrenderssgistrength"
+                     tool_tip="EXPERIMENTAL. How much bounced light is added. 1 is the physically based amount."
+                     top="356"
+                     width="100" />
+                    <text
+                     follows="left|top"
+                     height="18"
+                     layout="topleft"
+                     left="35"
+                     name="fs_fsrenderssgiradius_label"
+                     tool_tip="EXPERIMENTAL. How far around each point the indirect light looks for surfaces to bounce from, in metres. Larger reaches further and is noisier."
+                     top="386"
+                     width="285">
+                        Indirect light radius (m)
+                    </text>
+                    <spinner
+                     control_name="FSRenderSSGIRadius"
+                     decimal_digits="1"
+                     enabled_control="FSRenderSSGI"
+                     follows="left|top"
+                     height="20"
+                     increment="0.1"
+                     layout="topleft"
+                     left="330"
+                     max_val="8"
+                     min_val="0.25"
+                     name="fs_fsrenderssgiradius"
+                     tool_tip="EXPERIMENTAL. How far around each point the indirect light looks for surfaces to bounce from, in metres. Larger reaches further and is noisier."
+                     top="384"
+                     width="100" />
                     <text
                      follows="left|top"
                      font="SansSerifBold"
@@ -4070,7 +4144,7 @@
                      layout="topleft"
                      left="15"
                      name="fs_heading_dynamic_resolution"
-                     top="314"
+                     top="426"
                      width="340">
                         Dynamic resolution
                     </text>
@@ -4082,7 +4156,7 @@
                      left="370"
                      name="reset_fs_heading_dynamic_resolution"
                      tool_tip="Set every option in &quot;Dynamic resolution&quot; back to its default value."
-                     top="313"
+                     top="425"
                      width="120">
                         <button.commit_callback
                          function="FSExperimental.ResetSection"
@@ -4097,7 +4171,7 @@
                      left="15"
                      name="fs_fsrenderdynamicresolution"
                      tool_tip="EXPERIMENTAL. When the frame rate drops below the target because the graphics card is the bottleneck, render the 3D scene at a lower resolution and upscale it with sharpening. The UI stays sharp. Has no effect while a resolution divisor or multiplier is set."
-                     top="340"
+                     top="452"
                      width="475" />
                     <text
                      follows="left|top"
@@ -4106,7 +4180,7 @@
                      left="35"
                      name="fs_fsrenderdynamicresolutiontargetfps_label"
                      tool_tip="EXPERIMENTAL. Frame rate to keep. 0 uses your frame rate limit if one is set, else 60."
-                     top="368"
+                     top="480"
                      width="285">
                         Target frame rate
                     </text>
@@ -4123,7 +4197,7 @@
                      min_val="0"
                      name="fs_fsrenderdynamicresolutiontargetfps"
                      tool_tip="EXPERIMENTAL. Frame rate to keep. 0 uses your frame rate limit if one is set, else 60."
-                     top="366"
+                     top="478"
                      width="100" />
                     <text
                      follows="left|top"
@@ -4132,7 +4206,7 @@
                      left="35"
                      name="fs_fsrenderdynamicresolutionminscale_label"
                      tool_tip="EXPERIMENTAL. Lowest scene resolution allowed, as a fraction of the window size. Lower is faster but softer."
-                     top="396"
+                     top="508"
                      width="285">
                         Minimum resolution scale
                     </text>
@@ -4149,7 +4223,7 @@
                      min_val="0.5"
                      name="fs_fsrenderdynamicresolutionminscale"
                      tool_tip="EXPERIMENTAL. Lowest scene resolution allowed, as a fraction of the window size. Lower is faster but softer."
-                     top="394"
+                     top="506"
                      width="100" />
                     <text
                      follows="left|top"
@@ -4158,7 +4232,7 @@
                      left="35"
                      name="fs_fsrenderdynamicresolutionsharpness_label"
                      tool_tip="EXPERIMENTAL. Extra sharpening when the scene is upscaled. 0 keeps the plain bicubic filter."
-                     top="424"
+                     top="536"
                      width="285">
                         Upscale sharpness
                     </text>
@@ -4174,7 +4248,7 @@
                      min_val="0"
                      name="fs_fsrenderdynamicresolutionsharpness"
                      tool_tip="EXPERIMENTAL. Extra sharpening when the scene is upscaled. 0 keeps the plain bicubic filter."
-                     top="422"
+                     top="534"
                      width="100" />
                     <text
                      follows="left|top"
@@ -4183,7 +4257,7 @@
                      left="35"
                      name="fs_fsrenderdynamicresolutioninterval_label"
                      tool_tip="EXPERIMENTAL. Minimum time between resolution changes. Each change causes a brief hitch."
-                     top="452"
+                     top="564"
                      width="285">
                         Seconds between changes
                     </text>
@@ -4200,7 +4274,7 @@
                      min_val="1"
                      name="fs_fsrenderdynamicresolutioninterval"
                      tool_tip="EXPERIMENTAL. Minimum time between resolution changes. Each change causes a brief hitch."
-                     top="450"
+                     top="562"
                      width="100" />
                     <text
                      follows="left|top"
@@ -4209,7 +4283,7 @@
                      left="35"
                      name="fs_fsrenderupscaler_label"
                      tool_tip="EXPERIMENTAL. How the scene is enlarged to the window when it renders below window size (dynamic resolution, or a resolution multiplier below 1). Standard: the built-in sharpened filter. NVIDIA Image Scaling: edge-directed scaling with adaptive sharpening, works on any graphics card; its strength follows the Sharpness setting and it replaces the CAS sharpening on those frames. Reloads shaders."
-                     top="484"
+                     top="596"
                      width="285">
                         Upscaler
                     </text>
@@ -4221,7 +4295,7 @@
                      left="330"
                      name="fs_fsrenderupscaler"
                      tool_tip="EXPERIMENTAL. How the scene is enlarged to the window when it renders below window size (dynamic resolution, or a resolution multiplier below 1). Standard: the built-in sharpened filter. NVIDIA Image Scaling: edge-directed scaling with adaptive sharpening, works on any graphics card; its strength follows the Sharpness setting and it replaces the CAS sharpening on those frames. Reloads shaders."
-                     top="482"
+                     top="594"
                      width="160">
                         <combo_box.item
                          label="Standard"
@@ -4239,7 +4313,7 @@
                      layout="topleft"
                      left="15"
                      name="fs_heading_variable_rate_shading"
-                     top="524"
+                     top="636"
                      width="340">
                         Variable rate shading
                     </text>
@@ -4251,7 +4325,7 @@
                      left="370"
                      name="reset_fs_heading_variable_rate_shading"
                      tool_tip="Set every option in &quot;Variable rate shading&quot; back to its default value."
-                     top="523"
+                     top="635"
                      width="120">
                         <button.commit_callback
                          function="FSExperimental.ResetSection"
@@ -4266,7 +4340,7 @@
                      left="15"
                      name="fs_fsrendervrs"
                      tool_tip="EXPERIMENTAL. NVIDIA RTX / GTX 16xx (Turing) or newer only; does nothing on other graphics cards. Shades low-detail parts of the scene (flat or low-contrast surfaces, the sky, areas blurred by depth of field) at a coarser rate to save GPU time in the opaque geometry pass. Edges and fine detail stay at full rate. Snapshots are always rendered at full rate."
-                     top="550"
+                     top="662"
                      width="475" />
                     <text
                      follows="left|top"
@@ -4275,7 +4349,7 @@
                      left="35"
                      name="fs_fsrendervrsquality_label"
                      tool_tip="EXPERIMENTAL. NVIDIA RTX / Turing or newer only. Higher keeps more of the scene at full shading rate (better quality, smaller saving); lower saves more but can soften textures on low-contrast surfaces."
-                     top="578"
+                     top="690"
                      width="285">
                         Quality
                     </text>
@@ -4292,7 +4366,7 @@
                      min_val="0.0"
                      name="fs_fsrendervrsquality"
                      tool_tip="EXPERIMENTAL. NVIDIA RTX / Turing or newer only. Higher keeps more of the scene at full shading rate (better quality, smaller saving); lower saves more but can soften textures on low-contrast surfaces."
-                     top="576"
+                     top="688"
                      width="100" />
                     <text
                      follows="left|top"
@@ -4301,7 +4375,7 @@
                      left="35"
                      name="fs_fsrendervrsperiphery_label"
                      tool_tip="EXPERIMENTAL. NVIDIA RTX / Turing or newer only. 0 treats the whole screen alike; higher values shade the edges and corners of the screen more coarsely than the centre. Strong edges always stay sharp."
-                     top="606"
+                     top="718"
                      width="285">
                         Coarser at screen edges
                     </text>
@@ -4318,7 +4392,7 @@
                      min_val="0.0"
                      name="fs_fsrendervrsperiphery"
                      tool_tip="EXPERIMENTAL. NVIDIA RTX / Turing or newer only. 0 treats the whole screen alike; higher values shade the edges and corners of the screen more coarsely than the centre. Strong edges always stay sharp."
-                     top="604"
+                     top="716"
                      width="100" />
                     <text
                      follows="left|top"
@@ -4327,7 +4401,7 @@
                      layout="topleft"
                      left="15"
                      name="fs_heading_reflection_probes"
-                     top="646"
+                     top="758"
                      width="340">
                         Reflection probes
                     </text>
@@ -4339,7 +4413,7 @@
                      left="370"
                      name="reset_fs_heading_reflection_probes"
                      tool_tip="Set every option in &quot;Reflection probes&quot; back to its default value."
-                     top="645"
+                     top="757"
                      width="120">
                         <button.commit_callback
                          function="FSExperimental.ResetSection"
@@ -4354,7 +4428,7 @@
                      left="15"
                      name="fs_fsperfprobeupdatepriority"
                      tool_tip="EXPERIMENTAL. Refreshes the reflection probes you can see, and the ones near you, before the ones off screen or far away. Probes that are out of sight still get refreshed, just less often. Off: the standard order."
-                     top="672"
+                     top="784"
                      width="475" />
                     <check_box
                      control_name="FSPerfProbeSkipUnchanged"
@@ -4365,7 +4439,7 @@
                      left="15"
                      name="fs_fsperfprobeskipunchanged"
                      tool_tip="EXPERIMENTAL. Does not re-render a reflection probe while nothing around it has changed: same sun position and sky light, no objects or terrain near it built or changed. Saves the GPU time of re-rendering the scene for probes in a static scene. Each probe is still refreshed at least every 'Longest time between refreshes', and every probe refreshes when the sky changes."
-                     top="698"
+                     top="810"
                      width="475" />
                     <text
                      follows="left|top"
@@ -4374,7 +4448,7 @@
                      left="35"
                      name="fs_fsperfprobemaxstaleseconds_label"
                      tool_tip="EXPERIMENTAL. With 'Skip refreshing unchanged probes', the longest a probe is left alone even when nothing seems to have changed. Lower catches changes the check misses sooner; higher saves more."
-                     top="726"
+                     top="838"
                      width="285">
                         Longest time between refreshes (s)
                     </text>
@@ -4391,7 +4465,7 @@
                      min_val="10"
                      name="fs_fsperfprobemaxstaleseconds"
                      tool_tip="EXPERIMENTAL. With 'Skip refreshing unchanged probes', the longest a probe is left alone even when nothing seems to have changed. Lower catches changes the check misses sooner; higher saves more."
-                     top="724"
+                     top="836"
                      width="100" />
                     <text
                      follows="left|top"
@@ -4400,7 +4474,7 @@
                      left="35"
                      name="fs_fsperfprobesunanglethreshold_label"
                      tool_tip="EXPERIMENTAL. With 'Skip refreshing unchanged probes', how far the sun or moon may move before probes are refreshed. The default day cycle moves the sun about 1.5 degrees a minute."
-                     top="754"
+                     top="866"
                      width="285">
                         Sun movement before refresh (degrees)
                     </text>
@@ -4417,7 +4491,7 @@
                      min_val="0.5"
                      name="fs_fsperfprobesunanglethreshold"
                      tool_tip="EXPERIMENTAL. With 'Skip refreshing unchanged probes', how far the sun or moon may move before probes are refreshed. The default day cycle moves the sun about 1.5 degrees a minute."
-                     top="752"
+                     top="864"
                      width="100" />
                     <text
                      follows="left|top"
@@ -4426,7 +4500,7 @@
                      left="35"
                      name="fs_fsperfproberealtimefacesperframe_label"
                      tool_tip="EXPERIMENTAL. With reflection detail set to Real-time, how many of the six sides of the real-time probe are rendered each frame. 6 is standard. 1 or 2 spreads the work over several frames for a large frame-time saving; the probe updates a little less often but never shows a half-finished cube."
-                     top="782"
+                     top="894"
                      width="285">
                         Real-time probe faces per frame
                     </text>
@@ -4442,7 +4516,7 @@
                      min_val="1"
                      name="fs_fsperfproberealtimefacesperframe"
                      tool_tip="EXPERIMENTAL. With reflection detail set to Real-time, how many of the six sides of the real-time probe are rendered each frame. 6 is standard. 1 or 2 spreads the work over several frames for a large frame-time saving; the probe updates a little less often but never shows a half-finished cube."
-                     top="780"
+                     top="892"
                      width="100" />
                     <text
                      follows="left|top"
@@ -4451,7 +4525,7 @@
                      left="35"
                      name="fs_fsrenderprobefilterquality_label"
                      tool_tip="EXPERIMENTAL. How many samples are used to blur probe reflections for rough surfaces. 1 is standard. Higher removes faint ghost copies of bright objects in semi-rough reflections; lower is slightly cheaper and blurrier. Only costs time when a probe finishes updating."
-                     top="810"
+                     top="922"
                      width="285">
                         Rough reflection filter quality
                     </text>
@@ -4467,7 +4541,7 @@
                      min_val="0.25"
                      name="fs_fsrenderprobefilterquality"
                      tool_tip="EXPERIMENTAL. How many samples are used to blur probe reflections for rough surfaces. 1 is standard. Higher removes faint ghost copies of bright objects in semi-rough reflections; lower is slightly cheaper and blurrier. Only costs time when a probe finishes updating."
-                     top="808"
+                     top="920"
                      width="100" />
                     <text
                      follows="left|top"
@@ -4476,7 +4550,7 @@
                      left="35"
                      name="fs_fsrenderprobeblendsmooth_label"
                      tool_tip="EXPERIMENTAL. How softly reflections fade between overlapping reflection probes. 0 is standard (a straight fade); 1 is the smoothest, hiding the visible seam where one probe's area ends and another's begins."
-                     top="838"
+                     top="950"
                      width="285">
                         Probe edge blending smoothness
                     </text>
@@ -4492,7 +4566,7 @@
                      min_val="0"
                      name="fs_fsrenderprobeblendsmooth"
                      tool_tip="EXPERIMENTAL. How softly reflections fade between overlapping reflection probes. 0 is standard (a straight fade); 1 is the smoothest, hiding the visible seam where one probe's area ends and another's begins."
-                     top="836"
+                     top="948"
                      width="100" />
                     <text
                      follows="left|top"
@@ -4501,7 +4575,7 @@
                      layout="topleft"
                      left="15"
                      name="fs_heading_shading"
-                     top="878"
+                     top="990"
                      width="340">
                         Shading
                     </text>
@@ -4513,7 +4587,7 @@
                      left="370"
                      name="reset_fs_heading_shading"
                      tool_tip="Set every option in &quot;Shading&quot; back to its default value."
-                     top="877"
+                     top="989"
                      width="120">
                         <button.commit_callback
                          function="FSExperimental.ResetSection"
@@ -4528,7 +4602,7 @@
                      left="15"
                      name="fs_fsrenderspecularocclusion"
                      tool_tip="EXPERIMENTAL. Makes reflections respect ambient occlusion the way a glossy surface really would: reflections inside creases, corners and under objects fade at grazing views, while a reflection looking straight out of an opening stays bright. Works best with Ambient Occlusion enabled or PBR materials that have an occlusion map. Almost no GPU cost."
-                     top="904"
+                     top="1016"
                      width="475" />
                     <check_box
                      control_name="FSRenderMicroShadows"
@@ -4539,7 +4613,7 @@
                      left="15"
                      name="fs_fsrendermicroshadows"
                      tool_tip="EXPERIMENTAL. Lets the fine detail of normal maps (brick, fabric, bark) shadow itself when the sun or a local light comes in at a low angle, for more depth. Needs ambient occlusion: from Ambient Occlusion or a PBR material's occlusion map. Almost no GPU cost."
-                     top="930"
+                     top="1042"
                      width="475" />
                     <text
                      follows="left|top"
@@ -4548,7 +4622,7 @@
                      left="35"
                      name="fs_fsrenderspecularocclusionstrength_label"
                      tool_tip="EXPERIMENTAL. 0 keeps the old, plain occlusion of reflections, 1 is the full view-dependent specular occlusion."
-                     top="958"
+                     top="1070"
                      width="285">
                         Specular occlusion strength
                     </text>
@@ -4565,7 +4639,7 @@
                      min_val="0"
                      name="fs_fsrenderspecularocclusionstrength"
                      tool_tip="EXPERIMENTAL. 0 keeps the old, plain occlusion of reflections, 1 is the full view-dependent specular occlusion."
-                     top="956"
+                     top="1068"
                      width="100" />
                     <text
                      follows="left|top"
@@ -4574,7 +4648,7 @@
                      left="35"
                      name="fs_fsrendermicroshadowsstrength_label"
                      tool_tip="EXPERIMENTAL. How strongly normal-map detail shadows itself at low light angles. 0 is none."
-                     top="986"
+                     top="1098"
                      width="285">
                         Micro-shadow strength
                     </text>
@@ -4591,7 +4665,7 @@
                      min_val="0"
                      name="fs_fsrendermicroshadowsstrength"
                      tool_tip="EXPERIMENTAL. How strongly normal-map detail shadows itself at low light angles. 0 is none."
-                     top="984"
+                     top="1096"
                      width="100" />
                     <text
                      follows="left|top"
@@ -4600,7 +4674,7 @@
                      layout="topleft"
                      left="15"
                      name="rendering_heading"
-                     top="1026"
+                     top="1138"
                      width="340">
                         Rendering workarounds
                     </text>
@@ -4612,7 +4686,7 @@
                      left="370"
                      name="reset_rendering_heading"
                      tool_tip="Set every option in &quot;Rendering and diagnostics&quot; back to its default value."
-                     top="1025"
+                     top="1137"
                      width="120">
                         <button.commit_callback
                          function="FSExperimental.ResetSection"
@@ -4627,7 +4701,7 @@
                      left="15"
                      name="render_alpha_blend_shadows"
                      tool_tip="Render alpha-blended objects into shadow maps; animated transparent effects may be expensive shadow casters"
-                     top="1049"
+                     top="1161"
                      width="475" />
                     <check_box
                      control_name="RLVaDebugSphereUseOpaqueDepth"
@@ -4638,7 +4712,7 @@
                      left="15"
                      name="rlva_debug_sphere_opaque_depth"
                      tool_tip="Use a pre-alpha depth snapshot so alpha wearables do not punch through the RLVa sphere effect"
-                     top="1077"
+                     top="1189"
                      width="475" />
                     <check_box
                      control_name="RenderAMDDisableShaderCache"
@@ -4649,7 +4723,7 @@
                      left="15"
                      name="render_amd_disable_shader_cache"
                      tool_tip="Bypass viewer shader binary caching on Windows AMD; restart required"
-                     top="1123"
+                     top="1235"
                      width="475" />
                     <check_box
                      control_name="RenderAMDDisableTextureThreading"
@@ -4660,7 +4734,7 @@
                      left="15"
                      name="render_amd_disable_texture_threading"
                      tool_tip="Force main-thread texture and media uploads on Windows AMD; restart required"
-                     top="1146"
+                     top="1258"
                      width="475" />
                     <check_box
                      control_name="RenderRiggedDirectNormals"
@@ -4671,7 +4745,7 @@
                      left="15"
                      name="render_rigged_direct_normals"
                      tool_tip="Transform rigged mesh normals and tangents as directions; restart required"
-                     top="1169"
+                     top="1281"
                      width="475" />
                     <check_box
                      control_name="RenderRiggedLocalOrigin"
@@ -4682,7 +4756,7 @@
                      left="15"
                      name="render_rigged_local_origin"
                      tool_tip="Test avatar-root-relative rigged mesh skinning; restart required"
-                     top="1192"
+                     top="1304"
                      width="475" />
                     <check_box
                      control_name="RenderRiggedPreciseMath"
@@ -4693,7 +4767,7 @@
                      left="15"
                      name="render_rigged_precise_math"
                      tool_tip="Test precise arithmetic and invariant positions in skinning shaders; restart required and may reduce performance"
-                     top="1215"
+                     top="1327"
                      width="475" />
                 </panel>
             </scroll_container>

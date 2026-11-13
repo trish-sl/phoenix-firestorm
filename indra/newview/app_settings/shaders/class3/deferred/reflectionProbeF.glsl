@@ -954,9 +954,11 @@ void tapHeroProbe(inout vec3 glossenv, vec3 pos, vec3 norm, float glossiness)
 
 
 // fs_given: the screen-space reflection was traced beforehand (the half-resolution SSR pass,
-// FSRenderSSRHalfRes) and arrives in fs_ssr, in place of tracing it here
+// FSRenderSSRHalfRes) and arrives in fs_ssr, in place of tracing it here.
+// fs_amb_norm: the direction the irradiance lobe looks up, the normal itself unless the bent
+// normal (FSRenderBentNormals) leans it toward where the surface sees open sky
 void fsDoProbeSample(inout vec3 ambenv, inout vec3 glossenv,
-        vec2 tc, vec3 pos, vec3 norm, float glossiness, bool transparent, vec3 amblit, bool fs_given, vec4 fs_ssr)
+        vec2 tc, vec3 pos, vec3 norm, vec3 fs_amb_norm, float glossiness, bool transparent, vec3 amblit, bool fs_given, vec4 fs_ssr)
 {
     // TODO - don't hard code lods
     float reflection_lods = max_probe_lod;
@@ -975,7 +977,7 @@ void fsDoProbeSample(inout vec3 ambenv, inout vec3 glossenv,
 
     if (classic_mode == 0)
     {
-        sampleProbesAmbientAndGloss(pos, norm, refnormpersp, lod, amblit, ambenv, glossenv);
+        sampleProbesAmbientAndGloss(pos, fs_amb_norm, refnormpersp, lod, amblit, ambenv, glossenv);
     }
     else
     {
@@ -1016,16 +1018,17 @@ void fsDoProbeSample(inout vec3 ambenv, inout vec3 glossenv,
 void doProbeSample(inout vec3 ambenv, inout vec3 glossenv,
         vec2 tc, vec3 pos, vec3 norm, float glossiness, bool transparent, vec3 amblit)
 {
-    fsDoProbeSample(ambenv, glossenv, tc, pos, norm, glossiness, transparent, amblit, false, vec4(0));
+    fsDoProbeSample(ambenv, glossenv, tc, pos, norm, norm, glossiness, transparent, amblit, false, vec4(0));
 }
 
-// sampleReflectionProbes for an opaque surface whose screen-space reflection was traced
-// beforehand at half resolution (softenLightF with FS_SSR_HALF)
-void sampleReflectionProbesFSHalfSSR(inout vec3 ambenv, inout vec3 glossenv,
-        vec2 tc, vec3 pos, vec3 norm, float glossiness, vec3 amblit, vec4 ssr)
+// sampleReflectionProbes for an opaque surface in the soften pass with the Firestorm inputs:
+// the irradiance lobe along amb_norm (the bent normal, FSRenderBentNormals), and the
+// screen-space reflection traced beforehand at half resolution when ssr_given (FSRenderSSRHalfRes)
+void sampleReflectionProbesFS(inout vec3 ambenv, inout vec3 glossenv,
+        vec2 tc, vec3 pos, vec3 norm, vec3 amb_norm, float glossiness, vec3 amblit, bool ssr_given, vec4 ssr)
 {
     preProbeSample(pos);
-    fsDoProbeSample(ambenv, glossenv, tc, pos, norm, glossiness, false, amblit, true, ssr);
+    fsDoProbeSample(ambenv, glossenv, tc, pos, norm, amb_norm, glossiness, false, amblit, ssr_given, ssr);
 }
 
 void sampleReflectionProbes(inout vec3 ambenv, inout vec3 glossenv,
@@ -1100,7 +1103,7 @@ vec4 sampleReflectionProbesDebug(vec3 pos)
 }
 
 void fsSampleReflectionProbesLegacy(inout vec3 ambenv, inout vec3 glossenv, inout vec3 legacyenv,
-        vec2 tc, vec3 pos, vec3 norm, float glossiness, float envIntensity, bool transparent, vec3 amblit, bool fs_given, vec4 fs_ssr)
+        vec2 tc, vec3 pos, vec3 norm, vec3 fs_amb_norm, float glossiness, float envIntensity, bool transparent, vec3 amblit, bool fs_given, vec4 fs_ssr)
 {
     float reflection_lods = max_probe_lod;
     preProbeSample(pos);
@@ -1113,7 +1116,7 @@ void fsSampleReflectionProbesLegacy(inout vec3 ambenv, inout vec3 glossenv, inou
     bool fused = classic_mode == 0 && glossiness > 0.0;
 
     if (classic_mode == 0 && !fused)
-        ambenv = sampleProbeAmbient(pos, norm, amblit);
+        ambenv = sampleProbeAmbient(pos, fs_amb_norm, amblit);
 
     if (glossiness > 0.0)
     {
@@ -1132,7 +1135,7 @@ void fsSampleReflectionProbesLegacy(inout vec3 ambenv, inout vec3 glossenv, inou
         float lod = perceptualRoughness*reflection_lods;
         if (fused)
         {
-            sampleProbesAmbientAndGloss(pos, norm, dominantDir, lod, amblit, ambenv, glossenv);
+            sampleProbesAmbientAndGloss(pos, fs_amb_norm, dominantDir, lod, amblit, ambenv, glossenv);
         }
         else
         {
@@ -1183,15 +1186,15 @@ void fsSampleReflectionProbesLegacy(inout vec3 ambenv, inout vec3 glossenv, inou
 void sampleReflectionProbesLegacy(inout vec3 ambenv, inout vec3 glossenv, inout vec3 legacyenv,
         vec2 tc, vec3 pos, vec3 norm, float glossiness, float envIntensity, bool transparent, vec3 amblit)
 {
-    fsSampleReflectionProbesLegacy(ambenv, glossenv, legacyenv, tc, pos, norm, glossiness, envIntensity, transparent, amblit, false, vec4(0));
+    fsSampleReflectionProbesLegacy(ambenv, glossenv, legacyenv, tc, pos, norm, norm, glossiness, envIntensity, transparent, amblit, false, vec4(0));
 }
 
-// sampleReflectionProbesLegacy for an opaque surface whose screen-space reflection was traced
-// beforehand at half resolution (softenLightF with FS_SSR_HALF)
-void sampleReflectionProbesLegacyFSHalfSSR(inout vec3 ambenv, inout vec3 glossenv, inout vec3 legacyenv,
-        vec2 tc, vec3 pos, vec3 norm, float glossiness, float envIntensity, vec3 amblit, vec4 ssr)
+// sampleReflectionProbesLegacy for an opaque surface in the soften pass with the Firestorm
+// inputs; see sampleReflectionProbesFS
+void sampleReflectionProbesLegacyFS(inout vec3 ambenv, inout vec3 glossenv, inout vec3 legacyenv,
+        vec2 tc, vec3 pos, vec3 norm, vec3 amb_norm, float glossiness, float envIntensity, vec3 amblit, bool ssr_given, vec4 ssr)
 {
-    fsSampleReflectionProbesLegacy(ambenv, glossenv, legacyenv, tc, pos, norm, glossiness, envIntensity, false, amblit, true, ssr);
+    fsSampleReflectionProbesLegacy(ambenv, glossenv, legacyenv, tc, pos, norm, amb_norm, glossiness, envIntensity, false, amblit, ssr_given, ssr);
 }
 
 void applyGlossEnv(inout vec3 color, vec3 glossenv, vec4 spec, vec3 pos, vec3 norm)

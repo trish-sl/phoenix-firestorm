@@ -1633,6 +1633,12 @@ void LLPipeline::releaseScreenBuffers()
     mRT->lightMap.release(); // <FS:Trish/>
     mMainRT.fsGTAOHalf.release(); // <FS:Trish/> Half-resolution GTAO
     mMainRT.fsSSRHalf.release(); // <FS:Trish/> Half-resolution SSR
+    // <FS:Trish> Bent normals and indirect light
+    mMainRT.fsIndirectHalf.release();
+    mFSIndirectHistory[0].release();
+    mFSIndirectHistory[1].release();
+    mFSIndirectHistoryFrame = 0;
+    // </FS:Trish>
     mRlvSphereDepth.release();
 
     mAuxillaryRT.screen.release();
@@ -11597,6 +11603,167 @@ static void fs_bind_ssr_half(LLGLSLShader& soften, LLRenderTarget* ssr_half, LLR
 }
 // </FS:Trish>
 
+// <FS:Trish> Bent normals and screen-space indirect light (FSRenderBentNormals, FSRenderSSGI).
+// Two RGBA16F attachments: indirect light and view depth, bent normal offset and view depth.
+static bool fs_ensure_indirect_target(LLRenderTarget& target, U32 width, U32 height)
+{
+    if (target.isComplete() && target.getWidth() == width && target.getHeight() == height)
+    {
+        return true;
+    }
+    target.release();
+    if (target.allocate(width, height, GL_RGBA16F) && target.addColorAttachment(GL_RGBA16F))
+    {
+        return true;
+    }
+    target.release();
+    return false;
+}
+
+static void fs_release_indirect()
+{
+    gPipeline.mMainRT.fsIndirectHalf.release();
+    gPipeline.mFSIndirectHistory[0].release();
+    gPipeline.mFSIndirectHistory[1].release();
+    gPipeline.mFSIndirectHistoryFrame = 0;
+}
+
+// Finds the bent normals and the bounced light once per 2x2 pixels (fsIndirectHalfF.glsl), then
+// blends them with the last frame's (fsIndirectTemporalF.glsl). Call with the screen bound, before
+// the soften program is bound: the passes nest their own targets. Returns the blended target for
+// the soften pass's upsample, or null when it is off, did not build, or for a probe capture.
+static LLRenderTarget* fs_render_indirect(LLRenderTarget* screen)
+{
+    if (!gFSIndirectHalfProgram.isComplete() || !gFSIndirectTemporalProgram.isComplete() ||
+        !gDeferredSoftenProgram.mDefines.count("FS_INDIRECT"))
+    {
+        if (gPipeline.mFSIndirectHistoryFrame != 0 || gPipeline.mMainRT.fsIndirectHalf.isComplete())
+        {
+            fs_release_indirect();
+        }
+        return nullptr;
+    }
+    if (gCubeSnapshot)
+    {
+        return nullptr;
+    }
+
+    const U32 full_x = screen->getWidth();
+    const U32 full_y = screen->getHeight();
+    const U32 res_x = (full_x + 1) / 2;
+    const U32 res_y = (full_y + 1) / 2;
+
+    LLRenderTarget& raw = gPipeline.mMainRT.fsIndirectHalf;
+    bool history = true;
+    for (LLRenderTarget& target : gPipeline.mFSIndirectHistory)
+    {
+        if (!target.isComplete() || target.getWidth() != res_x || target.getHeight() != res_y)
+        {
+            history = false;
+        }
+    }
+    if (!fs_ensure_indirect_target(raw, res_x, res_y) ||
+        !fs_ensure_indirect_target(gPipeline.mFSIndirectHistory[0], res_x, res_y) ||
+        !fs_ensure_indirect_target(gPipeline.mFSIndirectHistory[1], res_x, res_y))
+    {
+        fs_release_indirect();
+        return nullptr;
+    }
+
+    LL_PROFILE_ZONE_NAMED_CATEGORY_PIPELINE("renderDeferredLighting - indirect half");
+    LL_PROFILE_GPU_ZONE("indirect half");
+
+    static LLCachedControl<F32> radius(gSavedSettings, "FSRenderSSGIRadius", 2.f);
+    const U32 frame = LLFrameTimer::getFrameCount();
+    history = history && gPipeline.mFSIndirectHistoryFrame != 0 && gPipeline.mFSIndirectHistoryFrame + 1 == frame;
+
+    LLGLDisable blend(GL_BLEND);
+    LLGLDepthTest depth(GL_FALSE, GL_FALSE);
+
+    // this frame, noisy
+    {
+        static LLStaticHashedString s_full_res("fs_ind_full_res");
+        static LLStaticHashedString s_params("fs_ind_params");
+        LLGLSLShader& shader = gFSIndirectHalfProgram;
+        raw.bindTarget();
+        gPipeline.bindDeferredShader(shader); // the g-buffer, the scene map, inv_proj
+        shader.uniform2f(s_full_res, (GLfloat)full_x, (GLfloat)full_y);
+        shader.uniform2f(LLShaderMgr::DEFERRED_SCREEN_RES, (GLfloat)full_x, (GLfloat)full_y);
+        shader.uniform4f(s_params, llclamp((F32)radius, 0.25f, 8.f), llmin((F32)full_y * 0.2f, 256.f),
+                         fmodf((F32)(frame % 4096) * 0.618034f, 1.f), 0.f);
+        gPipeline.mScreenTriangleVB->setBuffer();
+        gPipeline.mScreenTriangleVB->drawArrays(LLRender::TRIANGLES, 0, 3);
+        gPipeline.unbindDeferredShader(shader);
+        raw.flush();
+    }
+
+    // blended with the last frames
+    LLRenderTarget& prev = gPipeline.mFSIndirectHistory[gPipeline.mFSIndirectHistoryIndex];
+    LLRenderTarget& next = gPipeline.mFSIndirectHistory[1 - gPipeline.mFSIndirectHistoryIndex];
+    {
+        static LLStaticHashedString s_inv_proj("fs_ind_inv_proj");
+        static LLStaticHashedString s_to_prev("fs_ind_to_prev_view");
+        static LLStaticHashedString s_proj("fs_ind_proj");
+        static LLStaticHashedString s_history("fs_ind_history");
+        const glm::mat4 proj = get_current_projection();
+        LLGLSLShader& shader = gFSIndirectTemporalProgram;
+        next.bindTarget();
+        shader.bind();
+        shader.bindTexture(LLShaderMgr::FS_INDIRECT_GI_MAP, &raw, false, LLTexUnit::TFO_POINT, 0);
+        shader.bindTexture(LLShaderMgr::FS_INDIRECT_BENT_MAP, &raw, false, LLTexUnit::TFO_POINT, 1);
+        shader.bindTexture(LLShaderMgr::FS_INDIRECT_GI_HISTORY, &prev, false, LLTexUnit::TFO_BILINEAR, 0);
+        shader.bindTexture(LLShaderMgr::FS_INDIRECT_BENT_HISTORY, &prev, false, LLTexUnit::TFO_BILINEAR, 1);
+        shader.uniformMatrix4fv(s_inv_proj, 1, GL_FALSE, glm::value_ptr(glm::inverse(proj)));
+        shader.uniformMatrix4fv(s_to_prev, 1, GL_FALSE, glm::value_ptr(gGLInverseDeltaModelView));
+        shader.uniformMatrix4fv(s_proj, 1, GL_FALSE, glm::value_ptr(proj));
+        shader.uniform1f(s_history, history ? 0.9f : 0.f);
+        gPipeline.mScreenTriangleVB->setBuffer();
+        gPipeline.mScreenTriangleVB->drawArrays(LLRender::TRIANGLES, 0, 3);
+        shader.unbind();
+        next.flush();
+    }
+
+    gPipeline.mFSIndirectHistoryIndex = 1 - gPipeline.mFSIndirectHistoryIndex;
+    gPipeline.mFSIndirectHistoryFrame = frame;
+    return &next;
+}
+
+// The soften program's upsample reads the blended result as fs_indirect_gi and fs_indirect_bent
+static void fs_bind_indirect(LLGLSLShader& soften, LLRenderTarget* indirect)
+{
+    const S32 gi_channel = soften.getTextureChannel(LLShaderMgr::FS_INDIRECT_GI_MAP);
+    const S32 bent_channel = soften.getTextureChannel(LLShaderMgr::FS_INDIRECT_BENT_MAP);
+    if (gi_channel < 0 && bent_channel < 0)
+    {
+        return;
+    }
+    static LLCachedControl<bool> ssgi(gSavedSettings, "FSRenderSSGI", false);
+    static LLCachedControl<bool> bent_normals(gSavedSettings, "FSRenderBentNormals", false);
+    static LLCachedControl<F32> ssgi_strength(gSavedSettings, "FSRenderSSGIStrength", 1.f);
+    static LLCachedControl<F32> bent_strength(gSavedSettings, "FSRenderBentNormalStrength", 1.f);
+    static LLStaticHashedString s_params("fs_indirect_params");
+    soften.uniform4f(s_params, ssgi ? llclamp((F32)ssgi_strength, 0.f, 4.f) : 0.f,
+                     bent_normals ? llclamp((F32)bent_strength, 0.f, 2.f) : 0.f, 0.f, 0.f);
+    if (indirect)
+    {
+        soften.bindTexture(LLShaderMgr::FS_INDIRECT_GI_MAP, indirect, false, LLTexUnit::TFO_POINT, 0);
+        soften.bindTexture(LLShaderMgr::FS_INDIRECT_BENT_MAP, indirect, false, LLTexUnit::TFO_POINT, 1);
+    }
+    else
+    {
+        // probe captures: the upsample returns early there, but the samplers still need a 2D texture
+        if (gi_channel >= 0)
+        {
+            gGL.getTexUnit(gi_channel)->bindFast(LLViewerFetchedTexture::sBlackImagep);
+        }
+        if (bent_channel >= 0)
+        {
+            gGL.getTexUnit(bent_channel)->bindFast(LLViewerFetchedTexture::sBlackImagep);
+        }
+    }
+}
+// </FS:Trish>
+
 void LLPipeline::renderDeferredLighting()
 {
     LL_PROFILE_ZONE_SCOPED_CATEGORY_PIPELINE;
@@ -11838,12 +12005,14 @@ void LLPipeline::renderDeferredLighting()
             // <FS:Trish> Half-resolution SSR, traced before the soften program; the pass nests its
             // own target and returns to the screen
             LLRenderTarget* fs_ssr_half = fs_render_ssr_half(screen_target);
+            LLRenderTarget* fs_indirect = fs_render_indirect(screen_target); // bent normals, indirect light
             // </FS:Trish>
 
             LL_PROFILE_ZONE_NAMED_CATEGORY_PIPELINE("renderDeferredLighting - atmospherics");
             LL_PROFILE_GPU_ZONE("atmospherics");
             bindDeferredShader(soften_shader);
             fs_bind_ssr_half(soften_shader, fs_ssr_half, screen_target); // <FS:Trish/>
+            fs_bind_indirect(soften_shader, fs_indirect); // <FS:Trish/>
 
             static LLCachedControl<F32> ssao_scale(gSavedSettings, "RenderSSAOIrradianceScale", 0.5f);
             static LLCachedControl<F32> ssao_max(gSavedSettings, "RenderSSAOIrradianceMax", 0.25f);

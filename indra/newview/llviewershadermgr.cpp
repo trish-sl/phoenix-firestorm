@@ -230,6 +230,8 @@ LLGLSLShader            gFSLocalTonemapLumProgram; // <FS:Trish/> Local tone map
 LLGLSLShader            gFSSkinSSSProgram; // <FS:Trish/>
 LLGLSLShader            gFSGTAOHalfProgram; // <FS:Trish/> Half-resolution GTAO
 LLGLSLShader            gFSSSRHalfProgram; // <FS:Trish/> Half-resolution SSR
+LLGLSLShader            gFSIndirectHalfProgram; // <FS:Trish/> FSRenderBentNormals, FSRenderSSGI
+LLGLSLShader            gFSIndirectTemporalProgram; // <FS:Trish/>
 LLGLSLShader            gDeferredPostGammaCorrectProgram;
 LLGLSLShader            gLegacyPostGammaCorrectProgram;
 LLGLSLShader            gExposureProgram;
@@ -1681,6 +1683,8 @@ bool LLViewerShaderMgr::loadShadersDeferred()
         gDeferredSunProgram.unload();
         gFSGTAOHalfProgram.unload(); // <FS:Trish/> Half-resolution GTAO
         gFSSSRHalfProgram.unload(); // <FS:Trish/> Half-resolution SSR
+        gFSIndirectHalfProgram.unload(); // <FS:Trish/>
+        gFSIndirectTemporalProgram.unload(); // <FS:Trish/>
         gDeferredBlurLightProgram.unload();
         gDeferredSoftenProgram.unload();
         gDeferredShadowProgram.unload();
@@ -1745,6 +1749,8 @@ bool LLViewerShaderMgr::loadShadersDeferred()
         gFSSkinSSSProgram.unload(); // <FS:Trish/>
         gFSGTAOHalfProgram.unload(); // <FS:Trish/> Half-resolution GTAO
         gFSSSRHalfProgram.unload(); // <FS:Trish/> Half-resolution SSR
+        gFSIndirectHalfProgram.unload(); // <FS:Trish/>
+        gFSIndirectTemporalProgram.unload(); // <FS:Trish/>
         // <FS:Trish> WBOIT
         gFSWBOITCompositeProgram.unload();
         gFSAlphaWBOITShaders = false;
@@ -2932,6 +2938,49 @@ bool LLViewerShaderMgr::loadShadersDeferred()
                 gFSSSRHalfProgram.unload();
             }
         }
+
+        // <FS:Trish> Bent normals and screen-space indirect light: found at half resolution
+        // beforehand (fsIndirectHalfF.glsl), blended with the last frames (fsIndirectTemporalF.glsl),
+        // and upsampled by the soften pass (FS_INDIRECT)
+        gFSIndirectHalfProgram.unload();
+        gFSIndirectTemporalProgram.unload();
+        static LLCachedControl<bool> bent_normals(gSavedSettings, "FSRenderBentNormals", false);
+        static LLCachedControl<bool> ssgi(gSavedSettings, "FSRenderSSGI", false);
+        if ((bent_normals || ssgi) && gDeferredSoftenProgram.mFeatures.hasReflectionProbes)
+        {
+            gFSIndirectHalfProgram.mName = "FS Indirect Half Resolution";
+            gFSIndirectHalfProgram.mFeatures = gDeferredSoftenProgram.mFeatures;
+            gFSIndirectHalfProgram.mShaderFiles.clear();
+            gFSIndirectHalfProgram.clearPermutations();
+            add_common_permutations(&gFSIndirectHalfProgram);
+            gFSIndirectHalfProgram.mShaderFiles.push_back(make_pair("deferred/postDeferredNoTCV.glsl", GL_VERTEX_SHADER));
+            gFSIndirectHalfProgram.mShaderFiles.push_back(make_pair("deferred/fsIndirectHalfF.glsl", GL_FRAGMENT_SHADER));
+            if (ssgi)
+            {
+                gFSIndirectHalfProgram.addPermutation("FS_SSGI", "1");
+            }
+            gFSIndirectHalfProgram.mShaderLevel = gDeferredSoftenProgram.mShaderLevel;
+
+            gFSIndirectTemporalProgram.mName = "FS Indirect Temporal";
+            gFSIndirectTemporalProgram.mFeatures.isDeferred = false;
+            gFSIndirectTemporalProgram.mShaderFiles.clear();
+            gFSIndirectTemporalProgram.clearPermutations();
+            gFSIndirectTemporalProgram.mShaderFiles.push_back(make_pair("deferred/postDeferredNoTCV.glsl", GL_VERTEX_SHADER));
+            gFSIndirectTemporalProgram.mShaderFiles.push_back(make_pair("deferred/fsIndirectTemporalF.glsl", GL_FRAGMENT_SHADER));
+            gFSIndirectTemporalProgram.mShaderLevel = mShaderLevel[SHADER_DEFERRED];
+
+            if (gFSIndirectHalfProgram.createShader() && gFSIndirectTemporalProgram.createShader())
+            {
+                gDeferredSoftenProgram.addPermutation("FS_INDIRECT", "1");
+            }
+            else
+            {
+                LL_WARNS("ShaderLoading") << "FS bent normals and indirect light failed to build, turned off" << LL_ENDL;
+                gFSIndirectHalfProgram.unload();
+                gFSIndirectTemporalProgram.unload();
+            }
+        }
+        // </FS:Trish>
 
         // Coloured shadows: sunlight through translucent casters
         //success = gDeferredSoftenProgram.createShader();

@@ -385,6 +385,12 @@ public:
         FS_WATER_FOG_VIEW_TO_WORLD2,        // "fs_water_fog_vtw2"
         // </FS:Trish>
         FS_SSR_HALF_MAP,                    // "fs_ssr_half_map" <FS:Trish/> half-resolution SSR (FSRenderSSRHalfRes)
+        // <FS:Trish> Bent normals and screen-space indirect light (FSRenderBentNormals, FSRenderSSGI)
+        FS_INDIRECT_GI_MAP,                 // "fs_indirect_gi"
+        FS_INDIRECT_BENT_MAP,               // "fs_indirect_bent"
+        FS_INDIRECT_GI_HISTORY,             // "fs_indirect_gi_history"
+        FS_INDIRECT_BENT_HISTORY,           // "fs_indirect_bent_history"
+        // </FS:Trish>
         END_RESERVED_UNIFORMS
     } eGLSLReservedUniforms;
     // clang-format on
