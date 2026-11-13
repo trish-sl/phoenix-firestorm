@@ -2904,14 +2904,25 @@ bool LLViewerShaderMgr::loadShadersDeferred()
             gDeferredSoftenProgram.addPermutation("FS_COLORED_SHADOW", "1");
             gDeferredSoftenProgram.mShaderFiles.push_back(make_pair("deferred/fsColoredShadowF.glsl", GL_FRAGMENT_SHADER));
         }
+        // unload() below clears the files, permutations and features: keep them to rebuild from
+        const auto soften_files = gDeferredSoftenProgram.mShaderFiles;
+        const auto soften_defines = gDeferredSoftenProgram.mDefines;
+        const LLShaderFeatures soften_features = gDeferredSoftenProgram.mFeatures;
+        const S32 soften_level = gDeferredSoftenProgram.mShaderLevel;
         success = gDeferredSoftenProgram.createShader();
         if (!success && gFSColoredShadowShaders)
         {   // e.g. out of texture units: build it as before and leave coloured shadows off
             LL_WARNS("ShaderLoading") << "Deferred Soften Shader failed to build with coloured shadows, building it without" << LL_ENDL;
             unload_fs_colored_shadow_casters();
             gDeferredSoftenProgram.unload();
+            // It used to remove the permutation and pop the last file after unload() had already
+            // emptied both: pop_back() on an empty list, and a rebuild with no files or features.
+            gDeferredSoftenProgram.mShaderFiles = soften_files;
+            gDeferredSoftenProgram.mDefines = soften_defines;
+            gDeferredSoftenProgram.mFeatures = soften_features;
+            gDeferredSoftenProgram.mShaderLevel = soften_level;
             gDeferredSoftenProgram.removePermutation("FS_COLORED_SHADOW");
-            gDeferredSoftenProgram.mShaderFiles.pop_back();
+            gDeferredSoftenProgram.mShaderFiles.pop_back(); // fsColoredShadowF.glsl, pushed last above
             success = gDeferredSoftenProgram.createShader();
         }
         // </FS:Trish>
