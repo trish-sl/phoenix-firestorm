@@ -912,6 +912,7 @@ void FSDecodedTextureCache::evictIfNeeded()
 #include "lluri.h"
 #include "llgl.h"
 #include "lluictrl.h"
+#include "fsexperimentalindicators.h"
 
 #include <boost/algorithm/string.hpp>
 
@@ -950,6 +951,9 @@ public:
 
         findUnsupportedControls(this);
         applyUnsupported();
+
+        // Cost and visual impact marks beside the settings
+        mIndicators.build(this);
 
         return LLPanelPreference::postBuild();
     }
@@ -997,6 +1001,7 @@ public:
         }
         refreshSunRaysQuality();
         applyUnsupported();
+        mIndicators.update();
         LLPanelPreference::draw();
     }
 
@@ -1098,6 +1103,8 @@ private:
     }
 
     std::vector<LLHandle<LLUICtrl>> mUnsupported;
+
+    FSExperimentalIndicators mIndicators;
 
     // Sets the listed settings (comma separated) back to their defaults. Settings that rebuild
     // shaders when changed do so through their own listeners, and Cancel still restores the values
