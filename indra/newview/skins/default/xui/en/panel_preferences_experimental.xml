@@ -14,6 +14,17 @@
     <string name="decoded_cache_stats_indexing">Reading the decoded texture cache...</string>
     <string name="preset_stock_name">Stock Firestorm</string>
     <string name="preset_builtin_label">[NAME] (built-in)</string>
+    <!-- Marks beside each setting: a circle for its performance cost, a square for its visual impact -->
+    <string name="indicator_legend_cost">Cost:</string>
+    <string name="indicator_legend_visual">Visual:</string>
+    <string name="indicator_cost_saves">saves time</string>
+    <string name="indicator_cost_low">low</string>
+    <string name="indicator_cost_moderate">medium</string>
+    <string name="indicator_cost_high">high</string>
+    <string name="indicator_visual_large">large</string>
+    <string name="indicator_visual_moderate">some</string>
+    <string name="indicator_visual_none">none</string>
+    <string name="indicator_tooltip">Performance cost: [COST]. Visual impact: [VISUAL].</string>
     <!-- Settings on the preset tabs that presets leave alone: driver workarounds and skinning tests that need a restart -->
     <string name="preset_excluded_settings">RenderAMDDisableShaderCache,RenderAMDDisableTextureThreading,RenderRiggedDirectNormals,RenderRiggedLocalOrigin,RenderRiggedPreciseMath,FSDecodedTextureCache,FSDecodedTextureCacheMode,FSDecodedTextureCacheRegions,FSDecodedTextureCacheSizeMB,FSDecodedTextureCacheMinSize,FSDecodedTextureCacheUncompressed,FSPrioritizeTextureDecodes,FSLowPriorityTextureThreads,FSTextureUseLiveVRAM,FSTextureBiasSoftZone,RenderTextureMemoryUsageBias,TextureFetchPipelineDiagnostics,FSTextureFetchSelfHeal,FSExperimentalRepairAnimations,FSExperimentalSyncAnimationClock,FSAvatarCloudFastRetry,FSAvatarRetryEmptyAppearance,FSAvatarDropStaleAppearance</string>
     <text
@@ -89,6 +100,15 @@
         <button.commit_callback
          function="FSExperimental.PresetDelete" />
     </button>
+    <view
+     follows="left|top"
+     height="16"
+     layout="topleft"
+     left="10"
+     name="experimental_indicator_legend"
+     tool_tip="The marks beside each setting are a rough guide. The circle is what the option costs in frame time when it is on (or, for a value, when it is raised): blue saves time, green costs little, yellow some, red a lot. The square is how much it improves the picture: green a lot, yellow some, grey little or nothing (options for speed, loading or diagnostics). Real costs depend on the scene and the graphics card."
+     top="56"
+     width="520" />
     <tab_container
      follows="all"
      layout="topleft"
@@ -97,7 +117,7 @@
      right="-1"
      tab_min_width="60"
      tab_position="top"
-     top="56"
+     top="76"
      bottom="-1">
         <panel
          follows="all"

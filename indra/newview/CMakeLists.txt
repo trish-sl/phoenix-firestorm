@@ -119,6 +119,7 @@ set(viewer_SOURCE_FILES
     fsdecodedtexturecache.cpp
     fsdroptarget.cpp
     fsdynamicresolution.cpp
+    fsexperimentalindicators.cpp
     fsexportperms.cpp
     fsfloateraddtocontactset.cpp
     fsfavoritecontacts.cpp
@@ -1018,6 +1019,7 @@ set(viewer_HEADER_FILES
     fsdecodedtexturecache.h
     fsdroptarget.h
     fsdynamicresolution.h
+    fsexperimentalindicators.h
     fsexportperms.h
     fsfloateraddtocontactset.h
     fsfavoritecontacts.h
