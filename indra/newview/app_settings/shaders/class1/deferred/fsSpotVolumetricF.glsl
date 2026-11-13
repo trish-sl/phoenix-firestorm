@@ -29,6 +29,7 @@ uniform float falloff;
 uniform int vol_steps;
 uniform float vol_density;      // scattering per metre
 uniform float vol_anisotropy;   // 0 scatters evenly, toward 1 concentrates looking into the light
+uniform float vol_frame_offset;  // added to the start offset each frame (temporal option), 0 otherwise
 
 // Distance stored for the sky. Fits a half float.
 const float SKY_DIST = 65000.0;
@@ -79,7 +80,9 @@ void main()
         {
             int steps = max(vol_steps, 1);
             float dt = (t1 - t0) / float(steps);
-            float jitter = stepOffset(gl_FragCoord.xy);
+            // with the temporal option the offset moves every frame (golden ratio steps), so the
+            // frames between them sample the whole step and the resolve averages them
+            float jitter = fract(stepOffset(gl_FragCoord.xy) + vol_frame_offset);
             for (int i = 0; i < steps; ++i)
             {
                 vec3 p = view_dir * (t0 + (float(i) + jitter) * dt);

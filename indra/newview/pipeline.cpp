@@ -15154,6 +15154,11 @@ void LLPipeline::releaseFSPostTargets()
     mSunRayMap.release();
     mUnderwaterRayMap.release(); // <FS:Trish/> Underwater light rays
     mSpotVolumeMap.release();
+    // <FS:Trish> FSRenderSpotVolumetricTemporal
+    mFSSpotVolumeHistory[0].release();
+    mFSSpotVolumeHistory[1].release();
+    mFSSpotVolumeHistoryFrame = 0;
+    // </FS:Trish>
     mLocalTonemapMap.release(); // <FS:Trish/> Local tone mapping
     for (LLRenderTarget& level : mBloomLevels)
     {
@@ -15479,10 +15484,16 @@ void LLPipeline::renderSpotVolumetrics()
     static LLCachedControl<bool> unshadowed(gSavedSettings, "FSRenderSpotVolumetricUnshadowed", false);
     static LLCachedControl<F32> anisotropy(gSavedSettings, "FSRenderSpotVolumetricAnisotropy", 0.3f);
     static LLCachedControl<bool> dust_motes(gSavedSettings, "FSRenderDustMotes", false); // <FS:Trish/> Dust motes
+    static LLCachedControl<bool> temporal_setting(gSavedSettings, "FSRenderSpotVolumetricTemporal", false); // <FS:Trish/>
 
     if (!enabled)
     {
         mSpotVolumeMap.release();
+        // <FS:Trish> FSRenderSpotVolumetricTemporal
+        mFSSpotVolumeHistory[0].release();
+        mFSSpotVolumeHistory[1].release();
+        mFSSpotVolumeHistoryFrame = 0;
+        // </FS:Trish>
         return;
     }
 
@@ -15605,8 +15616,13 @@ void LLPipeline::renderSpotVolumetrics()
     static LLStaticHashedString s_vol_density("vol_density");
     static LLStaticHashedString s_vol_anisotropy("vol_anisotropy");
     static LLStaticHashedString s_vol_strength("vol_strength");
-
+    static LLStaticHashedString s_vol_frame_offset("vol_frame_offset"); // <FS:Trish/>
     const glm::mat4 modelview = get_current_modelview();
+    // <FS:Trish> FSRenderSpotVolumetricTemporal: half the steps, a start offset that moves every
+    // frame, and a resolve that blends with the last frames
+    const bool temporal = temporal_setting && gFSSpotVolumetricTemporalProgram.isComplete();
+    const S32 march_steps = temporal ? llmax((S32)steps / 2, 4) : (S32)steps;
+    // </FS:Trish>
     const glm::mat4 trans(0.5f, 0.0f, 0.0f, 0.0f,
                           0.0f, 0.5f, 0.0f, 0.0f,
                           0.0f, 0.0f, 0.5f, 0.0f,
@@ -15623,7 +15639,9 @@ void LLPipeline::renderSpotVolumetrics()
 
         shader.bind();
         shader.bindTexture(LLShaderMgr::DEFERRED_DEPTH, &mRT->deferredScreen, true);
-        shader.uniform1i(s_vol_steps, llclamp((S32)steps, 4, 64));
+        //shader.uniform1i(s_vol_steps, llclamp((S32)steps, 4, 64));
+        shader.uniform1i(s_vol_steps, llclamp(march_steps, 4, 64)); // <FS:Trish/>
+        shader.uniform1f(s_vol_frame_offset, temporal ? fmodf((F32)(LLFrameTimer::getFrameCount() % 4096) * 0.618034f, 1.f) : 0.f); // <FS:Trish/>
         shader.uniform1f(s_vol_density, (F32)density);
         shader.uniform1f(s_vol_anisotropy, llclamp((F32)anisotropy, 0.f, 0.9f));
         shader.uniform1f(LLShaderMgr::DEFERRED_SPOT_SHADOW_BIAS, RenderSpotShadowBias);
@@ -15792,6 +15810,64 @@ void LLPipeline::renderSpotVolumetrics()
         mSpotVolumeMap.flush();
     }
 
+    // <FS:Trish> FSRenderSpotVolumetricTemporal: resolve against the history; the composite then
+    // filters the resolved light up instead of this frame's march
+    LLRenderTarget* fs_volume = &mSpotVolumeMap;
+    if (temporal)
+    {
+        const U32 frame = LLFrameTimer::getFrameCount();
+        bool history = mFSSpotVolumeHistoryFrame != 0 && mFSSpotVolumeHistoryFrame + 1 == frame;
+        for (LLRenderTarget& target : mFSSpotVolumeHistory)
+        {
+            if (!target.isComplete() || target.getWidth() != width || target.getHeight() != height)
+            {
+                history = false;
+                if (!fs_ensure_target(target, width, height, GL_RGBA16F))
+                {
+                    history = false;
+                }
+            }
+        }
+        if (mFSSpotVolumeHistory[0].isComplete() && mFSSpotVolumeHistory[1].isComplete())
+        {
+            LLRenderTarget& prev = mFSSpotVolumeHistory[mFSSpotVolumeHistoryIndex];
+            LLRenderTarget& next = mFSSpotVolumeHistory[1 - mFSSpotVolumeHistoryIndex];
+            static LLStaticHashedString s_inv_proj("fs_vol_inv_proj");
+            static LLStaticHashedString s_reproject("fs_vol_reproject");
+            static LLStaticHashedString s_history("fs_vol_history");
+            const glm::mat4 proj = get_current_projection();
+            // this frame's camera space to last frame's, then last frame's projection (the same
+            // projection: a changed field of view only costs a frame of blur)
+            const glm::mat4 reproject = proj * gGLInverseDeltaModelView;
+
+            LLGLSLShader& resolve = gFSSpotVolumetricTemporalProgram;
+            next.bindTarget();
+            resolve.bind();
+            resolve.bindTexture(LLShaderMgr::DEFERRED_DIFFUSE, &mSpotVolumeMap, false, LLTexUnit::TFO_POINT);
+            resolve.bindTexture(LLShaderMgr::DEFERRED_SPECULAR, &prev, false, LLTexUnit::TFO_BILINEAR);
+            resolve.uniformMatrix4fv(s_inv_proj, 1, GL_FALSE, glm::value_ptr(glm::inverse(proj)));
+            resolve.uniformMatrix4fv(s_reproject, 1, GL_FALSE, glm::value_ptr(reproject));
+            resolve.uniform1f(s_history, history ? 0.85f : 0.f);
+            {
+                LLGLDisable blend(GL_BLEND);
+                fs_draw_screen_triangle(mScreenTriangleVB);
+            }
+            resolve.unbind();
+            next.flush();
+
+            mFSSpotVolumeHistoryIndex = 1 - mFSSpotVolumeHistoryIndex;
+            mFSSpotVolumeHistoryFrame = frame;
+            fs_volume = &next;
+        }
+    }
+    else if (mFSSpotVolumeHistoryFrame != 0)
+    {
+        mFSSpotVolumeHistory[0].release();
+        mFSSpotVolumeHistory[1].release();
+        mFSSpotVolumeHistoryFrame = 0;
+    }
+    // </FS:Trish>
+
     // Composite onto the HDR scene
     {
         mRT->screen.bindTarget();
@@ -15800,7 +15876,8 @@ void LLPipeline::renderSpotVolumetrics()
         gGL.setSceneBlendType(LLRender::BT_ADD);
 
         gFSSpotVolumetricCompositeProgram.bind();
-        gFSSpotVolumetricCompositeProgram.bindTexture(LLShaderMgr::DEFERRED_DIFFUSE, &mSpotVolumeMap, false, LLTexUnit::TFO_POINT);
+        //gFSSpotVolumetricCompositeProgram.bindTexture(LLShaderMgr::DEFERRED_DIFFUSE, &mSpotVolumeMap, false, LLTexUnit::TFO_POINT);
+        gFSSpotVolumetricCompositeProgram.bindTexture(LLShaderMgr::DEFERRED_DIFFUSE, fs_volume, false, LLTexUnit::TFO_POINT); // <FS:Trish/>
         gFSSpotVolumetricCompositeProgram.bindTexture(LLShaderMgr::DEFERRED_DEPTH, &mRT->deferredScreen, true);
         gFSSpotVolumetricCompositeProgram.uniform1f(s_vol_strength, (F32)strength);
         fs_draw_screen_triangle(mScreenTriangleVB);

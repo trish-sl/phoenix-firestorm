@@ -906,6 +906,11 @@ public:
     LLRenderTarget          mSunRayMap;
     LLRenderTarget          mUnderwaterRayMap;  // <FS:Trish/> Underwater light rays, as mSunRayMap
     LLRenderTarget          mSpotVolumeMap;     // volumetric projector light: rgb light, a distance marched to
+    // <FS:Trish> FSRenderSpotVolumetricTemporal: this frame's resolved light and the last frame's, swapped each frame
+    LLRenderTarget          mFSSpotVolumeHistory[2];
+    U32                     mFSSpotVolumeHistoryIndex = 0;
+    U32                     mFSSpotVolumeHistoryFrame = 0; // frame the history was last written, 0 none
+    // </FS:Trish>
     static constexpr U32    FS_BLOOM_MAX_LEVELS = 8;
     LLRenderTarget          mBloomLevels[FS_BLOOM_MAX_LEVELS];
     U32                     mBloomLevelCount = 0;       // levels drawn this frame, 0 when bloom is off
