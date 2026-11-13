@@ -57,7 +57,7 @@ namespace
         REGION_DONE         // free once every older region is too
     };
 
-    struct Region
+    struct UploadRegion
     {
         U64 mSeq;
         U32 mOffset;
@@ -79,7 +79,7 @@ namespace
     // Region bookkeeping, shared by the main thread, the texture thread (stage) and the render
     // thread (fences). Held only for bookkeeping, never across a copy or a GL call.
     std::mutex sMutex;
-    std::deque<Region> sRegions;        // in ring order
+    std::deque<UploadRegion> sRegions;        // in ring order
     U64 sNextSeq = 1;                   // never reset, so a stale Staged never matches
     U32 sHead = 0;
     // Render thread fences, oldest first (render thread only, plus releaseGL once it has stopped)
@@ -90,7 +90,7 @@ namespace
     std::mutex sCopyMutex;
 
     // sMutex held
-    Region* find_locked(U64 seq)
+    UploadRegion* find_locked(U64 seq)
     {
         if (sRegions.empty() || seq < sRegions.front().mSeq)
         {
@@ -101,7 +101,7 @@ namespace
         {
             return nullptr;
         }
-        Region& r = sRegions[(size_t)index];
+        UploadRegion& r = sRegions[(size_t)index];
         return r.mSeq == seq ? &r : nullptr;
     }
 
@@ -167,7 +167,7 @@ namespace
     {
         while (!sRegions.empty())
         {
-            Region& r = sRegions.front();
+            UploadRegion& r = sRegions.front();
             if (r.mState == REGION_IN_FLIGHT && r.mFence)
             {
                 const GLenum status = glClientWaitSync(r.mFence, 0, 0);
@@ -256,7 +256,7 @@ namespace
         {
             sRenderFences.emplace_back(seq, fence);
         }
-        else if (Region* r = find_locked(seq))
+        else if (UploadRegion* r = find_locked(seq))
         {
             r->mState = REGION_DONE;
         }
@@ -289,7 +289,7 @@ namespace
             glDeleteSync(front.second);
             std::lock_guard<std::mutex> lock(sMutex);
             sRenderFences.pop_front();
-            if (Region* r = find_locked(front.first))
+            if (UploadRegion* r = find_locked(front.first))
             {
                 r->mState = REGION_DONE;
             }
@@ -318,7 +318,7 @@ namespace
         {
             {
                 std::lock_guard<std::mutex> lock(sMutex);
-                if (Region* r = find_locked(seq))
+                if (UploadRegion* r = find_locked(seq))
                 {
                     r->mState = REGION_IN_FLIGHT;
                 }
@@ -333,7 +333,7 @@ namespace
             glFinish();
         }
         std::lock_guard<std::mutex> lock(sMutex);
-        if (Region* r = find_locked(seq))
+        if (UploadRegion* r = find_locked(seq))
         {
             r->mFence = fence;
             r->mState = fence ? REGION_IN_FLIGHT : REGION_DONE;
@@ -473,7 +473,7 @@ namespace FSTextureUpload
         std::vector<GLsync> fences;
         {
             std::lock_guard<std::mutex> lock(sMutex);
-            for (Region& r : sRegions)
+            for (UploadRegion& r : sRegions)
             {
                 if (r.mFence)
                 {
@@ -603,7 +603,7 @@ namespace FSTextureUpload
             return false;
         }
         std::lock_guard<std::mutex> lock(sMutex);
-        const Region* r = find_locked(staged.mSeq);
+        const UploadRegion* r = find_locked(staged.mSeq);
         return r && r->mState == REGION_STAGED;
     }
 
@@ -631,7 +631,7 @@ namespace FSTextureUpload
         if (staged.mSeq)
         {
             std::lock_guard<std::mutex> lock(sMutex);
-            Region* r = find_locked(staged.mSeq);
+            UploadRegion* r = find_locked(staged.mSeq);
             if (r && r->mState == REGION_STAGED)
             {
                 r->mState = REGION_DONE;
