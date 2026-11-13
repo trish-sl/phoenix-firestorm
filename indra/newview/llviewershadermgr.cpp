@@ -214,6 +214,7 @@ LLGLSLShader            gFSSunRaysCompositeProgram;
 LLGLSLShader            gFSUnderwaterRaysProgram; // <FS:Trish/> Underwater light rays
 LLGLSLShader            gFSSpotVolumetricProgram;
 LLGLSLShader            gFSSpotVolumetricCompositeProgram;
+LLGLSLShader            gFSSpotVolumetricTemporalProgram; // <FS:Trish/> FSRenderSpotVolumetricTemporal
 LLGLSLShader            gFSDustMotesProgram; // <FS:Trish/> Dust motes
 LLGLSLShader            gFSBloomPrefilterProgram;
 LLGLSLShader            gFSBloomDownProgram;
@@ -1728,6 +1729,7 @@ bool LLViewerShaderMgr::loadShadersDeferred()
         gFSUnderwaterRaysProgram.unload(); // <FS:Trish/> Underwater light rays
         gFSSpotVolumetricProgram.unload();
         gFSSpotVolumetricCompositeProgram.unload();
+        gFSSpotVolumetricTemporalProgram.unload(); // <FS:Trish/>
         gFSDustMotesProgram.unload(); // <FS:Trish/> Dust motes
         gFSBloomPrefilterProgram.unload();
         gFSBloomDownProgram.unload();
@@ -3457,6 +3459,7 @@ bool LLViewerShaderMgr::loadShadersDeferred()
             { &gFSUnderwaterRaysProgram,   "FS Underwater Rays",    "deferred/fsUnderwaterRaysF.glsl",   true }, // <FS:Trish/> Underwater light rays
             { &gFSSpotVolumetricProgram,   "FS Spot Volumetric",    "deferred/fsSpotVolumetricF.glsl",   true },
             { &gFSSpotVolumetricCompositeProgram, "FS Spot Volumetric Composite", "deferred/fsSpotVolumetricCompositeF.glsl", true },
+            { &gFSSpotVolumetricTemporalProgram, "FS Spot Volumetric Temporal", "deferred/fsSpotVolumetricTemporalF.glsl", false }, // <FS:Trish/>
             { &gFSDustMotesProgram,        "FS Dust Motes",         "deferred/fsDustMotesF.glsl",        true }, // <FS:Trish/> Dust motes
             { &gFSBloomPrefilterProgram,   "FS Bloom Prefilter",    "deferred/fsBloomPrefilterF.glsl",   false },
             { &gFSBloomDownProgram,        "FS Bloom Downsample",   "deferred/fsBloomDownF.glsl",        false },
