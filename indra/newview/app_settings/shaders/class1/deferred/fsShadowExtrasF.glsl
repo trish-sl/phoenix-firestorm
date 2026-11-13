@@ -137,6 +137,11 @@ float fsCloudShadow(vec3 pos, vec3 light_dir)
 uniform mat4 projection_matrix;
 uniform vec2 screen_res;
 uniform vec2 fs_contact_shadow;      // x: ray length (m), y: strength 0-1 (0: off)
+// Non-zero in the pass that applies the contact term. The light map's sun channel is blurred
+// after the sun pass (a dozen pixels each way), which spread a contact shadow a few pixels wide
+// so thin it disappeared; so where the blur runs, its second pass applies the term to the
+// blurred result (blurLightF), and the sun pass does it only where the blur is off.
+uniform int fs_contact_here;
 
 vec4 getPositionWithDepth(vec2 pos_screen, float depth);
 float getDepth(vec2 pos_screen);
@@ -165,6 +170,7 @@ float fsContactShadow(vec3 pos, vec3 norm, vec3 light_dir)
     float nl = dot(norm, light_dir);
     float bias = (0.01 + 0.002 * dist) / max(nl, 0.25);
     float thickness = FS_CONTACT_THICKNESS + 0.01 * dist;
+    float min_delta = 0.004 + 0.0015 * dist;
     vec3 origin = pos + norm * bias;
 
     // As many steps as the ray covers pixels (halved), so a ray close to the camera doesn't step
@@ -203,15 +209,29 @@ float fsContactShadow(vec3 pos, vec3 norm, vec3 light_dir)
         {
             continue;
         }
-        // > 0: the surface the depth buffer has there is in front of the ray
+        // > 0: the surface the depth buffer has there is in front of the ray. The ray already
+        // starts off the surface (bias), so only depth precision needs a margin here; requiring
+        // the whole normal offset rejected an occluder close to the ray, which is exactly the
+        // contact (a foot just above the ground, a fold against the body)
         float delta = getPositionWithDepth(uv, d).z - p.z;
-        if (delta > bias && delta < thickness)
+        if (delta > min_delta && delta < thickness)
         {
             vec2 edge = min(uv, vec2(1.0) - uv);
             return 1.0 - strength * smoothstep(0.0, FS_CONTACT_EDGE, min(edge.x, edge.y));
         }
     }
     return 1.0;
+}
+
+// the contact term for the sun channel of the light map, where this pass is the one to apply it
+float fsContactShadowTerm(float shadow, vec3 pos, vec3 norm)
+{
+    if (fs_contact_here == 0 || cube_snapshot != 0 || shadow <= 0.0)
+    {
+        return shadow;
+    }
+    vec3 light_dir = normalize((sun_up_factor == 1) ? sun_dir : moon_dir);
+    return shadow * fsContactShadow(pos, norm, light_dir);
 }
 #endif // FS_CONTACT_SHADOWS
 
@@ -224,10 +244,7 @@ float fsSunShadowExtras(float shadow, vec3 pos, vec3 norm)
     }
     vec3 light_dir = normalize((sun_up_factor == 1) ? sun_dir : moon_dir);
 #if defined(FS_CONTACT_SHADOWS)
-    if (shadow > 0.0)
-    {
-        shadow *= fsContactShadow(pos, norm, light_dir);
-    }
+    shadow = fsContactShadowTerm(shadow, pos, norm);
 #endif
 #if defined(FS_CLOUD_SHADOWS)
     if (shadow > 0.0)

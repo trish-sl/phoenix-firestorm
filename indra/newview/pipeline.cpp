@@ -11175,6 +11175,33 @@ static void fs_bind_wet_shore(LLGLSLShader& shader)
 }
 // </FS:Trish>
 
+// <FS:Trish> Whether renderDeferredLighting blurs the light map after the sun pass (the same test)
+static bool fs_light_map_blurred()
+{
+    const bool pcss_shadows = LLPipeline::RenderShadowPCSS && LLPipeline::RenderShadowDetail > 0;
+    return (pcss_shadows || LLPipeline::RenderDeferredSSAO) && LLPipeline::RenderShadowBlurSize != 0.f && !gCubeSnapshot;
+}
+
+// Contact shadow uniforms (fsShadowExtrasF.glsl) of the pass that applies them: the sun pass when
+// the light map isn't blurred, otherwise the blur's second pass, so the blur can't wash them out
+static void fs_bind_contact_shadow(LLGLSLShader& shader, bool apply_here)
+{
+    static LLCachedControl<bool> contact_shadows(gSavedSettings, "FSRenderContactShadows", false);
+    static LLCachedControl<F32> contact_length(gSavedSettings, "FSRenderContactShadowLength", 0.5f);
+    static LLCachedControl<F32> contact_strength(gSavedSettings, "FSRenderContactShadowStrength", 0.8f);
+    if (!contact_shadows)
+    {
+        return;
+    }
+    static const LLStaticHashedString sContactShadow("fs_contact_shadow");
+    static const LLStaticHashedString sContactHere("fs_contact_here");
+    shader.uniform2f(sContactShadow, llclamp((F32)contact_length, 0.05f, 2.f), llclamp((F32)contact_strength, 0.f, 1.f));
+    shader.uniform1i(sContactHere, (apply_here && !gCubeSnapshot) ? 1 : 0);
+    // the blur program isn't in the environment's shader list, so it doesn't get this otherwise
+    shader.uniform1i(LLShaderMgr::SUN_UP_FACTOR, LLEnvironment::instance().getIsSunUp() ? 1 : 0);
+}
+// </FS:Trish>
+
 // <FS:Trish> Per frame uniforms of the extra sun shadow terms (fsShadowExtrasF.glsl, fsShadowFadeF.glsl).
 // Programs built without a feature have no such uniforms, and setting them is then a no-op.
 static void fs_bind_sun_shadow_extras(LLGLSLShader& shader, const glm::mat4& modelview)
@@ -11182,9 +11209,6 @@ static void fs_bind_sun_shadow_extras(LLGLSLShader& shader, const glm::mat4& mod
     static LLCachedControl<bool> cloud_shadows(gSavedSettings, "FSRenderCloudShadows", false);
     static LLCachedControl<F32> cloud_strength(gSavedSettings, "FSRenderCloudShadowStrength", 0.6f);
     static LLCachedControl<F32> cloud_softness(gSavedSettings, "FSRenderCloudShadowSoftness", 0.3f);
-    static LLCachedControl<bool> contact_shadows(gSavedSettings, "FSRenderContactShadows", false);
-    static LLCachedControl<F32> contact_length(gSavedSettings, "FSRenderContactShadowLength", 0.5f);
-    static LLCachedControl<F32> contact_strength(gSavedSettings, "FSRenderContactShadowStrength", 0.8f);
     static LLCachedControl<bool> smooth_fade(gSavedSettings, "FSRenderShadowSmoothFade", false);
 
     // Smooth fade: dither the cascade transitions only where the shadow blur runs after this pass
@@ -11202,11 +11226,7 @@ static void fs_bind_sun_shadow_extras(LLGLSLShader& shader, const glm::mat4& mod
         return; // the shaders leave probe captures alone
     }
 
-    if (contact_shadows)
-    {
-        static const LLStaticHashedString sContactShadow("fs_contact_shadow");
-        shader.uniform2f(sContactShadow, llclamp((F32)contact_length, 0.05f, 2.f), llclamp((F32)contact_strength, 0.f, 1.f));
-    }
+    fs_bind_contact_shadow(shader, !fs_light_map_blurred());
 
     if (cloud_shadows)
     {
@@ -11681,6 +11701,7 @@ void LLPipeline::renderDeferredLighting()
             }
 
             gDeferredBlurLightProgram.uniform2f(sDelta, 1.f, 0.f);
+            fs_bind_contact_shadow(gDeferredBlurLightProgram, false); // <FS:Trish/> contact shadows: second pass only
             gDeferredBlurLightProgram.uniform1f(sDistFactor, dist_factor);
             gDeferredBlurLightProgram.uniform3fv(sKern, kern_length, gauss[0].mV);
             gDeferredBlurLightProgram.uniform1f(sKernScale, blur_size * (kern_length / 2.f - 0.5f));
@@ -11700,6 +11721,7 @@ void LLPipeline::renderDeferredLighting()
             deferred_light_target->bindTarget();
 
             gDeferredBlurLightProgram.uniform2f(sDelta, 0.f, 1.f);
+            fs_bind_contact_shadow(gDeferredBlurLightProgram, true); // <FS:Trish/> applied to the blurred sun shadow
 
             {
                 LLGLDisable   blend(GL_BLEND);

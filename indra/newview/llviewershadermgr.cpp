@@ -2458,6 +2458,14 @@ bool LLViewerShaderMgr::loadShadersDeferred()
         gDeferredBlurLightProgram.mShaderLevel = mShaderLevel[SHADER_DEFERRED];
 
         add_common_permutations(&gDeferredBlurLightProgram);
+        // <FS:Trish> Contact shadows are applied after the blur, in its second pass, or it washed them out
+        static LLCachedControl<bool> fs_contact_shadows(gSavedSettings, "FSRenderContactShadows", false);
+        if (fs_contact_shadows && gSavedSettings.getS32("RenderShadowDetail") > 0)
+        {
+            gDeferredBlurLightProgram.mShaderFiles.push_back(make_pair("deferred/fsShadowExtrasF.glsl", GL_FRAGMENT_SHADER));
+            gDeferredBlurLightProgram.addPermutation("FS_CONTACT_SHADOWS", "1");
+        }
+        // </FS:Trish>
 
         success = gDeferredBlurLightProgram.createShader();
         llassert(success);
