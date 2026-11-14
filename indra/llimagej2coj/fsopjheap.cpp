@@ -148,10 +148,13 @@ namespace
                     cache.mBytes -= h->mCapacity;
                     h->mNext = nullptr;
                     void* p = reinterpret_cast<char*>(h) + HEADER;
-                    if (zero)
-                    {
-                        memset(p, 0, n);
-                    }
+                    // Always zeroed, not only for calloc: a large block used to be fresh pages from the
+                    // OS, which are zero, and OpenJPEG relies on that. It leaves the parts of a partial
+                    // stream that have no data yet untouched, which then decode as flat gray. With the
+                    // previous decode still in the block they showed that texture instead (often a
+                    // normal map) until a fuller decode arrived.
+                    (void)zero;
+                    memset(p, 0, n);
                     return p;
                 }
                 void* base = VirtualAlloc(nullptr, capacity + HEADER, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
