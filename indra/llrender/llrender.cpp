@@ -281,6 +281,11 @@ bool LLTexUnit::bind(LLTexture* texture, bool for_rendering, bool forceBind)
         {
             if (gl_tex->getTexName()) //if texture exists
             {
+                // <FS:Trish> The unit is made active also when it already holds the texture: callers go on with
+                // calls on the active unit's texture (parameters, uploads), which would otherwise land on
+                // whatever another unit holds (often the default image, the placeholder of loading textures)
+                activate();
+                // </FS:Trish>
                 //in audit, replace the selected texture by the default one.
                 if ((mCurrTexture != gl_tex->getTexName()) || forceBind)
                 {
@@ -356,6 +361,10 @@ bool LLTexUnit::bind(LLImageGL* texture, bool for_rendering, bool forceBind, S32
         return false ;
     }
 
+    // <FS:Trish> Active also when it already holds the texture (see bind(LLTexture*)): setImage, scaleDown and
+    // setSubImageFromFrameBuffer write to the active unit's texture right after this
+    activate();
+    // </FS:Trish>
     if ((mCurrTexture != texname) || forceBind)
     {
         gGL.flush();
@@ -397,6 +406,7 @@ bool LLTexUnit::bind(LLCubeMap* cubeMap)
         return false;
     }
 
+    activate(); // <FS:Trish/> also when it already holds the cube map (see bind(LLTexture*))
     if (mCurrTexture != cubeMap->mImages[0]->getTexName())
     {
         if (LLCubeMap::sUseCubeMaps)
@@ -453,6 +463,7 @@ bool LLTexUnit::bindManual(eTextureType type, U32 texture, bool hasMips)
         return false;
     }
 
+    activate(); // <FS:Trish/> also when it already holds the texture (see bind(LLTexture*)): callers upload next
     if(mCurrTexture != texture)
     {
         gGL.flush();
