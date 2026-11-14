@@ -2364,11 +2364,14 @@ void LLViewerFetchedTexture::scheduleCreateTexture()
             if (mainq)
             {
                 ref();
+                // <FS:Trish> FSRenderThread: this job's staged upload, shared only by its two halves below
+                auto prepared = std::make_shared<LLImageGL::FSPreparedUpload>();
+                // </FS:Trish>
                 mainq->postTo(
                     mImageQueue,
                     // work to be done on LLImageGL worker thread
 #if LL_IMAGEGL_THREAD_CHECK
-                    [this, data, data_copy, size]()
+                    [this, data, data_copy, size, prepared]()
                     {
                         mGLTexturep->mActiveThread = LLThread::currentID();
                         //verify data is unmodified
@@ -2376,7 +2379,7 @@ void LLViewerFetchedTexture::scheduleCreateTexture()
                         llassert(mRawImage->getDataSize() == size);
                         llassert(memcmp(data, data_copy, size) == 0);
 #else
-                    [this]()
+                    [this, prepared]()
                     {
 #endif
                         // <FS:Trish> FSPerfTextureThreadUploadRate
@@ -2392,7 +2395,7 @@ void LLViewerFetchedTexture::scheduleCreateTexture()
                         // main thread records the upload (see below).
                         //createTexture();
                         if (!mNeedsCreateTexture || mGLTexturep.isNull() ||
-                            !mGLTexturep->fsPrepareUpload(mRawDiscardLevel, mRawImage, mBoostLevel))
+                            !mGLTexturep->fsPrepareUpload(mRawDiscardLevel, mRawImage, mBoostLevel, *prepared))
                         {
                             createTexture();
                         }
@@ -2407,7 +2410,7 @@ void LLViewerFetchedTexture::scheduleCreateTexture()
                     },
                     // callback to be run on main thread
 #if LL_IMAGEGL_THREAD_CHECK
-                        [this, data, data_copy, size]()
+                        [this, data, data_copy, size, prepared]()
                     {
                         mGLTexturep->mActiveThread = LLThread::currentID();
                         llassert(data == mRawImage->getData());
@@ -2415,18 +2418,18 @@ void LLViewerFetchedTexture::scheduleCreateTexture()
                         llassert(memcmp(data, data_copy, size) == 0);
                         delete[] data_copy;
 #else
-                        [this]()
+                        [this, prepared]()
                         {
 #endif
-                        // <FS:Trish> FSRenderThread: record the upload the texture thread staged (the usual
-                        // way here, if the ring dropped it in between)
-                        if (mGLTexturep.notNull() && mGLTexturep->fsHasPreparedUpload())
+                        // <FS:Trish> FSRenderThread: record the upload this job's texture thread half staged
+                        // (the usual way here, if the ring dropped it in between)
+                        if (prepared->mStaged.mSeq)
                         {
-                            if (!mNeedsCreateTexture)
+                            if (!mNeedsCreateTexture || mGLTexturep.isNull())
                             {
-                                mGLTexturep->fsDropPreparedUpload();
+                                LLImageGL::fsDropPreparedUpload(*prepared);
                             }
-                            else if (!mGLTexturep->fsCommitPreparedUpload())
+                            else if (!mGLTexturep->fsCommitPreparedUpload(*prepared))
                             {
                                 createTexture();
                             }

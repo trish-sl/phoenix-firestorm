@@ -132,10 +132,22 @@ public:
     // the usual createGLTexture()). On the main thread, fsCommitPreparedUpload() records the GL side, which
     // the render thread runs: the only context that touches the driver. False when nothing usable was
     // prepared (the caller then does the usual createGLTexture() there).
-    bool fsPrepareUpload(S32 discard_level, const LLImageRaw* imageraw, S32 category);
-    bool fsHasPreparedUpload() const            { return mFSStaged.mSeq != 0; }
-    bool fsCommitPreparedUpload();
-    void fsDropPreparedUpload();
+    // What was prepared lives in the caller's FSPreparedUpload, one per texture thread job, never in the image:
+    // a later job for the same texture can run on the texture thread while the main thread commits an earlier
+    // one, and with a shared copy it overwrote the staged pixels' offset and size mid-commit (the texture then
+    // got bytes from somewhere else in the ring: pieces of other textures).
+    struct FSPreparedUpload
+    {
+        FSTextureUpload::Staged mStaged;        // the pixels waiting in the upload ring
+        S32 mDiscard = -1;                      // and the discard level they are for
+        FSPreparedUpload() = default;
+        FSPreparedUpload(const FSPreparedUpload&) = delete;
+        FSPreparedUpload& operator=(const FSPreparedUpload&) = delete;
+        ~FSPreparedUpload()                     { FSTextureUpload::release(mStaged); } // never committed: free its ring space
+    };
+    bool fsPrepareUpload(S32 discard_level, const LLImageRaw* imageraw, S32 category, FSPreparedUpload& out);
+    bool fsCommitPreparedUpload(FSPreparedUpload& prepared);
+    static void fsDropPreparedUpload(FSPreparedUpload& prepared);
     // As fsMakeWritable for the image that owns tex_name (parameter changes through LLTexUnit only know the name),
     // before setting address_mode or filter_option (-1 for the one not set). A locked texture that already has
     // that value doesn't move: true then, and the caller skips setting it (the locked texture can't take it).
@@ -146,8 +158,6 @@ public:
     bool fsIsCompressed()                       { return isCompressed(); }
     F32 mFSNoBindlessUntil = 0.f;               // sLastFrameTime until which it gets no handle
     U8 mFSMoves = 0;                            // times it moved off a locked texture
-    FSTextureUpload::Staged mFSStaged;          // fsPrepareUpload(): the pixels waiting in the upload ring
-    S32 mFSStagedDiscard = -1;                  // and the discard level they are for
     // </FS:Trish>
 
     //for server side use only.

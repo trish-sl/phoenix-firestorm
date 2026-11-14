@@ -338,10 +338,10 @@ bool LLImageGL::fsCanMoveNow() const
 
 // The CPU side of createGLTexture(raw) -> createGLTexture(data) -> setImage() as the texture thread runs it,
 // for the common case: an uncompressed 8-bit RGB(A) 2D texture with generated mips or none
-bool LLImageGL::fsPrepareUpload(S32 discard_level, const LLImageRaw* imageraw, S32 category)
+bool LLImageGL::fsPrepareUpload(S32 discard_level, const LLImageRaw* imageraw, S32 category, FSPreparedUpload& out)
 {
     LL_PROFILE_ZONE_SCOPED_CATEGORY_TEXTURE;
-    fsDropPreparedUpload();
+    fsDropPreparedUpload(out);
     if (gGLManager.mIsDisabled || !FSTextureUpload::canStage() || !imageraw || imageraw->isBufferInvalid() ||
         mTarget != GL_TEXTURE_2D || (sCompressTextures && mAllowCompression))
     {
@@ -389,7 +389,7 @@ bool LLImageGL::fsPrepareUpload(S32 discard_level, const LLImageRaw* imageraw, S
     const S32 h = getHeight(discard_level);
     const U8* data = imageraw->getData();
     if (w != raw_w || h != raw_h ||
-        !FSTextureUpload::stage(data, w, h, mFormatPrimary, mFormatType, mFSStaged))
+        !FSTextureUpload::stage(data, w, h, mFormatPrimary, mFormatType, out.mStaged))
     {
         return false;
     }
@@ -400,26 +400,26 @@ bool LLImageGL::fsPrepareUpload(S32 discard_level, const LLImageRaw* imageraw, S
     updatePickMask(w, h, data);
     mUploadAlphaInfo = nullptr;
 
-    mFSStagedDiscard = discard_level;
+    out.mDiscard = discard_level;
     return true;
 }
 
 // The GL side of the same, recorded on the main thread into a new texture name
-bool LLImageGL::fsCommitPreparedUpload()
+bool LLImageGL::fsCommitPreparedUpload(FSPreparedUpload& prepared)
 {
     LL_PROFILE_ZONE_SCOPED_CATEGORY_TEXTURE;
-    if (!mFSStaged.mSeq)
+    if (!prepared.mStaged.mSeq)
     {
         return false;
     }
-    if (gGLManager.mIsDisabled || !FSTextureUpload::isStaged(mFSStaged))
+    if (gGLManager.mIsDisabled || prepared.mDiscard < 0 || !FSTextureUpload::isStaged(prepared.mStaged))
     {
-        fsDropPreparedUpload();
+        fsDropPreparedUpload(prepared);
         return false;
     }
-    const S32 discard_level = mFSStagedDiscard;
-    const S32 w = mFSStaged.mWidth;
-    const S32 h = mFSStaged.mHeight;
+    const S32 discard_level = prepared.mDiscard;
+    const S32 w = prepared.mStaged.mWidth;
+    const S32 h = prepared.mStaged.mHeight;
 
     // createGLTexture(data), off the main thread case: a new name
     const GLuint old_texname = mTexName;
@@ -427,7 +427,7 @@ bool LLImageGL::fsCommitPreparedUpload()
     LLImageGL::generateTextures(1, &new_texname, mTarget);
     if (!new_texname)
     {
-        fsDropPreparedUpload();
+        fsDropPreparedUpload(prepared);
         return false;
     }
     gGL.getTexUnit(0)->bind(this, false, false, new_texname);
@@ -452,7 +452,14 @@ bool LLImageGL::fsCommitPreparedUpload()
         mHasMipMaps = false;
     }
     gGL.getTexUnit(0)->bind(this, false, false, new_texname);
-    FSTextureUpload::texImage2DStaged(mFSStaged, mTarget, 0, mFormatInternal);
+    if (!FSTextureUpload::texImage2DStaged(prepared.mStaged, mTarget, 0, mFormatInternal))
+    {
+        // The new texture has no pixels: drop it and keep the current one. The caller then
+        // creates the texture the usual way.
+        gGL.getTexUnit(0)->unbind(mBindTarget);
+        LLImageGL::deleteTextures(1, &new_texname);
+        return false;
+    }
     alloc_tex_image(w, h, mFormatInternal, 1);
     if (mUseMipMaps)
     {
@@ -481,14 +488,15 @@ bool LLImageGL::fsCommitPreparedUpload()
 
     mTextureMemory = (S64Bytes)getMipBytes(mCurrentDiscardLevel);
     mLastBindTime = sLastFrameTime;
-    mFSStagedDiscard = -1;
+    prepared.mDiscard = -1;
     return true;
 }
 
-void LLImageGL::fsDropPreparedUpload()
+// static
+void LLImageGL::fsDropPreparedUpload(FSPreparedUpload& prepared)
 {
-    FSTextureUpload::release(mFSStaged);
-    mFSStagedDiscard = -1;
+    FSTextureUpload::release(prepared.mStaged);
+    prepared.mDiscard = -1;
 }
 // </FS:Trish>
 std::unordered_set<LLImageGL*> LLImageGL::sImageList;
@@ -863,7 +871,6 @@ LLImageGL::LLImageGL(
 
 LLImageGL::~LLImageGL()
 {
-    fsDropPreparedUpload(); // <FS:Trish/> pixels still waiting in the upload ring
     if (!mExternalTexture && gGLManager.mInited)
     {
         LLImageGL::cleanup();
