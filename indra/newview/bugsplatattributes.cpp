@@ -1,6 +1,7 @@
 #include "linden_common.h"
 #include "bugsplatattributes.h"
 #include "llstring.h"
+#include "fsyspath.h"
 #include <filesystem>
 
 std::string BugSplatAttributes::mCrashContextFileName;
@@ -120,12 +121,15 @@ bool BugSplatAttributes::writeToFile(const std::string& file_path)
     }
 
     // Rename the temp file to the final file. If rename fails, leave the old file intact.
+    // fsyspath: the paths are UTF-8. A plain std::string is read as the ANSI code page, which mangles
+    // non-ASCII user folders and, with a multibyte code page (Chinese, Japanese, Korean), throws from
+    // the path constructor, outside the error_code overloads: an uncaught exception at startup.
     std::error_code ec;
-    std::filesystem::rename(tmp_file, file_path, ec);
+    std::filesystem::rename(fsyspath(tmp_file), fsyspath(file_path), ec);
     if (ec)
     {
         // Rename failed, remove the temp file and return false
-        std::filesystem::remove(tmp_file, ec);
+        std::filesystem::remove(fsyspath(tmp_file), ec);
         return false;
     }
 
