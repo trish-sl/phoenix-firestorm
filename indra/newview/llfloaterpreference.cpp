@@ -2966,6 +2966,14 @@ void LLFloaterPreference::onChangeMaturity()
 
     getChild<LLIconCtrl>("rating_icon_adult")->setVisible(sim_access == SIM_ACCESS_ADULT);
 
+    // <FS:Trish> Before login the agent's access is the PG default, not the account's: Preferences opened
+    // on the login screen cleared every Mature and Adult search setting, leaving search at General only
+    if (LLStartUp::getStartupState() < STATE_LOGIN_PROCESS_RESPONSE)
+    {
+        return;
+    }
+    // </FS:Trish>
+
     // Update Legacy Search maturity settings
     bool can_access_mature = gAgent.canAccessMature();
     bool can_access_adult  = gAgent.canAccessAdult();
