@@ -290,11 +290,18 @@ bool LLImageGL::fsMakeWritable(bool copy_contents, S32 bind_unit)
         // old texture before now)
         const S32 width = getWidth(mCurrentDiscardLevel);
         const S32 height = getHeight(mCurrentDiscardLevel);
+        // Every level first: glCopyImageSubData fails (GL_INVALID_OPERATION) while a texture is incomplete, which
+        // the fresh one is until its last level exists. Allocating and copying level by level lost every level but
+        // the last, and those kept whatever the memory held: pieces of other textures.
+        for (S32 level = 0; level < levels; ++level)
+        {
+            glTexImage2D(mTarget, level, mFormatInternal, llmax(width >> level, 1), llmax(height >> level, 1), 0,
+                         mFormatPrimary, mFormatType, nullptr);
+        }
         for (S32 level = 0; level < levels; ++level)
         {
             const S32 w = llmax(width >> level, 1);
             const S32 h = llmax(height >> level, 1);
-            glTexImage2D(mTarget, level, mFormatInternal, w, h, 0, mFormatPrimary, mFormatType, nullptr);
             glCopyImageSubData(old_name, mTarget, level, 0, 0, 0, fresh, mTarget, level, 0, 0, 0, w, h, 1);
         }
         alloc_tex_image(width, height, mFormatInternal, 1);
