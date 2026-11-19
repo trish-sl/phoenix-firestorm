@@ -36,7 +36,9 @@
 #include "llviewertexture.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cstring>
+#include <deque>
 
 LLTrace::BlockTimerStatHandle FTM_FS_GDD_BUILD("FS GDD Build");
 LLTrace::BlockTimerStatHandle FTM_FS_GDD_UPLOAD("FS GDD Upload");
@@ -277,19 +279,26 @@ FSGDDBuildScope::~FSGDDBuildScope()
 }
 
 //-----------------------------------------------------------------------------
-// The upload ring. Three slots, one per frame in turn, each a buffer the frame's uploads take consecutive
-// slices of. A slot is written again three frames later:
+// The upload ring. Slots used one per frame in turn, each a buffer the frame's uploads take consecutive slices
+// of. A slot is written again RING_SLOTS_PERSISTENT or RING_SLOTS_SUB_DATA frames later:
 //  - persistent (OpenGL 4.4, the main thread makes the GL calls): the buffers are mapped once, coherent, and
 //    written with memcpy; a fence after each frame's commands, waited on (rarely: three frames is far) before the
 //    slot is written again.
 //  - sub data (the render thread replays the GL calls, or no glBufferStorage): glBufferSubData into the slice. The
-//    data is copied into the command stream when recorded and lands in order, so no fence is needed; a buffer the
-//    GPU may still read three frames later is the driver's to keep.
+//    data is copied into the command stream when recorded and lands in order. With the render thread a frame
+//    behind and the driver's queue behind that, the GPU could still be reading a slot three frames on, and a
+//    driver then stalls in glBufferSubData or copies the buffer aside (AMD). So there are five slots, and a fence
+//    after each frame's commands that the GL thread tests without waiting (in stream order, like FSGLRetire): a
+//    slot whose fence isn't known to have passed when it comes round gets new storage for its buffer (orphaned
+//    with glBufferData), which the driver gives without waiting for the GPU. The main thread only reads what the
+//    GL thread found, so nothing waits for the render thread.
 // A slot that runs out of room mid frame gets a buffer twice the size; the old one stays (its slices are still read
 // by the frame's draws, and may still be written by writeAt) until the slot comes round again.
 namespace
 {
-    constexpr U32 RING_SLOTS = 3;
+    constexpr U32 RING_SLOTS_PERSISTENT = 3;
+    constexpr U32 RING_SLOTS_SUB_DATA = 5;
+    constexpr U32 RING_SLOTS_MAX = 5;
     constexpr size_t RING_FIRST_BYTES = 4u << 20;
     constexpr size_t RING_MAX_BYTES = 256u << 20;
 
@@ -312,6 +321,7 @@ namespace
         size_t mCapacity = 0;
         size_t mUsed = 0;
         GLsync mFence = nullptr;
+        U32 mSerial = 0;                    // sub data: the GL thread's fence after the slot's frame, 0 none
         std::vector<RingBuffer> mRetired;   // outgrown: deleted when the slot comes round again
     };
 
@@ -323,7 +333,7 @@ namespace
         U8* mMapped = nullptr;
     };
 
-    RingSlot sSlots[RING_SLOTS];
+    RingSlot sSlots[RING_SLOTS_MAX];
     U32 sSlot = 0;
     U32 sRingFrame = 0;
     U32 sRingGeneration = 1;            // changes at each release, so slices of a released ring are never written
@@ -340,6 +350,77 @@ namespace
     U64 sStatTailWrites = 0;
     U64 sStatGrowths = 0;
     U64 sStatFenceWaits = 0;
+    U64 sStatSlotsBusy = 0;     // sub data: slots the GPU wasn't known to be done with, given new storage
+
+    // Sub data mode's fences. The main thread numbers them; the GL thread (the render thread, or the main
+    // thread without it) makes and tests them in stream order and stores the highest one passed.
+    U32 sRingNextSerial = 1;
+    std::atomic<U32> sRingDone{ 0 };
+    std::deque<std::pair<U32, GLsync>> sRingFences;    // GL thread: made, not yet seen passed, oldest first
+
+    // serials only go up; differences keep that true across a wrap
+    bool ring_reached(U32 done, U32 serial)
+    {
+        return (S32)(done - serial) >= 0;
+    }
+
+    void ring_store_done(U32 serial)
+    {
+        U32 current = sRingDone.load(std::memory_order_relaxed);
+        while (!ring_reached(current, serial) &&
+               !sRingDone.compare_exchange_weak(current, serial, std::memory_order_release, std::memory_order_relaxed))
+        {
+        }
+    }
+
+    // GL thread, after a frame's commands
+    void ring_gl_fence(U64 serial)
+    {
+        if (GLsync fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0))
+        {
+            sRingFences.emplace_back((U32)serial, fence);
+        }
+    }
+
+    // GL thread: tests the fences oldest first, never waiting
+    void ring_gl_poll(U64)
+    {
+        while (!sRingFences.empty())
+        {
+            const GLenum status = glClientWaitSync(sRingFences.front().second, 0, 0);
+            if (status == GL_TIMEOUT_EXPIRED)
+            {
+                return;
+            }
+            if (status == GL_ALREADY_SIGNALED || status == GL_CONDITION_SATISFIED)
+            {
+                ring_store_done(sRingFences.front().first);
+            }
+            // GL_WAIT_FAILED: a broken fence clears nothing; the slot it covers just gets new storage
+            glDeleteSync(sRingFences.front().second);
+            sRingFences.pop_front();
+        }
+    }
+
+    // GL thread: the fences are not needed any more (the ring was released)
+    void ring_gl_drop(U64)
+    {
+        for (auto& fence : sRingFences)
+        {
+            glDeleteSync(fence.second);
+        }
+        sRingFences.clear();
+    }
+
+    bool ring_fences_supported()
+    {
+        return glFenceSync != nullptr && glClientWaitSync != nullptr && glDeleteSync != nullptr;
+    }
+
+    U32 ring_slots()
+    {
+        return sRingMode == RING_PERSISTENT ? RING_SLOTS_PERSISTENT : RING_SLOTS_SUB_DATA;
+    }
 
     bool persistent_supported()
     {
@@ -373,6 +454,7 @@ namespace
 
     void release_ring()
     {
+        bool serials = false;
         for (RingSlot& slot : sSlots)
         {
             if (slot.mFence)
@@ -380,6 +462,8 @@ namespace
                 glDeleteSync(slot.mFence);
                 slot.mFence = nullptr;
             }
+            serials = serials || slot.mSerial;
+            slot.mSerial = 0;
             free_ring_buffer(slot.mBuffer);
             for (RingBuffer& retired : slot.mRetired)
             {
@@ -388,6 +472,10 @@ namespace
             slot.mRetired.clear();
             slot.mCapacity = 0;
             slot.mUsed = 0;
+        }
+        if (serials)
+        {
+            FSGLStream::recordCall(&ring_gl_drop, 0);
         }
         sSlot = 0;
         sRingStarted = false;
@@ -460,7 +548,17 @@ namespace
                 }
                 done.mFence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
             }
-            sSlot = (sSlot + 1) % RING_SLOTS;
+            else if (ring_fences_supported())
+            {   // made and tested by the GL thread in stream order: recorded, never waited for
+                done.mSerial = sRingNextSerial++;
+                if (sRingNextSerial == 0)
+                {
+                    sRingNextSerial = 1;
+                }
+                FSGLStream::recordCall(&ring_gl_fence, done.mSerial);
+                FSGLStream::recordCall(&ring_gl_poll, 0);
+            }
+            sSlot = (sSlot + 1) % ring_slots();
         }
         sRingStarted = true;
         sRingFrame = frame;
@@ -471,6 +569,17 @@ namespace
             wait_fence(slot.mFence);
             glDeleteSync(slot.mFence);
             slot.mFence = nullptr;
+        }
+        if (slot.mSerial)
+        {
+            if (slot.mBuffer.mName && !ring_reached(sRingDone.load(std::memory_order_acquire), slot.mSerial))
+            {   // the GPU may still read it: new storage under the same name, the old kept by the driver until then
+                glBindBuffer(GL_COPY_WRITE_BUFFER, slot.mBuffer.mName);
+                glBufferData(GL_COPY_WRITE_BUFFER, (GLsizeiptr)slot.mCapacity, nullptr, GL_DYNAMIC_DRAW);
+                glBindBuffer(GL_COPY_WRITE_BUFFER, 0);
+                ++sStatSlotsBusy;
+            }
+            slot.mSerial = 0;
         }
         for (RingBuffer& retired : slot.mRetired)
         {
@@ -558,12 +667,13 @@ namespace
         }
         const char* mode = sRingMode == RING_PERSISTENT ? "persistent mapped" : sRingMode == RING_SUB_DATA ? "sub data" : "unused";
         LL_INFOS("FSGPUDrivenUpload") << "GPU-driven uploads, last 10 s: ring (" << mode << ", " << (ring_bytes >> 10) << " KB in "
-                                      << RING_SLOTS << " slots) " << sStatRingSlices << " slices, " << (sStatRingBytes >> 10)
-                                      << " KB, " << sStatGrowths << " growths, " << sStatFenceWaits << " fence waits; own buffers "
+                                      << ring_slots() << " slots) " << sStatRingSlices << " slices, " << (sStatRingBytes >> 10)
+                                      << " KB, " << sStatGrowths << " growths, " << sStatFenceWaits << " fence waits, "
+                                      << sStatSlotsBusy << " slots still in use renewed; own buffers "
                                       << sStatOwnUploads << " uploads, " << (sStatOwnBytes >> 10) << " KB; matrix tables: "
                                       << gFSGDDStatModelsComputed << " models computed, " << gFSGDDStatModelsFound
                                       << " found already there, " << sStatTailWrites << " shared table appends" << LL_ENDL;
-        sStatRingSlices = sStatRingBytes = sStatOwnUploads = sStatOwnBytes = sStatTailWrites = sStatGrowths = sStatFenceWaits = 0;
+        sStatRingSlices = sStatRingBytes = sStatOwnUploads = sStatOwnBytes = sStatTailWrites = sStatGrowths = sStatFenceWaits = sStatSlotsBusy = 0;
         gFSGDDStatModelsComputed = gFSGDDStatModelsFound = 0;
     }
 }
