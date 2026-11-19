@@ -498,6 +498,8 @@ public:
     void            standUp();
     /// @brief ground-sit at agent's current position
     void            sitDown();
+    // game-control ground-sit
+    void            sitDownNearby();
 
     // <FS:Ansariel> FIRE-1568: Fix sit on AFK issues (standing up when sitting before)
     void            setIsAfkSitting(bool sitting) { mAfkSitting = sitting; }
