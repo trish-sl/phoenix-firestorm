@@ -313,7 +313,7 @@ private:
     // <FS:Beq> Area search fixes
     bool mFSAreaSearchActive{ false };
     bool m360CaptureActive{ false };
-    bool mFSMassObjectEditActive{ false };
+    bool mFSRegionScanActive{ false }; // <FS:Trish/> FSRegionObjectScanner (Mass Object Edit, Script Repositories)
     // </FS:Beq>
 
     //--------------------------------------------------------------------
@@ -326,10 +326,10 @@ public:
     // <FS:Beq> Area search fixes
     void            setFSAreaSearchActive(bool enabled) { mFSAreaSearchActive = enabled; }
     void            set360CaptureActive(bool enabled) { m360CaptureActive = enabled; }
-    void            setFSMassObjectEditActive(bool enabled) { mFSMassObjectEditActive = enabled; }
+    void            setFSRegionScanActive(bool enabled) { mFSRegionScanActive = enabled; }
     bool            getFSAreaSearchActive() const { return mFSAreaSearchActive; }
     bool            get360CaptureActive() const { return m360CaptureActive; }
-    bool            getFSMassObjectEditActive() const { return mFSMassObjectEditActive; }
+    bool            getFSRegionScanActive() const { return mFSRegionScanActive; }
     // </FS:Beq>
 
     const LLVector3d &getLastPositionGlobal() const { return mLastPositionGlobal; }

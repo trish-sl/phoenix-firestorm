@@ -293,11 +293,14 @@ void HttpCoroHandler::onCompleted(LLCore::HttpHandle handle, LLCore::HttpRespons
         // </FS:Trish>
         else
         {
+            // <FS:Trish> No query in the log: a signed download URL carries a short-lived key there
+            const std::string& url = response->getRequestURL();
             LL_WARNS("CoreHTTP")
                 << "Possible failure [" << status.toTerseString() << "] cannot "<< response->getRequestMethod()
-                << " url '" << response->getRequestURL()
+                << " url '" << url.substr(0, url.find('?'))
                 << "' because " << status.toString()
                 << LL_ENDL;
+            // </FS:Trish>
         }
         if ((errType >= 400) && (errType < 500))
         {

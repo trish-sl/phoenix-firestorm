@@ -223,6 +223,7 @@
 #include "fsfloatersplashscreensettings.h"
 #include "fsfloaterstatistics.h"
 #include "fsfloaterscriptprofiler.h" // <FS:Trish/>
+#include "fsfloaterscriptrepos.h" // <FS:Trish/>
 #include "fsfloatercamerabookmarks.h" // <FS:Trish/>
 #include "fsfloaterstreamtitle.h"
 #include "fsfloaterteleporthistory.h"
@@ -670,6 +671,7 @@ void LLViewerFloaterReg::registerFloaters()
     LLFloaterReg::add("fs_recent_assets", "floater_fs_recent_assets.xml", (LLFloaterBuildFunc)&LLFloaterReg::build<FSFloaterRecentAssets>); // <FS:Trish/>
     LLFloaterReg::add("fs_splash_screen_settings", "floater_fs_splash_screen_settings.xml", (LLFloaterBuildFunc)&LLFloaterReg::build<FSFloaterSplashScreenSettings>);
     LLFloaterReg::add("fs_script_profiler", "floater_fs_script_profiler.xml", (LLFloaterBuildFunc)&LLFloaterReg::build<FSFloaterScriptProfiler>); // <FS:Trish/>
+    LLFloaterReg::add("fs_script_repos", "floater_fs_script_repos.xml", (LLFloaterBuildFunc)&LLFloaterReg::build<FSFloaterScriptRepos>); // <FS:Trish/>
     LLFloaterReg::add("fs_camera_bookmarks", "floater_fs_camera_bookmarks.xml", (LLFloaterBuildFunc)&LLFloaterReg::build<FSFloaterCameraBookmarks>); // <FS:Trish/>
     LLFloaterReg::add("fs_streamtitle", "floater_fs_streamtitle.xml", (LLFloaterBuildFunc)&LLFloaterReg::build<FSFloaterStreamTitle>);
     LLFloaterReg::add("fs_streamtitlehistory", "floater_fs_streamtitlehistory.xml", (LLFloaterBuildFunc)&LLFloaterReg::build<FSFloaterStreamTitleHistory>);

@@ -1,0 +1,72 @@
+name: Script repositories unit test
+
+# Builds and runs only the fsscriptrepos unit test (llcommon + minizip-ng), not the viewer.
+# Uses the open configuration, so no private packages or secrets are needed.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "indra/newview/fsscriptrepos*"
+      - "indra/newview/tests/fsscriptrepos_test.cpp"
+      - "indra/llcommon/**"
+      - "indra/cmake/**"
+      - "autobuild.xml"
+      - ".github/workflows/unit-tests-script-repos.yml"
+  push:
+    paths:
+      - "indra/newview/fsscriptrepos*"
+      - "indra/newview/tests/fsscriptrepos_test.cpp"
+      - ".github/workflows/unit-tests-script-repos.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fsscriptrepos:
+    runs-on: windows-2022
+    timeout-minutes: 120
+    env:
+      AUTOBUILD_VARIABLES_FILE: ${{ github.workspace }}/build-variables/variables
+      AUTOBUILD_ADDRSIZE: 64
+      AUTOBUILD_VSVER: "170"
+      AUTOBUILD_INSTALLABLE_CACHE: ${{ github.workspace }}/.autobuild-installables
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Checkout build vars
+        uses: actions/checkout@v7
+        with:
+          repository: FirestormViewer/fs-build-variables
+          path: build-variables
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - name: Install python requirements
+        shell: bash
+        run: |
+          python -m pip install -r requirements.txt
+          echo "PYTHON=$(cygpath -w "$(command -v python)")" >> "$GITHUB_ENV"
+
+      - name: Cache autobuild packages
+        uses: actions/cache@v6
+        with:
+          path: .autobuild-installables
+          key: windows-64-ReleaseFS_open-${{ hashFiles('autobuild.xml') }}
+
+      - name: Configure (tests on)
+        shell: bash
+        run: autobuild configure -c ReleaseFS_open -A64 -- -DLL_TESTS:BOOL=ON
+
+      - name: Build the test
+        shell: bash
+        run: cmake --build build-vc170-64 --config Release --target PROJECT_firestorm-bin_TEST_fsscriptrepos --parallel
+
+      - name: Run the test
+        shell: bash
+        run: ./build-vc170-64/sharedlibs/Release/PROJECT_firestorm-bin_TEST_fsscriptrepos.exe

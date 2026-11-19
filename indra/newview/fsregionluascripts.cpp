@@ -15,6 +15,7 @@
 #include "llcoros.h"
 #include "lleventcoro.h"
 #include "llevents.h"
+#include "llfilesystem.h" // <FS:Trish/>
 #include "llfloaterreg.h"
 #include "llinventorydefines.h"
 #include "llinventorymodel.h"
@@ -85,8 +86,9 @@ namespace
     public:
         ExistingScriptAssetUpload(const LLUUID& task_id, const LLUUID& item_id,
             const LLUUID& asset_id, const std::string& target, bool running,
+            const LLUUID& experience, // <FS:Trish/> keep the script's experience
             taskUploadFinish_f finish, uploadFailed_f failed) :
-            LLScriptAssetUpload(task_id, item_id, target, running, LLUUID::null,
+            LLScriptAssetUpload(task_id, item_id, target, running, experience,
                 std::string(), finish, failed)
         {
             setAssetId(asset_id);
@@ -97,6 +99,14 @@ namespace
             return LLSDMap("success", LLSD::Boolean(true));
         }
     };
+
+    // <FS:Trish> Each request waits on its own mail drop: a reply that comes after its wait timed out must not
+    // wake a later wait (a mail drop keeps events nobody took).
+    std::string ownPumpName(const char* prefix)
+    {
+        return std::string(prefix) + LLUUID::generateNewID().asString();
+    }
+    // </FS:Trish>
 
     void uploadSucceeded(const std::string& pump_name, const LLSD& result)
     {
@@ -123,7 +133,8 @@ namespace
             return false;
         }
 
-        std::string* pump_name = new std::string(pump.getName());
+        LLEventMailDrop own(ownPumpName("FSScriptAsset-"), true); // <FS:Trish/>
+        std::string* pump_name = new std::string(own.getName());
         // Match the compile queue's proven retrieval path. Passing the object
         // simulator here can route the transfer to a host that does not serve
         // task inventory assets on every grid.
@@ -132,7 +143,7 @@ namespace
             object->getID(), item->getUUID(), item->getAssetUUID(), item->getType(),
             &assetFetched, pump_name, true);
 
-        LLSD result = llcoro::suspendUntilEventOnWithTimeout(pump, INVENTORY_FETCH_TIMEOUT,
+        LLSD result = llcoro::suspendUntilEventOnWithTimeout(own, INVENTORY_FETCH_TIMEOUT,
             LLSDMap("timeout", LLSD::Boolean(true)));
         if (result.has("timeout"))
         {
@@ -273,9 +284,10 @@ namespace
             return false;
         }
 
-        InventoryFetcher::ptr_t fetcher = std::make_shared<InventoryFetcher>(pump, object);
+        LLEventMailDrop own(ownPumpName("FSPrimInventory-"), true); // <FS:Trish/>
+        InventoryFetcher::ptr_t fetcher = std::make_shared<InventoryFetcher>(own, object);
         fetcher->fetch();
-        LLSD result = llcoro::suspendUntilEventOnWithTimeout(pump, INVENTORY_FETCH_TIMEOUT,
+        LLSD result = llcoro::suspendUntilEventOnWithTimeout(own, INVENTORY_FETCH_TIMEOUT,
             LLSDMap("timeout", LLSD::Boolean(true)));
         if (result.has("timeout"))
         {
@@ -287,7 +299,7 @@ namespace
     }
 
     bool compileScript(LLViewerObject* object, const LLViewerInventoryItem* item,
-        const std::string& target, LLEventPump& pump, LLSD& result)
+        const std::string& target, const LLUUID& experience, LLEventPump& pump, LLSD& result)
     {
         if (!object || !item || !object->getRegion() || item->getAssetUUID().isNull())
         {
@@ -300,13 +312,14 @@ namespace
             return false;
         }
 
+        LLEventMailDrop own(ownPumpName("FSScriptCompile-"), true); // <FS:Trish/>
         LLResourceUploadInfo::ptr_t upload_info = std::make_shared<ExistingScriptAssetUpload>(
-            object->getID(), item->getUUID(), item->getAssetUUID(), target, false,
-            boost::bind(&uploadSucceeded, pump.getName(), _4),
-            boost::bind(&uploadFailed, pump.getName(), _3, _4));
+            object->getID(), item->getUUID(), item->getAssetUUID(), target, false, experience,
+            boost::bind(&uploadSucceeded, own.getName(), _4),
+            boost::bind(&uploadFailed, own.getName(), _3, _4));
         LLViewerAssetUpload::EnqueueInventoryUpload(url, upload_info);
 
-        result = llcoro::suspendUntilEventOnWithTimeout(pump, SCRIPT_UPLOAD_TIMEOUT,
+        result = llcoro::suspendUntilEventOnWithTimeout(own, SCRIPT_UPLOAD_TIMEOUT,
             LLSDMap("timeout", LLSD::Boolean(true)));
         return !result.has("timeout") && result["compiled"].asBoolean() &&
             result["new_asset"].asUUID().notNull();
@@ -341,7 +354,7 @@ FSRegionLuaScripts::~FSRegionLuaScripts()
 
 void FSRegionLuaScripts::handleMenuAction(const LLSD& userdata)
 {
-    if (mOperation != Operation::NONE)
+    if (mOperation != Operation::NONE || mWindowLock) // <FS:Trish/> or the Script Repositories window
     {
         FSCommon::report_to_nearby_chat("A region Lua script operation is already running.");
         return;
@@ -835,114 +848,34 @@ void FSRegionLuaScripts::substitutionCoro()
                 continue;
             }
 
-            LLPointer<LLViewerInventoryItem> replacement = new LLViewerInventoryItem(source->second.get());
+            // <FS:Trish> The swap itself is shared with the Script Repositories window
             const std::string original_name = old_script->getName();
-            const bool can_rename_task_inventory = info.owner_id == gAgent.getID();
             bool original_removed = false;
-            LLInventoryObject::object_list_t inventory_before_add = target_inventory;
-
-            if (can_rename_task_inventory)
+            std::string error;
+            if (substituteScript(object, toScanned(info), old_script, source->second, "lsl-luau", "luau", true,
+                LLUUID::null, pump, original_removed, error))
             {
-                replacement->rename(std::string("__FS_LUA_SWAP_") + replacement->getUUID().asString());
-            }
-            else
-            {
-                // Delegated edit rights permit task inventory add/remove but
-                // not rename. Remove the collision first, confirm the server
-                // inventory changed, then add the replacement with its final
-                // name directly.
-                replacement->rename(original_name);
-                object->removeInventory(old_script->getUUID());
-                if (!fetchInventoryAfterRemoval(object, old_script->getUUID(), pump,
-                    inventory_before_add))
-                {
-                    ++failures;
-                    FSCommon::report_to_nearby_chat(std::string(
-                        "Warning: could not confirm removal of script \"") + original_name +
-                        "\" from other-owned object \"" + info.name + "\"; replacement was not added.");
-                    continue;
-                }
-                original_removed = true;
-            }
-
-            object->saveScript(replacement, false, true, LLUUID::null);
-            LLInventoryObject::object_list_t staged_inventory;
-            LLPointer<LLViewerInventoryItem> staged_item;
-            for (S32 attempt = 0; attempt < 10 && !staged_item; ++attempt)
-            {
-                // saveScript() adds an optimistic local item using the agent
-                // inventory UUID. Force a server refresh so we see the actual
-                // task item UUID assigned by the simulator.
-                object->dirtyInventory();
-                staged_inventory.clear();
-                if (fetchInventory(object, pump, staged_inventory))
-                {
-                    staged_item = findNewScriptItem(inventory_before_add, staged_inventory);
-                }
-                if (!staged_item)
-                {
-                    llcoro::suspendUntilTimeout(0.25f);
-                }
-            }
-
-            LLUUID staged_asset_id;
-            S32 staged_fetch_status = LL_ERR_NOERR;
-            const bool staged_asset_fetched = staged_item &&
-                fetchScriptAsset(object, staged_item, pump, staged_asset_id, staged_fetch_status);
-            if (staged_asset_fetched)
-            {
-                staged_item->setAssetUUID(staged_asset_id);
-            }
-
-            LLSD compile_result;
-            bool compiled = staged_asset_fetched && compileScript(object, staged_item,
-                "lsl-luau", pump, compile_result);
-            if (staged_asset_fetched && !compiled)
-            {
-                compiled = compileScript(object, staged_item, "luau",
-                    pump, compile_result);
-            }
-
-            if (compiled)
-            {
-                if (can_rename_task_inventory)
-                {
-                    object->removeInventory(old_script->getUUID());
-                    LLPointer<LLViewerInventoryItem> renamed_item =
-                        new LLViewerInventoryItem(staged_item.get());
-                    renamed_item->setAssetUUID(compile_result["new_asset"].asUUID());
-                    renamed_item->rename(original_name);
-                    object->updateInventory(renamed_item, TASK_INVENTORY_ITEM_KEY, false);
-                }
-                setScriptRunning(object, staged_item->getUUID(), true);
                 ++replacements;
                 prim_changed = true;
             }
             else
             {
-                if (staged_item)
-                {
-                    object->removeInventory(staged_item->getUUID());
-                }
                 ++failures;
-
-                std::string root_name = info.name;
-                auto root = mObjects.find(info.root_id);
-                if (root != mObjects.end() && root->second.received)
+                if (error == "removal")
                 {
-                    root_name = root->second.name;
+                    FSCommon::report_to_nearby_chat(std::string(
+                        "Warning: could not confirm removal of script \"") + original_name +
+                        "\" from other-owned object \"" + info.name + "\"; replacement was not added.");
                 }
-                FSCommon::report_to_nearby_chat(std::string("Warning: Lua substitution failed for object \"") +
-                    root_name + "\", link \"" + info.name + "\", script \"" + original_name +
-                    (original_removed ? "\"; the original script had already been removed. " :
-                        "\"; the original script was kept. ") +
-                    (!staged_item ? "The staged task item could not be identified." :
-                        (!staged_asset_fetched ?
-                            std::string("The staged source could not be downloaded (asset status ") +
-                                llformat("%d", staged_fetch_status) + ")." :
-                            "LSL-Luau and Lua compilation both failed.")));
+                else
+                {
+                    FSCommon::report_to_nearby_chat(std::string("Warning: Lua substitution failed for object \"") +
+                        toScanned(info).root_name + "\", link \"" + info.name + "\", script \"" + original_name +
+                        (original_removed ? "\"; the original script had already been removed. " :
+                            "\"; the original script was kept. ") + error);
+                }
             }
-
+            // </FS:Trish>
             llcoro::suspend();
         }
 
@@ -961,6 +894,271 @@ void FSRegionLuaScripts::substitutionCoro()
     }
     finishOperation();
 }
+
+// <FS:Trish> Shared with the Script Repositories window
+namespace
+{
+    std::set<std::string> sRunningWaiters;
+
+    std::string runningPumpName(const LLUUID& object_id, const LLUUID& item_id)
+    {
+        return "FSScriptRunning-" + object_id.asString() + "-" + item_id.asString();
+    }
+}
+
+FSRegionLuaScripts::ScannedPrim FSRegionLuaScripts::toScanned(const ObjectInfo& info) const
+{
+    ScannedPrim prim;
+    prim.id = info.id;
+    prim.root_id = info.root_id;
+    prim.owner_id = info.owner_id;
+    prim.name = info.name;
+    prim.root_name = info.name;
+    auto root = mObjects.find(info.root_id);
+    if (root != mObjects.end() && root->second.received)
+    {
+        prim.root_name = root->second.name;
+    }
+    prim.permissions = info.permissions;
+    prim.scripted = info.scripted;
+    return prim;
+}
+
+bool FSRegionLuaScripts::lockForWindow()
+{
+    if (mOperation != Operation::NONE || mWindowLock)
+    {
+        return false;
+    }
+    mWindowLock = true;
+    return true;
+}
+
+bool FSRegionLuaScripts::fetchPrimInventory(LLViewerObject* object, LLEventPump& pump,
+    LLInventoryObject::object_list_t& inventory)
+{
+    return fetchInventory(object, pump, inventory);
+}
+
+bool FSRegionLuaScripts::fetchScriptText(LLViewerObject* object, const LLViewerInventoryItem* item, LLEventPump& pump,
+    std::string& text)
+{
+    LLUUID asset_id;
+    S32 status = LL_ERR_NOERR;
+    if (!fetchScriptAsset(object, item, pump, asset_id, status))
+    {
+        return false;
+    }
+    LLFileSystem file(asset_id, LLAssetType::AT_LSL_TEXT, LLFileSystem::READ);
+    const S32 size = file.getSize();
+    if (size <= 0)
+    {
+        return false;
+    }
+    text.assign((size_t)size, '\0');
+    if (!file.read(reinterpret_cast<U8*>(text.data()), size))
+    {
+        return false;
+    }
+    // Script assets end with a NUL
+    while (!text.empty() && text.back() == '\0')
+    {
+        text.pop_back();
+    }
+    return true;
+}
+
+bool FSRegionLuaScripts::queryScriptRunning(LLViewerObject* object, const LLUUID& item_id, LLEventPump& pump,
+    bool& running, std::string& target)
+{
+    if (!object || !object->getRegion())
+    {
+        return false;
+    }
+    const std::string name = runningPumpName(object->getID(), item_id);
+    LLEventMailDrop reply(name, true);
+    sRunningWaiters.insert(name);
+
+    LLMessageSystem* msg = gMessageSystem;
+    msg->newMessageFast(_PREHASH_GetScriptRunning);
+    msg->nextBlockFast(_PREHASH_Script);
+    msg->addUUIDFast(_PREHASH_ObjectID, object->getID());
+    msg->addUUIDFast(_PREHASH_ItemID, item_id);
+    msg->sendReliable(object->getRegion()->getHost());
+
+    LLSD result = llcoro::suspendUntilEventOnWithTimeout(reply, 15.f, LLSDMap("timeout", LLSD::Boolean(true)));
+    sRunningWaiters.erase(name);
+    if (result.has("timeout"))
+    {
+        return false;
+    }
+    running = result["running"].asBoolean();
+    target = result["target"].asString();
+    return true;
+}
+
+void FSRegionLuaScripts::onScriptRunningReply(const LLUUID& object_id, const LLUUID& item_id, bool running, bool mono,
+    bool luau, bool luau_language)
+{
+    const std::string name = runningPumpName(object_id, item_id);
+    if (!sRunningWaiters.count(name))
+    {
+        return;
+    }
+    LLSD result;
+    result["running"] = running;
+    result["target"] = luau ? (luau_language ? "luau" : "lsl-luau") : (mono ? "mono" : "lsl2");
+    LLEventPumps::instance().post(name, result);
+}
+
+bool FSRegionLuaScripts::substituteScript(LLViewerObject* object, const ScannedPrim& prim,
+    LLViewerInventoryItem* old_script, const LLViewerInventoryItem* agent_source, const std::string& target,
+    const std::string& fallback_target, bool running, const LLUUID& experience, LLEventPump& pump,
+    bool& original_removed, std::string& error)
+{
+    original_removed = false;
+    if (!object || !old_script || !agent_source || !object->getRegion())
+    {
+        error = "Nothing to substitute.";
+        return false;
+    }
+    // Held across every suspend below; a teleport or the object's removal stops the swap at the next step
+    LLPointer<LLViewerObject> keep(object);
+    const LLUUID region_id = object->getRegion()->getRegionID();
+    auto gone = [&keep, &region_id, &error]()
+    {
+        if (keep->isDead() || !keep->getRegion() || keep->getRegion()->getRegionID() != region_id)
+        {
+            error = "The object is gone or the region changed.";
+            return true;
+        }
+        return false;
+    };
+
+    LLPointer<LLViewerInventoryItem> replacement = new LLViewerInventoryItem(agent_source);
+    const std::string original_name = old_script->getName();
+    const bool can_rename_task_inventory = prim.owner_id == gAgent.getID();
+    // Read fresh: an earlier swap in the same prim added an item the caller's list does not have
+    LLInventoryObject::object_list_t inventory_before_add;
+    if (!fetchInventory(object, pump, inventory_before_add))
+    {
+        error = "The object's contents could not be read.";
+        return false;
+    }
+    if (gone())
+    {
+        return false;
+    }
+
+    if (can_rename_task_inventory)
+    {
+        replacement->rename(std::string("__FS_LUA_SWAP_") + replacement->getUUID().asString());
+    }
+    else
+    {
+        // Delegated edit rights permit task inventory add/remove but
+        // not rename. Remove the collision first, confirm the server
+        // inventory changed, then add the replacement with its final
+        // name directly.
+        replacement->rename(original_name);
+        object->removeInventory(old_script->getUUID());
+        if (!fetchInventoryAfterRemoval(object, old_script->getUUID(), pump, inventory_before_add))
+        {
+            error = "removal";
+            return false;
+        }
+        original_removed = true;
+        if (gone())
+        {
+            return false;
+        }
+    }
+
+    object->saveScript(replacement, false, true, LLUUID::null);
+    LLInventoryObject::object_list_t staged_inventory;
+    LLPointer<LLViewerInventoryItem> staged_item;
+    for (S32 attempt = 0; attempt < 10 && !staged_item; ++attempt)
+    {
+        // saveScript() adds an optimistic local item using the agent
+        // inventory UUID. Force a server refresh so we see the actual
+        // task item UUID assigned by the simulator.
+        object->dirtyInventory();
+        staged_inventory.clear();
+        if (fetchInventory(object, pump, staged_inventory))
+        {
+            staged_item = findNewScriptItem(inventory_before_add, staged_inventory);
+        }
+        if (!staged_item)
+        {
+            llcoro::suspendUntilTimeout(0.25f);
+        }
+        if (gone())
+        {
+            return false;
+        }
+    }
+
+    LLUUID staged_asset_id;
+    S32 staged_fetch_status = LL_ERR_NOERR;
+    const bool staged_asset_fetched = staged_item &&
+        fetchScriptAsset(object, staged_item, pump, staged_asset_id, staged_fetch_status);
+    if (staged_asset_fetched)
+    {
+        staged_item->setAssetUUID(staged_asset_id);
+    }
+
+    LLSD compile_result;
+    bool compiled = staged_asset_fetched && compileScript(object, staged_item, target, experience, pump, compile_result);
+    if (staged_asset_fetched && !compiled && !fallback_target.empty() && !gone())
+    {
+        compiled = compileScript(object, staged_item, fallback_target, experience, pump, compile_result);
+    }
+    if (gone())
+    {
+        return false;
+    }
+
+    if (compiled)
+    {
+        if (can_rename_task_inventory)
+        {
+            object->removeInventory(old_script->getUUID());
+            LLPointer<LLViewerInventoryItem> renamed_item = new LLViewerInventoryItem(staged_item.get());
+            renamed_item->setAssetUUID(compile_result["new_asset"].asUUID());
+            renamed_item->rename(original_name);
+            object->updateInventory(renamed_item, TASK_INVENTORY_ITEM_KEY, false);
+        }
+        if (running)
+        {
+            setScriptRunning(object, staged_item->getUUID(), true);
+        }
+        return true;
+    }
+
+    if (staged_item)
+    {
+        object->removeInventory(staged_item->getUUID());
+    }
+    if (!staged_item)
+    {
+        error = "The staged task item could not be identified.";
+    }
+    else if (!staged_asset_fetched)
+    {
+        error = llformat("The staged source could not be downloaded (asset status %d).", staged_fetch_status);
+    }
+    else if (!fallback_target.empty())
+    {
+        error = "LSL-Luau and Lua compilation both failed.";
+    }
+    else
+    {
+        const LLSD& errors = compile_result["errors"];
+        error = errors.isArray() && errors.size() > 0 ? errors[0].asString() : std::string("It does not compile.");
+    }
+    return false;
+}
+// </FS:Trish>
 
 void FSRegionLuaScripts::finishOperation()
 {

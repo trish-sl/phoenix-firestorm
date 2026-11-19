@@ -92,6 +92,7 @@
 #include "rlvlocks.h"
 // [/RLVa:KB]
 #include "fsscriptlibrary.h"
+#include "fsregionluascripts.h" // <FS:Trish/>
 
 // NaCl - LSL Preprocessor
 #include "fslslpreproc.h"
@@ -3667,6 +3668,16 @@ void LLLiveLSLEditor::processScriptRunningReply(LLMessageSystem* msg, void**)
 
     bool running = false;
     msg->getBOOLFast(_PREHASH_Script, _PREHASH_Running, running);
+
+    // <FS:Trish> Script Repositories asks for the running state and compile target before a swap
+    {
+        bool mono = false, luau = false, luau_language = false;
+        msg->getBOOLFast(_PREHASH_Script, _PREHASH_Mono, mono);
+        msg->getBOOLFast(_PREHASH_Script, _PREHASH_Luau, luau);
+        msg->getBOOLFast(_PREHASH_Script, _PREHASH_LuauLanguage, luau_language);
+        FSRegionLuaScripts::onScriptRunningReply(object_id, item_id, running, mono, luau, luau_language);
+    }
+    // </FS:Trish>
 
     LLSD floater_key;
     floater_key["taskid"] = object_id;

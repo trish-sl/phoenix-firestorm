@@ -76,7 +76,7 @@
 // <FS:Ansariel> [FS communication UI]
 //#include "llfloaterimnearbychat.h"
 #include "fsfloaternearbychat.h"
-#include "fsmassobjectedit.h"
+#include "fsregionobjectscanner.h" // <FS:Trish/>
 #include "fsregionluascripts.h"
 // </FS:Ansariel> [FS communication UI]
 #include "llmarketplacefunctions.h"
@@ -4874,10 +4874,8 @@ void process_object_properties(LLMessageSystem *msg, void**user_data)
     }
 
     FSRegionLuaScripts::instance().processObjectProperties(msg);
-    if (FSMassObjectEdit* mass_edit = LLFloaterReg::findTypedInstance<FSMassObjectEdit>("mass_object_edit"))
-    {
-        mass_edit->processObjectProperties(msg);
-    }
+    FSRegionObjectScanner::dispatchObjectProperties(msg); // <FS:Trish/> Mass Object Edit, Script Repositories
+
 
     AnimationExplorer* explorer = LLFloaterReg::findTypedInstance<AnimationExplorer>("animation_explorer");
     if (explorer)

@@ -1,0 +1,267 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<floater
+ name="fs_script_repos"
+ title="Script Repositories"
+ help_topic="fs_script_repos"
+ can_resize="true"
+ height="480"
+ width="760"
+ min_width="700"
+ min_height="360"
+ layout="topleft"
+ save_rect="true"
+ single_instance="true">
+    <string name="never_synced">never synced</string>
+    <string name="default_branch">(default branch)</string>
+    <string name="token_none">Optional, for private repositories</string>
+    <string name="token_saved">Saved (type to replace)</string>
+    <string name="bad_repo">Type owner/repo or a github.com link.</string>
+    <string name="duplicate_repo">That repository is already listed.</string>
+    <string name="no_inventory">The inventory is not loaded yet.</string>
+    <string name="no_region">Not connected to a region.</string>
+    <string name="checking">Checking [REPO]...</string>
+    <string name="applying">Applying [DONE] of [TOTAL]...</string>
+    <string name="cancelled">Cancelled. What was already done stays.</string>
+    <string name="nothing_listed">Nothing to apply.</string>
+    <string name="inventory_summary">[REPO] @ [COMMIT]: [CREATE] to create, [UPDATE] to update, [UNCHANGED] unchanged, [GONE] no longer in the repository, [SKIP] skipped</string>
+    <string name="nothing_to_do">[REPO] @ [COMMIT]: nothing to do</string>
+    <string name="inventory_ready">Nothing has been changed yet. Apply creates and updates the items listed.</string>
+    <string name="images_cost">Image uploads: about L$[COST] (the grid charges per image).</string>
+    <string name="inventory_done">Done: [OK] items saved, [FAILED] failed.</string>
+    <string name="action_create">create</string>
+    <string name="action_update">update</string>
+    <string name="action_gone">not in repo</string>
+    <string name="action_skip">skipped</string>
+    <string name="action_error">error</string>
+    <string name="action_done">done</string>
+    <string name="action_failed">failed</string>
+    <string name="kind_lsl">script (LSL)</string>
+    <string name="kind_lua">script (Lua)</string>
+    <string name="kind_notecard">notecard</string>
+    <string name="kind_image">image</string>
+    <string name="note_no_lua">this region has no Lua</string>
+    <string name="note_unsafe">unsafe path in the download</string>
+    <string name="note_not_compiled">saved, does not compile: [ERROR]</string>
+    <string name="note_create_failed">could not create the item</string>
+    <string name="note_upload_failed">could not save: [ERROR]</string>
+    <string name="note_kept">left in the inventory</string>
+    <string name="region_busy">Another region script tool is running. Try again when it is done.</string>
+    <string name="region_scanning">Finding every object in this region...</string>
+    <string name="region_progress">Reading your objects, and new ones as they arrive: [READ] of [TOTAL] prims read, [LISTED] scripts listed. Apply works on the rows listed so far; Cancel stops.</string>
+    <string name="region_stopped">Stopped watching; the rows found stay.</string>
+    <string name="region_streaming">Finding every object in this region: [COUNT] so far...</string>
+    <string name="region_reading">Reading the contents of your scripted objects ([DONE] of [TOTAL])...</string>
+    <string name="region_changed">The region changed: stopped.</string>
+    <string name="region_timeout">The region scan did not finish in 5 minutes: stopped. Try again.</string>
+    <string name="region_summary">[CHANGE] scripts would change, [CURRENT] current, [OTHER] not touched, in [OBJECTS] of your objects</string>
+    <string name="region_ready">Nothing has been changed yet. Apply replaces the scripts marked "would change"; the old text is saved first.</string>
+    <string name="region_done">Done: [OK] scripts replaced, [FAILED] failed. Old texts saved in [FOLDER]</string>
+    <string name="region_none">No script in your objects here has the name of a repository script.</string>
+    <string name="state_current">current</string>
+    <string name="state_change">would change</string>
+    <string name="state_language">language differs</string>
+    <string name="state_ambiguous">ambiguous</string>
+    <string name="state_untouched">not touched</string>
+    <string name="note_language">only a [OTHER] version is in the repository</string>
+    <string name="note_ambiguous">several different repository files have this name</string>
+    <string name="note_no_modify">you may not modify this script</string>
+    <string name="note_unreadable">its text could not be read</string>
+    <string name="note_running_unknown">its running state could not be read</string>
+    <string name="note_experience_unknown">its experience could not be read</string>
+    <string name="note_sync_first">sync the inventory first ([PATH])</string>
+    <string name="note_from">from [PATH]</string>
+    <string name="note_kept_original">original kept: [ERROR]</string>
+    <string name="note_removed_original">original already removed (its text is in the backup folder): [ERROR]</string>
+    <string name="note_from_others">from [PATH]; not your object: the original is deleted first</string>
+    <string name="note_others_not_compiled">not your object, and the synced copy did not compile: sync a compiling version first</string>
+    <string name="region_others">[COUNT] of them are in objects you don't own: there the original is deleted before the copy is added and compiled.</string>
+    <string name="note_changed">the script changed since the check, not touched: check again</string>
+    <string name="note_backup_failed">the old text could not be written to the backup folder, script not touched</string>
+    <string name="note_backup_exists">a backup with this name already exists in this run, script not touched</string>
+    <string name="note_script_gone">the script is no longer in the object, nothing touched</string>
+    <string name="note_contents_unread">the object's contents could not be read, script not touched</string>
+    <string name="language_lsl">LSL</string>
+    <string name="language_lua">Lua</string>
+    <scroll_list
+     name="repos"
+     layout="topleft"
+     follows="left|right|top"
+     left="8"
+     right="-8"
+     top="6"
+     height="84"
+     draw_heading="true"
+     multi_select="false">
+        <scroll_list.columns name="repo" label="Repository" relative_width="0.4" />
+        <scroll_list.columns name="branch" label="Branch" relative_width="0.25" />
+        <scroll_list.columns name="synced" label="Last sync" relative_width="0.35" />
+    </scroll_list>
+    <line_editor
+     name="repo_edit"
+     label="owner/repo or GitHub link"
+     layout="topleft"
+     follows="left|right|top"
+     left="8"
+     right="-246"
+     top="96"
+     height="22" />
+    <line_editor
+     name="branch_edit"
+     label="branch (optional)"
+     layout="topleft"
+     follows="right|top"
+     left_pad="4"
+     width="120"
+     height="22" />
+    <button
+     name="add"
+     label="Add"
+     layout="topleft"
+     follows="right|top"
+     left_pad="4"
+     width="54"
+     height="22" />
+    <button
+     name="remove"
+     label="Remove"
+     layout="topleft"
+     follows="right|top"
+     left_pad="4"
+     width="60"
+     height="22" />
+    <check_box
+     name="images"
+     label="Also upload images (L$)"
+     tool_tip="PNG, JPEG and TGA files become textures. Each upload costs L$; the total is shown before you apply."
+     layout="topleft"
+     follows="left|top"
+     left="8"
+     top="126"
+     height="20"
+     width="170" />
+    <text
+     name="prefix_label"
+     layout="topleft"
+     follows="left|top"
+     left_pad="4"
+     height="20"
+     width="44">Prefix:</text>
+    <line_editor
+     name="prefix_edit"
+     max_length_bytes="16"
+     tool_tip="Put in front of each repository's folder name in Scripts, for sorting. Example: ! puts the folders at the top. Changing it renames the folders."
+     layout="topleft"
+     follows="left|top"
+     left_pad="0"
+     width="36"
+     height="22" />
+    <text
+     name="ignore_label"
+     layout="topleft"
+     follows="left|top"
+     left_pad="4"
+     height="20"
+     width="44">Ignore:</text>
+    <line_editor
+     name="ignore_edit"
+     tool_tip="Files to leave out, comma separated. * matches anything, folders included. Example: *.test.*, */original/*"
+     layout="topleft"
+     follows="left|right|top"
+     left_pad="0"
+     right="-282"
+     height="22" />
+    <text
+     name="token_label"
+     layout="topleft"
+     follows="right|top"
+     left_pad="6"
+     height="20"
+     width="48">Token:</text>
+    <line_editor
+     name="token_edit"
+     is_password="true"
+     tool_tip="A GitHub fine-grained token with read-only Contents access to these repositories. Kept in the viewer's protected store, only sent to api.github.com."
+     layout="topleft"
+     follows="right|top"
+     left_pad="0"
+     width="166"
+     height="22" />
+    <button
+     name="forget"
+     label="Forget"
+     layout="topleft"
+     follows="right|top"
+     left_pad="4"
+     width="56"
+     height="22" />
+    <button
+     name="check"
+     label="Check for changes"
+     tool_tip="Compares the repositories with the Scripts folder. Changes nothing."
+     layout="topleft"
+     follows="left|top"
+     left="8"
+     top="156"
+     width="140"
+     height="22" />
+    <button
+     name="check_region"
+     label="Check scripts in this region"
+     tool_tip="Finds scripts in your own objects in this region with the name of a repository script. Changes nothing."
+     layout="topleft"
+     follows="left|top"
+     left_pad="4"
+     width="190"
+     height="22" />
+    <scroll_list
+     name="results"
+     layout="topleft"
+     follows="all"
+     left="8"
+     right="-8"
+     top="186"
+     bottom="-56"
+     draw_heading="true"
+     multi_select="false">
+        <scroll_list.columns name="action" label="Action" width="90" />
+        <scroll_list.columns name="what" label="Item" relative_width="0.5" />
+        <scroll_list.columns name="kind" label="Kind" width="96" />
+        <scroll_list.columns name="note" label="Note" relative_width="0.5" />
+    </scroll_list>
+    <text
+     name="status"
+     layout="topleft"
+     follows="left|right|bottom"
+     left="8"
+     right="-8"
+     bottom="-34"
+     height="18"
+     word_wrap="false"
+     use_ellipses="true" />
+    <progress_bar
+     name="progress"
+     layout="topleft"
+     follows="left|right|bottom"
+     left="8"
+     right="-150"
+     bottom="-10"
+     height="16" />
+    <button
+     name="apply"
+     label="Apply"
+     layout="topleft"
+     follows="right|bottom"
+     right="-74"
+     bottom="-6"
+     width="66"
+     height="22" />
+    <button
+     name="cancel"
+     label="Cancel"
+     layout="topleft"
+     follows="right|bottom"
+     right="-8"
+     bottom="-6"
+     width="62"
+     height="22" />
+</floater>

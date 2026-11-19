@@ -51,14 +51,6 @@ namespace
     constexpr F32 TARGET_LIST_UPDATE_BUDGET = 0.003f;
     constexpr F32 FILTER_REFRESH_DELAY = 0.25f;
     constexpr F32 NAME_LIST_REFRESH_DELAY = 0.5f;
-    constexpr S32 MAX_OBJECTS_PER_PACKET = 50;
-    constexpr S32 MAX_PROPERTY_REQUESTS_IN_FLIGHT = MAX_OBJECTS_PER_PACKET * 3;
-    constexpr S32 MAX_PROPERTY_RETRIES = 8;
-    constexpr F32 PROPERTY_RETRY_INTERVAL = 8.f;
-    constexpr F32 OBJECT_RECONCILE_INTERVAL = 1.5f;
-    constexpr S32 TARGET_SCAN_WORKERS = 3;
-    constexpr S32 TARGET_SCAN_RETRIES = 10;
-    constexpr F32 TARGET_SCAN_RETRY_DELAY = 1.f;
 
     std::string avatarSearchTerms(const LLAvatarName& av_name)
     {
@@ -332,7 +324,6 @@ FSMassObjectEdit::FSMassObjectEdit(const LLSD& key) : LLFloater(key)
 
 FSMassObjectEdit::~FSMassObjectEdit()
 {
-    gAgent.setFSMassObjectEditActive(false);
     gIdleCallbacks.deleteFunction(onIdle, this);
     for (const auto& connection : mNameCacheConnections)
     {
@@ -407,6 +398,20 @@ bool FSMassObjectEdit::postBuild()
     mTargetList->sortByColumn("name", true);
     mOccurrenceList->sortByColumn("name", true);
     mProgressBar->setValue(0.0);
+
+    // <FS:Trish> The region scan reports back through these
+    mScanner.onReady = [this]() { refreshObjects(); };
+    mScanner.onObjectReceived = [this](const LLUUID& id)
+    {
+        mTargetRebuildIDs.push_back(id);
+        gIdleCallbacks.addFunction(onIdle, this);
+    };
+    mScanner.onScanFinished = [this]() { finishObjectScan(); };
+    mScanner.onStatus = [this](const std::string& status) { setStatus(status); };
+    mScanner.onStateChanged = [this]() { updateButtons(); };
+    mScanner.isReconcilePaused = [this]() { return mBusy; }; // no late-object pass while prims change
+    // </FS:Trish>
+
     updateButtons();
     return LLFloater::postBuild();
 }
@@ -414,32 +419,6 @@ bool FSMassObjectEdit::postBuild()
 void FSMassObjectEdit::draw()
 {
     LLFloater::draw();
-
-    // Full-region interest mode can be restored by another floater or a
-    // region transition. Reclaim it while this tool is open, as Scene
-    // Explorer does, and periodically discover objects that streamed in
-    // after the initial snapshot.
-    if (gAgent.getInterestListMode() != IL_MODE_360)
-    {
-        gAgent.changeInterestListMode(IL_MODE_360);
-    }
-    LLViewerRegion* current_region = gAgent.getRegion();
-    if (current_region && mRegionID.notNull() &&
-        current_region->getRegionID() != mRegionID && !mWaitingForInterestList)
-    {
-        mRegionID = current_region->getRegionID();
-        mInterestListTimer.reset();
-        mWaitingForInterestList = true;
-        gIdleCallbacks.addFunction(onIdle, this);
-        setStatus("Region changed; waiting for the new region object stream...");
-        updateButtons();
-    }
-    if (!mBusy && !mWaitingForInterestList &&
-        mReconcileTimer.getElapsedTimeF32() >= OBJECT_RECONCILE_INTERVAL)
-    {
-        mReconcileTimer.reset();
-        reconcileObjects();
-    }
 
     if (LLViewerObject* object = gObjectList.findObject(mBeaconObjectID))
     {
@@ -455,27 +434,14 @@ void FSMassObjectEdit::draw()
 
 void FSMassObjectEdit::onOpen(const LLSD&)
 {
-    gAgent.setFSMassObjectEditActive(true);
-    gAgent.changeInterestListMode(IL_MODE_360);
-
-    // The InterestList capability does not report completion. Give the sim a
-    // short head start before taking the first complete-region snapshot.
-    mInterestListTimer.reset();
-    mReconcileTimer.reset();
-    mWaitingForInterestList = true;
-    gIdleCallbacks.addFunction(onIdle, this);
-    setStatus("Requesting all region objects...");
+    // <FS:Trish> 360 interest list, waiting for it and region changes: FSRegionObjectScanner
+    mScanner.open();
     updateButtons();
 }
 
 void FSMassObjectEdit::onClose(bool app_quitting)
 {
-    mWaitingForInterestList = false;
-    gAgent.setFSMassObjectEditActive(false);
-    if (!app_quitting)
-    {
-        gAgent.changeInterestListMode(IL_MODE_DEFAULT);
-    }
+    mScanner.close(app_quitting);
     LLFloater::onClose(app_quitting);
 }
 
@@ -493,7 +459,7 @@ void FSMassObjectEdit::updateButtons()
     const bool targets = !operation_targets.empty();
     const bool source = mSourceList && !mSourceList->getAllSelected().empty();
     const bool contents = mTargetContentsList && !mTargetContentsList->getAllSelected().empty();
-    const bool ready = !mBusy && !mScanning && !mWaitingForInterestList && !mTargetRebuildPending &&
+    const bool ready = !mBusy && !mScanner.isScanning() && !mScanner.isWaiting() && !mTargetRebuildPending &&
         !mTargetFilterRefreshPending && !mContentFilterRefreshPending &&
         !mTargetContentsRebuildPending && !mOccurrenceRebuildPending;
     getChild<LLButton>("refresh_btn")->setEnabled(ready);
@@ -522,7 +488,7 @@ void FSMassObjectEdit::updateButtons()
 
 void FSMassObjectEdit::refreshObjects()
 {
-    if (mBusy || mScanning || mWaitingForInterestList || mTargetRebuildPending)
+    if (mBusy || mScanner.isScanning() || mScanner.isWaiting() || mTargetRebuildPending)
     {
         return;
     }
@@ -557,11 +523,6 @@ void FSMassObjectEdit::refreshObjects()
     mObjects.clear();
     mCreatorObjectIDs.clear();
     mOwnerObjectIDs.clear();
-    mPropertyRequestIDs.clear();
-    mPropertyRequestIndex = 0;
-    mPropertyRequestsInFlight = 0;
-    mPropertyRetryCount = 0;
-    mRegionID = region->getRegionID();
 
     // Clear the previous scan over multiple frames, then append each prim as
     // its properties arrive so discovery is visible instead of appearing
@@ -577,269 +538,10 @@ void FSMassObjectEdit::refreshObjects()
     mTargetRebuildClearing = mTargetList->getItemCount() > 0;
     mTargetRebuildPending = true;
 
-    for (S32 i = 0; i < gObjectList.getNumObjects(); ++i)
-    {
-        LLViewerObject* object = gObjectList.getObject(i);
-        if (!object || object->isDead() || object->getRegion() != region || object->isAvatar() ||
-            object->isAttachment() || object->getPCode() == LLViewerObject::LL_VO_SURFACE_PATCH ||
-            !object->mbCanSelect)
-        {
-            continue;
-        }
-        ObjectInfo info;
-        info.id = object->getID();
-        info.local_id = object->getLocalID();
-        LLViewerObject* root = object->getRootEdit();
-        info.root_id = root ? root->getID() : info.id;
-        if (mObjects.emplace(info.id, info).second)
-        {
-            mPropertyRequestIDs.push_back(info.id);
-        }
-    }
-
-    mPendingProperties = static_cast<S32>(mObjects.size());
-    mScanning = mPendingProperties > 0;
+    // <FS:Trish> FSRegionObjectScanner sends the property requests and calls finishObjectScan()
+    gIdleCallbacks.addFunction(onIdle, this);
+    mScanner.refresh();
     updateButtons();
-    mScanTimer.reset();
-    if (mScanning)
-    {
-        gIdleCallbacks.addFunction(onIdle, this);
-        setStatus(llformat("Scanning %d current-region prims...", mPendingProperties));
-    }
-    else
-    {
-        finishObjectScan();
-    }
-}
-
-void FSMassObjectEdit::reconcileObjects()
-{
-    LLViewerRegion* region = gAgent.getRegion();
-    if (!region || region->getRegionID() != mRegionID)
-    {
-        return;
-    }
-
-    S32 discovered = 0;
-    for (S32 i = 0; i < gObjectList.getNumObjects(); ++i)
-    {
-        LLViewerObject* object = gObjectList.getObject(i);
-        if (!object || object->isDead() || object->getRegion() != region ||
-            object->isAvatar() || object->isAttachment() ||
-            object->getPCode() == LLViewerObject::LL_VO_SURFACE_PATCH ||
-            !object->mbCanSelect || mObjects.find(object->getID()) != mObjects.end())
-        {
-            continue;
-        }
-
-        ObjectInfo info;
-        info.id = object->getID();
-        info.local_id = object->getLocalID();
-        LLViewerObject* root = object->getRootEdit();
-        info.root_id = root ? root->getID() : info.id;
-        if (mObjects.emplace(info.id, info).second)
-        {
-            mPropertyRequestIDs.push_back(info.id);
-            ++mPendingProperties;
-            ++discovered;
-        }
-    }
-
-    // ObjectSelect/ObjectDeselect is used to request full properties. Do not
-    // disturb an object the user is actively editing; queue it once selection
-    // has moved elsewhere.
-    for (auto& entry : mObjects)
-    {
-        ObjectInfo& info = entry.second;
-        if (info.property_request != PropertyRequestState::DEFERRED)
-        {
-            continue;
-        }
-        LLViewerObject* object = gObjectList.findObject(info.id);
-        if (object && !object->isDead() && !object->isSelected())
-        {
-            info.property_request = PropertyRequestState::NEED;
-            mPropertyRequestIDs.push_back(info.id);
-            ++discovered;
-        }
-    }
-
-    if (discovered > 0)
-    {
-        mPropertyRetryCount = 0;
-        mScanning = true;
-        mScanTimer.reset();
-        gIdleCallbacks.addFunction(onIdle, this);
-        setStatus(llformat("Queued %d new or deferred prims; fetching %d pending properties...",
-            discovered, mPendingProperties));
-        updateButtons();
-    }
-}
-
-bool FSMassObjectEdit::retryUnresolvedProperties()
-{
-    if (mPropertyRetryCount >= MAX_PROPERTY_RETRIES)
-    {
-        return false;
-    }
-
-    uuid_vec_t unresolved;
-    unresolved.reserve(mPendingProperties);
-    for (auto& entry : mObjects)
-    {
-        ObjectInfo& info = entry.second;
-        if (!info.received && info.property_request != PropertyRequestState::DEFERRED)
-        {
-            info.property_request = PropertyRequestState::NEED;
-            unresolved.push_back(info.id);
-        }
-    }
-    if (unresolved.empty())
-    {
-        return false;
-    }
-
-    mPropertyRequestIDs.swap(unresolved);
-    mPropertyRequestIndex = 0;
-    mPropertyRequestsInFlight = 0;
-    ++mPropertyRetryCount;
-    mScanTimer.reset();
-    setStatus(llformat("Retrying %d unresolved prim properties (attempt %d/%d)...",
-        mPendingProperties, mPropertyRetryCount, MAX_PROPERTY_RETRIES));
-    return true;
-}
-
-void FSMassObjectEdit::requestObjectProperties(const std::vector<U32>& local_ids, bool select)
-{
-    LLViewerRegion* region = gAgent.getRegion();
-    if (!region || region->getRegionID() != mRegionID)
-    {
-        return;
-    }
-    LLMessageSystem* msg = gMessageSystem;
-    bool start = true;
-    S32 blocks = 0;
-    for (const U32 local_id : local_ids)
-    {
-        if (start)
-        {
-            msg->newMessageFast(select ? _PREHASH_ObjectSelect : _PREHASH_ObjectDeselect);
-            msg->nextBlockFast(_PREHASH_AgentData);
-            msg->addUUIDFast(_PREHASH_AgentID, gAgent.getID());
-            msg->addUUIDFast(_PREHASH_SessionID, gAgent.getSessionID());
-            start = false;
-        }
-        msg->nextBlockFast(_PREHASH_ObjectData);
-        msg->addU32Fast(_PREHASH_ObjectLocalID, local_id);
-        if (++blocks >= MAX_OBJECTS_PER_PACKET || msg->isSendFull(nullptr))
-        {
-            msg->sendReliable(region->getHost());
-            start = true;
-            blocks = 0;
-        }
-    }
-    if (!start)
-    {
-        msg->sendReliable(region->getHost());
-    }
-}
-
-void FSMassObjectEdit::processPropertyRequestQueue()
-{
-    if (!mScanning)
-    {
-        return;
-    }
-
-    LLViewerRegion* region = gAgent.getRegion();
-    if (!region || region->getRegionID() != mRegionID)
-    {
-        mPropertyRequestIndex = mPropertyRequestIDs.size();
-        mPropertyRequestsInFlight = 0;
-        return;
-    }
-
-    if (mPropertyRequestsInFlight >= MAX_PROPERTY_REQUESTS_IN_FLIGHT ||
-        mPropertyRequestIndex >= mPropertyRequestIDs.size())
-    {
-        return;
-    }
-
-    std::vector<U32> request_ids;
-    request_ids.reserve(MAX_OBJECTS_PER_PACKET);
-    const S32 available = MAX_PROPERTY_REQUESTS_IN_FLIGHT - mPropertyRequestsInFlight;
-    const S32 batch_size = llmin(MAX_OBJECTS_PER_PACKET, available);
-    while (mPropertyRequestIndex < mPropertyRequestIDs.size() &&
-        static_cast<S32>(request_ids.size()) < batch_size)
-    {
-        const LLUUID id = mPropertyRequestIDs[mPropertyRequestIndex++];
-        auto found = mObjects.find(id);
-        if (found == mObjects.end() || found->second.property_request != PropertyRequestState::NEED)
-        {
-            continue;
-        }
-        LLViewerObject* object = gObjectList.findObject(id);
-        if (object && object->isSelected())
-        {
-            found->second.property_request = PropertyRequestState::DEFERRED;
-            continue;
-        }
-        found->second.property_request = PropertyRequestState::SENT;
-        request_ids.push_back(found->second.local_id);
-    }
-
-    if (!request_ids.empty())
-    {
-        requestObjectProperties(request_ids, true);
-        requestObjectProperties(request_ids, false);
-        mPropertyRequestsInFlight += static_cast<S32>(request_ids.size());
-        mScanTimer.reset();
-    }
-}
-
-void FSMassObjectEdit::processObjectProperties(LLMessageSystem* msg)
-{
-    if (!mScanning)
-    {
-        return;
-    }
-    const S32 count = msg->getNumberOfBlocksFast(_PREHASH_ObjectData);
-    for (S32 i = 0; i < count; ++i)
-    {
-        LLUUID id;
-        msg->getUUIDFast(_PREHASH_ObjectData, _PREHASH_ObjectID, id, i);
-        auto found = mObjects.find(id);
-        if (found == mObjects.end() || found->second.received)
-        {
-            continue;
-        }
-
-        ObjectInfo& info = found->second;
-        LLUUID group, last_owner;
-        U32 base = 0, owner = 0, everyone = 0, group_mask = 0, next = 0;
-        msg->getUUIDFast(_PREHASH_ObjectData, _PREHASH_CreatorID, info.creator_id, i);
-        msg->getUUIDFast(_PREHASH_ObjectData, _PREHASH_OwnerID, info.owner_id, i);
-        msg->getUUIDFast(_PREHASH_ObjectData, _PREHASH_GroupID, group, i);
-        msg->getUUIDFast(_PREHASH_ObjectData, _PREHASH_LastOwnerID, last_owner, i);
-        msg->getU32Fast(_PREHASH_ObjectData, _PREHASH_BaseMask, base, i);
-        msg->getU32Fast(_PREHASH_ObjectData, _PREHASH_OwnerMask, owner, i);
-        msg->getU32Fast(_PREHASH_ObjectData, _PREHASH_EveryoneMask, everyone, i);
-        msg->getU32Fast(_PREHASH_ObjectData, _PREHASH_GroupMask, group_mask, i);
-        msg->getU32Fast(_PREHASH_ObjectData, _PREHASH_NextOwnerMask, next, i);
-        msg->getStringFast(_PREHASH_ObjectData, _PREHASH_Name, info.name, i);
-        info.permissions.init(info.creator_id, info.owner_id, last_owner, group);
-        info.permissions.initMasks(base, owner, everyone, group_mask, next);
-        info.permissions.getOwnership(info.owner_id, info.group_owned);
-        if (info.property_request == PropertyRequestState::SENT && mPropertyRequestsInFlight > 0)
-        {
-            --mPropertyRequestsInFlight;
-        }
-        info.property_request = PropertyRequestState::RECEIVED;
-        info.received = true;
-        mTargetRebuildIDs.push_back(id);
-        --mPendingProperties;
-        mScanTimer.reset();
-    }
 }
 
 void FSMassObjectEdit::onIdle(void* userdata)
@@ -848,26 +550,6 @@ void FSMassObjectEdit::onIdle(void* userdata)
     if (!self)
     {
         return;
-    }
-    if (self->mWaitingForInterestList &&
-        self->mInterestListTimer.getElapsedTimeF32() >= 2.0f)
-    {
-        self->mWaitingForInterestList = false;
-        self->refreshObjects();
-    }
-    if (self->mScanning)
-    {
-        self->processPropertyRequestQueue();
-        const bool queue_drained =
-            self->mPropertyRequestIndex >= self->mPropertyRequestIDs.size() &&
-            self->mPropertyRequestsInFlight == 0;
-        const bool retry_due = queue_drained ||
-            self->mScanTimer.getElapsedTimeF32() >= PROPERTY_RETRY_INTERVAL;
-        if (self->mPendingProperties == 0 ||
-            (retry_due && !self->retryUnresolvedProperties()))
-        {
-            self->finishObjectScan();
-        }
     }
     if (self->mTargetRebuildPending)
     {
@@ -899,7 +581,7 @@ void FSMassObjectEdit::onIdle(void* userdata)
         self->mCreatorRefreshPending = false;
         self->rebuildTargetList();
     }
-    if (!self->mScanning && !self->mCreatorRefreshPending &&
+    if (!self->mScanner.isScanning() && !self->mCreatorRefreshPending &&
         !self->mTargetFilterRefreshPending && !self->mContentFilterRefreshPending &&
         !self->mTargetRebuildPending && !self->mTargetContentsRebuildPending &&
         !self->mOccurrenceRebuildPending)
@@ -910,8 +592,6 @@ void FSMassObjectEdit::onIdle(void* userdata)
 
 void FSMassObjectEdit::finishObjectScan()
 {
-    mScanning = false;
-    mPropertyRequestsInFlight = 0;
     mCreatorObjectIDs.clear();
     mOwnerObjectIDs.clear();
     for (auto& entry : mObjects)
@@ -1111,10 +791,10 @@ void FSMassObjectEdit::processTargetListRebuild()
         return;
     }
 
-    if (mScanning)
+    if (mScanner.isScanning())
     {
         setStatus(llformat("Discovering target prims: %d/%d replies, %d editable shown...",
-            static_cast<S32>(mObjects.size()) - mPendingProperties,
+            static_cast<S32>(mObjects.size()) - mScanner.getPendingProperties(),
             static_cast<S32>(mObjects.size()), mTargetRebuildEditableCount));
         return;
     }
@@ -1277,7 +957,7 @@ void FSMassObjectEdit::fetchSourceInventoryCoro(LLUUID source_id)
 void FSMassObjectEdit::scanTargetContents()
 {
     const uuid_vec_t targets = getSelectedTargets();
-    if (mBusy || mScanning || mTargetRebuildPending || targets.empty())
+    if (mBusy || mScanner.isScanning() || mTargetRebuildPending || targets.empty())
     {
         return;
     }
@@ -1314,9 +994,6 @@ void FSMassObjectEdit::refreshOccurrenceInventories()
 
 void FSMassObjectEdit::scanTargetContentsCoro(uuid_vec_t targets, bool refresh_existing)
 {
-    LLUUID pump_id = LLUUID::generateNewID();
-    const std::string done_pump_name = "MassObjectTargetsDone-" + pump_id.asString();
-    LLEventMailDrop done_pump(done_pump_name, true);
     if (!refresh_existing)
     {
         mTargetContentKeys.clear();
@@ -1342,80 +1019,11 @@ void FSMassObjectEdit::scanTargetContentsCoro(uuid_vec_t targets, bool refresh_e
         mOccurrenceLabel->setText(LLStringExplicit("Objects containing the selected content"));
     }
 
-    uuid_vec_t pass_targets = targets;
-    S32 retries_used = 0;
-    for (S32 attempt = 0; !pass_targets.empty() && attempt <= TARGET_SCAN_RETRIES; ++attempt)
-    {
-        const bool retry_pass = attempt > 0;
-        if (retry_pass)
+    // <FS:Trish> Worker pool and retries: FSRegionObjectScanner::fetchContents
+    const FSRegionObjectScanner::ContentsResult result = FSRegionObjectScanner::fetchContents(targets,
+        refresh_existing,
+        [this, refresh_existing](const LLUUID& id, const LLInventoryObject::object_list_t& inventory)
         {
-            retries_used = attempt;
-            setStatus(llformat("Retrying %d unavailable target inventories (attempt %d/%d)...",
-                static_cast<S32>(pass_targets.size()), attempt, TARGET_SCAN_RETRIES));
-            llcoro::suspendUntilTimeout(TARGET_SCAN_RETRY_DELAY * static_cast<F32>(attempt));
-        }
-
-        mTargetScanRetryIDs.clear();
-        const S32 pass_count = static_cast<S32>(pass_targets.size());
-        static LLCachedControl<S32> inventory_workers(gSavedSettings,
-            "FSMassObjectEditInventoryWorkers", TARGET_SCAN_WORKERS);
-        const S32 worker_count = llmin(llclamp(static_cast<S32>(inventory_workers), 1, 8),
-            pass_count);
-        std::vector<uuid_vec_t> work(static_cast<size_t>(worker_count));
-        for (S32 i = 0; i < pass_count; ++i)
-        {
-            work[static_cast<size_t>(i % worker_count)].push_back(
-                pass_targets[static_cast<size_t>(i)]);
-        }
-
-        for (S32 i = 0; i < worker_count; ++i)
-        {
-            LLCoros::instance().launch("FSMassObjectEdit::scanTargetContentsWorker",
-                boost::bind(&FSMassObjectEdit::scanTargetContentsWorkerCoro, this,
-                    work[static_cast<size_t>(i)], done_pump_name,
-                    refresh_existing, retry_pass));
-        }
-        for (S32 i = 0; i < worker_count; ++i)
-        {
-            llcoro::suspendUntilEventOn(done_pump);
-        }
-
-        mTargetScanFailed = static_cast<S32>(mTargetScanRetryIDs.size());
-        mTargetScanSucceeded = mTargetScanTotal - mTargetScanFailed;
-        pass_targets = mTargetScanRetryIDs;
-        if (retry_pass)
-        {
-            refreshTargetContentsList();
-        }
-    }
-
-    refreshTargetContentsList();
-    mProgressBar->setValue(100.0);
-    mBusy = false;
-    setStatus(llformat(refresh_existing ?
-        "Refreshed %d of %d occurrence objects; %d unavailable after %d retries. Found %d unique contents." :
-        "Scanned %d of %d targets; %d unavailable after %d retries. Found %d unique contents.",
-        mTargetScanSucceeded, mTargetScanTotal, mTargetScanFailed,
-        retries_used,
-        static_cast<S32>(mTargetContentKeys.size())));
-    updateButtons();
-}
-
-void FSMassObjectEdit::scanTargetContentsWorkerCoro(uuid_vec_t targets,
-    std::string done_pump_name, bool refresh_existing, bool retry_pass)
-{
-    LLUUID pump_id = LLUUID::generateNewID();
-    LLEventMailDrop pump("MassObjectTargetWorker-" + pump_id.asString(), true);
-    for (const LLUUID& id : targets)
-    {
-        LLInventoryObject::object_list_t inventory;
-        if (fetchInventory(gObjectList.findObject(id), pump, inventory,
-            refresh_existing || retry_pass))
-        {
-            if (!retry_pass)
-            {
-                ++mTargetScanSucceeded;
-            }
             if (refresh_existing)
             {
                 removeTargetContents(id);
@@ -1438,24 +1046,36 @@ void FSMassObjectEdit::scanTargetContentsWorkerCoro(uuid_vec_t targets,
                     content.count = static_cast<S32>(content.targets.size());
                 }
             }
-        }
-        else
+        },
+        [this](S32 processed, S32 total, S32 failed)
         {
-            mTargetScanRetryIDs.push_back(id);
-            if (!retry_pass)
-            {
-                ++mTargetScanFailed;
-            }
-        }
-        if (!retry_pass)
-        {
-            ++mTargetScanProcessed;
+            mTargetScanProcessed = processed;
+            mTargetScanFailed = failed;
+            mTargetScanSucceeded = processed - failed;
             updateTargetScanProgress();
-        }
-    }
-    LLEventPumps::instance().post(done_pump_name, LLSDMap("done", true));
-}
+        },
+        [this](S32 count, S32 attempt, S32 max_attempts)
+        {
+            refreshTargetContentsList();
+            setStatus(llformat("Retrying %d unavailable target inventories (attempt %d/%d)...",
+                count, attempt, max_attempts));
+        });
+    mTargetScanFailed = result.failed;
+    mTargetScanSucceeded = result.succeeded;
+    const S32 retries_used = result.retries_used;
+    // </FS:Trish>
 
+    refreshTargetContentsList();
+    mProgressBar->setValue(100.0);
+    mBusy = false;
+    setStatus(llformat(refresh_existing ?
+        "Refreshed %d of %d occurrence objects; %d unavailable after %d retries. Found %d unique contents." :
+        "Scanned %d of %d targets; %d unavailable after %d retries. Found %d unique contents.",
+        mTargetScanSucceeded, mTargetScanTotal, mTargetScanFailed,
+        retries_used,
+        static_cast<S32>(mTargetContentKeys.size())));
+    updateButtons();
+}
 void FSMassObjectEdit::removeTargetContents(const LLUUID& target_id)
 {
     for (auto iter = mTargetContentKeys.begin(); iter != mTargetContentKeys.end();)
@@ -1726,7 +1346,7 @@ void FSMassObjectEdit::updateTargetScanProgress()
 
 void FSMassObjectEdit::selectAllTargets()
 {
-    if (mScanning || mTargetRebuildPending)
+    if (mScanner.isScanning() || mTargetRebuildPending)
     {
         return;
     }
@@ -1739,7 +1359,7 @@ void FSMassObjectEdit::selectAllTargets()
 
 void FSMassObjectEdit::clearTargetSelection()
 {
-    if (mScanning || mTargetRebuildPending)
+    if (mScanner.isScanning() || mTargetRebuildPending)
     {
         return;
     }
