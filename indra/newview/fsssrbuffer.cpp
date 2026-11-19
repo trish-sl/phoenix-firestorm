@@ -42,6 +42,7 @@
 #include "llviewertexture.h"
 #include "pipeline.h"
 
+#include <algorithm>
 #include <vector>
 
 extern bool gCubeSnapshot;
@@ -58,15 +59,25 @@ namespace
     const LLStaticHashedString sTexelStep("texelStep");
     const LLStaticHashedString sKarisWeight("karisWeight");
 
+    // Per-level texture views (GL 4.3): each blur level is drawn into its own view while the level
+    // above is sampled through another, so no level is ever outside its texture's level range.
+    // AMD drivers reject drawing into a level outside [BASE_LEVEL, MAX_LEVEL].
+    bool levelViewsAvailable()
+    {
+        return glTextureView && glTexStorage2D && gGLManager.mGLVersion >= 4.29f;
+    }
+
     // RGBA16F texture with a full mip chain and a framebuffer per level, so each level can be
     // rendered from the one above it
     struct MipTexture
     {
         U32 mTexture = 0;
+        std::vector<U32> mViews; // one single-level view per mip level, empty without texture views
         std::vector<U32> mFBOs;
         U32 mWidth = 0;
         U32 mHeight = 0;
         U32 mLevels = 0;
+        U32 mMaxLevel = 0;      // the texture's MAX_LEVEL as last set
 
         void release()
         {
@@ -75,22 +86,38 @@ namespace
                 glDeleteFramebuffers((GLsizei)mFBOs.size(), mFBOs.data());
                 mFBOs.clear();
             }
-            if (mTexture)
+            if (mTexture || !mViews.empty())
             {
                 for (U32 i = 0; i < LL_NUM_TEXTURE_LAYERS; ++i)
                 {
                     LLTexUnit* unit = gGL.getTexUnit(i);
-                    if (unit && unit->getCurrTexture() == mTexture)
+                    if (!unit || !unit->getCurrTexture())
+                    {
+                        continue;
+                    }
+                    const U32 bound = unit->getCurrTexture();
+                    if (bound == mTexture || std::find(mViews.begin(), mViews.end(), bound) != mViews.end())
                     {
                         unit->unbind(LLTexUnit::TT_TEXTURE);
                     }
                 }
+            }
+            // The views go first: they keep the parent's storage alive until they are deleted too
+            if (!mViews.empty())
+            {
+                glDeleteTextures((GLsizei)mViews.size(), mViews.data());
+                mViews.clear();
+            }
+            if (mTexture)
+            {
                 glDeleteTextures(1, &mTexture);
                 mTexture = 0;
             }
             mWidth = 0;
             mHeight = 0;
             mLevels = 0;
+            mMaxLevel = 0;
+            mMipsRenderable = false;
         }
 
         bool matches(U32 width, U32 height) const
@@ -114,11 +141,12 @@ namespace
                 return false;
             }
 
+            const bool views = levelViewsAvailable();
             LLTexUnit* unit = gGL.getTexUnit(0);
             unit->bindManual(LLTexUnit::TT_TEXTURE, mTexture, true);
             clear_glerror();
             // Immutable storage where available: its levels are fixed, which drivers check attachments
-            // against most reliably
+            // against most reliably (and texture views need it)
             if (glTexStorage2D && gGLManager.mGLVersion >= 4.19f)
             {
                 glTexStorage2D(GL_TEXTURE_2D, (GLsizei)levels, GL_RGBA16F, (GLsizei)width, (GLsizei)height);
@@ -140,22 +168,57 @@ namespace
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+            if (views)
+            {
+                // Sampled like the one visible level was before: bilinear, clamped. A view's name must
+                // never have been bound before glTextureView, so each is made before it is bound.
+                mViews.resize(levels, 0);
+                glGenTextures((GLsizei)levels, mViews.data());
+                for (U32 level = 0; level < levels; ++level)
+                {
+                    glTextureView(mViews[level], GL_TEXTURE_2D, mTexture, GL_RGBA16F, level, 1, 0, 1);
+                    unit->bindManual(LLTexUnit::TT_TEXTURE, mViews[level], false);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+                }
+                unit->bindManual(LLTexUnit::TT_TEXTURE, mTexture, true);
+            }
             bool ok = glGetError() == GL_NO_ERROR;
 
             mFBOs.resize(levels, 0);
             glGenFramebuffers((GLsizei)levels, mFBOs.data());
-            for (U32 level = 0; ok && level < levels; ++level)
             {
-                glBindFramebuffer(GL_FRAMEBUFFER, mFBOs[level]);
-                glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mTexture, level);
-                ok = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+                // Every level starts black, so nothing ever reads what was in video memory
+                LLGLDisable scissor(GL_SCISSOR_TEST);
+                const GLfloat clear[4] = { 0.f, 0.f, 0.f, 0.f };
+                for (U32 level = 0; ok && level < levels; ++level)
+                {
+                    glBindFramebuffer(GL_FRAMEBUFFER, mFBOs[level]);
+                    if (views)
+                    {
+                        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mViews[level], 0);
+                    }
+                    else
+                    {
+                        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mTexture, level);
+                    }
+                    ok = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+                    if (ok)
+                    {
+                        glClearBufferfv(GL_COLOR, 0, clear);
+                    }
+                }
             }
 
-            // The blur mips render each level with only the one above it visible (BASE = MAX = level - 1).
-            // A driver that holds to the attachment range rejects those draws; then no blur mips are built
-            // and the result is read at level 0, rather than from levels never drawn.
-            mMipsRenderable = false;
-            if (ok && levels > 1)
+            // With views every level can be drawn. Without them the blur mips render each level with
+            // only the one above it visible (BASE = MAX = level - 1); a driver that holds to the
+            // attachment range rejects those draws, and then no blur mips are built and the result is
+            // read at level 0, rather than from levels never drawn.
+            mMipsRenderable = ok && views;
+            if (ok && !views && levels > 1)
             {
                 glBindFramebuffer(GL_FRAMEBUFFER, mFBOs[1]);
                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
@@ -174,10 +237,26 @@ namespace
             mWidth = width;
             mHeight = height;
             mLevels = levels;
+            mMaxLevel = 0;
             return true;
         }
 
         bool mMipsRenderable = false;
+
+        // Sampled from mip 0 to max_level only (the levels built this frame)
+        void setMaxLevel(U32 max_level)
+        {
+            if (max_level == mMaxLevel)
+            {
+                return;
+            }
+            LLTexUnit* unit = gGL.getTexUnit(0);
+            unit->bindManual(LLTexUnit::TT_TEXTURE, mTexture, true);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, (GLint)max_level);
+            unit->unbind(LLTexUnit::TT_TEXTURE);
+            mMaxLevel = max_level;
+        }
 
         void drawLevel(U32 level, LLVertexBuffer* screen_triangle)
         {
@@ -377,14 +456,26 @@ bool FSSSRBuffer::render(LLRenderTarget* screen)
         if (channel > -1)
         {
             LLTexUnit* unit = gGL.getTexUnit(channel);
-            unit->bindManual(LLTexUnit::TT_TEXTURE, dst.mTexture, true);
+            if (dst.mViews.empty())
+            {
+                unit->bindManual(LLTexUnit::TT_TEXTURE, dst.mTexture, true);
+            }
             const F32 scale = llclamp((F32)filter_scale, 0.5f, 4.f);
             for (U32 level = 1; level < built; ++level)
             {
-                // Only the source level is visible to the sampler while the next is rendered
-                unit->activate();
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, level - 1);
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, level - 1);
+                // Only the source level is visible to the sampler while the next is rendered: its
+                // own view, or without views the texture narrowed to that level
+                if (!dst.mViews.empty())
+                {
+                    unit->bindManual(LLTexUnit::TT_TEXTURE, dst.mViews[level - 1], false);
+                }
+                else
+                {
+                    unit->activate();
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, level - 1);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, level - 1);
+                    dst.mMaxLevel = U32_MAX; // set again below
+                }
                 const F32 src_w = (F32)llmax(dst.mWidth >> (level - 1), 1U);
                 const F32 src_h = (F32)llmax(dst.mHeight >> (level - 1), 1U);
                 sDownsampleProgram.uniform2f(sTexelStep, scale / src_w, scale / src_h);
@@ -395,14 +486,9 @@ bool FSSSRBuffer::render(LLRenderTarget* screen)
         sDownsampleProgram.unbind();
     }
 
-    // Sampled from mip 0 to the last level built
-    {
-        LLTexUnit* unit = gGL.getTexUnit(0);
-        unit->bindManual(LLTexUnit::TT_TEXTURE, dst.mTexture, true);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, built - 1);
-        unit->unbind(LLTexUnit::TT_TEXTURE);
-    }
+    // Sampled from mip 0 to the last level built. The lighting pass's lookup can ask for a coarser
+    // level at high roughness; this clamps it to the levels that hold this frame's blur.
+    dst.setMaxLevel(built - 1);
 
     restoreTarget();
 
@@ -428,7 +514,10 @@ void FSSSRBuffer::bind(LLGLSLShader& soften, LLRenderTarget* screen, bool render
     {
         soften.enableTexture(LLShaderMgr::FS_SSR_MAP);
         gGL.getTexUnit(channel)->bindManual(LLTexUnit::TT_TEXTURE, resolved.mTexture, true);
-        soften.uniform1f(sMipScale, coneTrace() ? 0.f : (F32)(resolved.mLevels - 1));
+        // The roughness-to-level mapping spans the whole chain, as it always has; the texture's
+        // MAX_LEVEL clamps it to the levels built. With none built (cone trace, or a driver that
+        // can't draw them) the scale is 0, so the lookup asks for level 0 only.
+        soften.uniform1f(sMipScale, (coneTrace() || sBuiltLevels <= 1) ? 0.f : (F32)(resolved.mLevels - 1));
     }
     else
     {
