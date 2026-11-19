@@ -772,6 +772,7 @@ float fsTapScreenSpaceReflectionHiZ(vec2 tc, vec3 viewPos, vec3 n, vec3 rayDir, 
         if (roughness > 0.001)
         {
             float lod = log2(max(2.0 * roughness * travel, 1.0));
+            lod = min(lod, floor(log2(float(max(textureSize(ssrHiZMap, 0).x, textureSize(ssrHiZMap, 0).y))))); // <FS:Trish/> never above the last level built
             collectedColor.rgb = textureLod(ssrHiZMap, uv, lod).rgb;
         }
         else

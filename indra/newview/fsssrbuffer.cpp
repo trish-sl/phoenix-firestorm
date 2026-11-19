@@ -218,7 +218,7 @@ namespace
     {
         // The hi-Z cone trace blurs at the hit already; the buffer is then read at mip 0
         static LLCachedControl<bool> cone_trace(gSavedSettings, "FSRenderSSRConeTrace", false);
-        return cone_trace && FSSSRHiZ::enabled();
+        return cone_trace && FSSSRHiZ::usable();
     }
 }
 

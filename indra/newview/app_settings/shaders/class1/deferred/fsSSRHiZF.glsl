@@ -50,8 +50,9 @@ void main()
 
 #else
 
-// Level N from level N-1. The caller restricts the texture's base and max level to N-1 while
-// rendering into level N, so lod 0 here IS level N-1 and there is no feedback loop.
+// Level N from level N-1. The caller binds a single-level view of level N-1 (or, without texture
+// views, restricts the texture's base and max level to N-1) while rendering into level N, so lod 0
+// here IS level N-1 and there is no feedback loop.
 void main()
 {
     ivec2 srcSize = textureSize(diffuseRect, 0);

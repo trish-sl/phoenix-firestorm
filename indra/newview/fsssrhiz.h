@@ -47,6 +47,10 @@ namespace FSSSRHiZ
     // Both settings on
     bool enabled();
 
+    // Both settings on and the driver can build the pyramid (texture views, or levels it can draw
+    // without them). False only on old drivers, after the first pyramid was tried.
+    bool usable();
+
     // Builds the two pyramid programs (call from the deferred shader load). They stay unloaded
     // while the feature is off.
     void loadShaders(S32 shader_level);

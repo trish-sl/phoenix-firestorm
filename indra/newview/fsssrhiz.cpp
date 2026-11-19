@@ -29,6 +29,7 @@
 
 #include "fsssrhiz.h"
 
+#include "llframetimer.h"
 #include "llglslshader.h"
 #include "llrender.h"
 #include "llrendertarget.h"
@@ -38,6 +39,7 @@
 
 #include <glm/gtc/type_ptr.hpp>
 
+#include <algorithm>
 #include <vector>
 
 extern bool gCubeSnapshot;
@@ -54,13 +56,33 @@ namespace
     const LLStaticHashedString sEdgeFade("ssrEdgeFade");
     const LLStaticHashedString sConeTrace("ssrConeTrace");
 
+    // A size the pyramid could not be made at is not tried again every frame (each try makes and
+    // frees the texture and waits for the render thread on the checks), only after a while
+    constexpr F64 FAILED_RETRY_SECONDS = 30.0;
+
+    // Set when the driver can't render a level while only the level above it is visible to the
+    // sampler, and has no texture views to do it another way: hi-Z then stays off
+    bool sUnsupported = false;
+
+    // Per-level texture views (GL 4.3) let each level be rendered as its own texture while the
+    // level above is sampled through another, so no level is ever outside the attached texture's
+    // [BASE_LEVEL, MAX_LEVEL] range. AMD drivers reject the draw otherwise.
+    bool levelViewsAvailable()
+    {
+        return glTextureView && glTexStorage2D && gGLManager.mGLVersion >= 4.29f;
+    }
+
     struct Pyramid
     {
         U32 mTexture = 0;
-        std::vector<U32> mFBOs; // one per mip level
+        std::vector<U32> mViews; // one single-level view per mip level, empty without texture views
+        std::vector<U32> mFBOs;  // one per mip level
         U32 mWidth = 0;
         U32 mHeight = 0;
         U32 mLevels = 0;
+        U32 mFailedWidth = 0;
+        U32 mFailedHeight = 0;
+        F64 mFailedAt = 0.0;
 
         void release()
         {
@@ -69,17 +91,31 @@ namespace
                 glDeleteFramebuffers((GLsizei)mFBOs.size(), mFBOs.data());
                 mFBOs.clear();
             }
-            if (mTexture)
+            if (mTexture || !mViews.empty())
             {
                 // Don't leave a texture unit pointing at a deleted name.
                 for (U32 i = 0; i < LL_NUM_TEXTURE_LAYERS; ++i)
                 {
                     LLTexUnit* unit = gGL.getTexUnit(i);
-                    if (unit && unit->getCurrTexture() == mTexture)
+                    if (!unit || !unit->getCurrTexture())
+                    {
+                        continue;
+                    }
+                    const U32 bound = unit->getCurrTexture();
+                    if (bound == mTexture || std::find(mViews.begin(), mViews.end(), bound) != mViews.end())
                     {
                         unit->unbind(LLTexUnit::TT_TEXTURE);
                     }
                 }
+            }
+            // The views go first: they keep the parent's storage alive until they are deleted too
+            if (!mViews.empty())
+            {
+                glDeleteTextures((GLsizei)mViews.size(), mViews.data());
+                mViews.clear();
+            }
+            if (mTexture)
+            {
                 glDeleteTextures(1, &mTexture);
                 mTexture = 0;
             }
@@ -91,6 +127,12 @@ namespace
         bool allocate(U32 width, U32 height)
         {
             release();
+
+            const F64 now = LLFrameTimer::getElapsedSeconds();
+            if (sUnsupported || (mFailedWidth == width && mFailedHeight == height && now - mFailedAt < FAILED_RETRY_SECONDS))
+            {
+                return false;
+            }
 
             U32 levels = 1;
             while ((llmax(width, height) >> levels) > 0)
@@ -104,13 +146,21 @@ namespace
                 return false;
             }
 
+            const bool views = levelViewsAvailable();
             LLTexUnit* unit = gGL.getTexUnit(0);
             unit->bindManual(LLTexUnit::TT_TEXTURE, mTexture, true);
             clear_glerror();
-            for (U32 level = 0; level < levels; ++level)
+            if (views)
             {
-                glTexImage2D(GL_TEXTURE_2D, level, GL_RGBA16F, llmax(width >> level, 1U), llmax(height >> level, 1U), 0, GL_RGBA,
-                             GL_HALF_FLOAT, nullptr);
+                glTexStorage2D(GL_TEXTURE_2D, (GLsizei)levels, GL_RGBA16F, (GLsizei)width, (GLsizei)height);
+            }
+            else
+            {
+                for (U32 level = 0; level < levels; ++level)
+                {
+                    glTexImage2D(GL_TEXTURE_2D, level, GL_RGBA16F, llmax(width >> level, 1U), llmax(height >> level, 1U), 0, GL_RGBA,
+                                 GL_HALF_FLOAT, nullptr);
+                }
             }
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, levels - 1);
@@ -118,26 +168,88 @@ namespace
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-            bool ok = glGetError() == GL_NO_ERROR;
             unit->unbind(LLTexUnit::TT_TEXTURE);
+
+            if (views)
+            {
+                // A view's name must never have been bound before glTextureView, so each is made
+                // before it is bound for its parameters
+                mViews.resize(levels, 0);
+                glGenTextures((GLsizei)levels, mViews.data());
+                for (U32 level = 0; level < levels; ++level)
+                {
+                    glTextureView(mViews[level], GL_TEXTURE_2D, mTexture, GL_RGBA16F, level, 1, 0, 1);
+                    unit->bindManual(LLTexUnit::TT_TEXTURE, mViews[level], false);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+                }
+                unit->unbind(LLTexUnit::TT_TEXTURE);
+            }
+            bool ok = glGetError() == GL_NO_ERROR;
 
             mFBOs.resize(levels, 0);
             glGenFramebuffers((GLsizei)levels, mFBOs.data());
-            for (U32 level = 0; ok && level < levels; ++level)
             {
-                glBindFramebuffer(GL_FRAMEBUFFER, mFBOs[level]);
-                glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mTexture, level);
-                ok = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+                // Every level starts black at the far plane, so a level that is never drawn reads
+                // as "nothing here" rather than as whatever was in video memory
+                LLGLDisable scissor(GL_SCISSOR_TEST);
+                const GLfloat clear[4] = { 0.f, 0.f, 0.f, 60000.f };
+                for (U32 level = 0; ok && level < levels; ++level)
+                {
+                    glBindFramebuffer(GL_FRAMEBUFFER, mFBOs[level]);
+                    if (views)
+                    {
+                        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mViews[level], 0);
+                    }
+                    else
+                    {
+                        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mTexture, level);
+                    }
+                    ok = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+                    if (ok)
+                    {
+                        glClearBufferfv(GL_COLOR, 0, clear);
+                    }
+                }
+            }
+
+            // Without views, the coarser levels are drawn with only the level above visible to the
+            // sampler (BASE = MAX = level - 1). A driver that holds to the attachment range rejects
+            // that; hi-Z is then switched off rather than traced through levels never drawn.
+            if (ok && !views && levels > 1)
+            {
+                unit->bindManual(LLTexUnit::TT_TEXTURE, mTexture, true);
+                glBindFramebuffer(GL_FRAMEBUFFER, mFBOs[1]);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
+                const bool renderable = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, levels - 1);
+                unit->unbind(LLTexUnit::TT_TEXTURE);
+                if (!renderable)
+                {
+                    LL_WARNS("Render") << "SSR hi-Z: the driver can't render the pyramid's levels and has no texture views, so hi-Z stays off" << LL_ENDL;
+                    sUnsupported = true;
+                    ok = false;
+                }
             }
             glBindFramebuffer(GL_FRAMEBUFFER, LLRenderTarget::sCurFBO);
 
             if (!ok)
             {
-                LL_WARNS("Render") << "SSR hi-Z pyramid " << width << "x" << height << " could not be allocated" << LL_ENDL;
+                if (!sUnsupported && (mFailedWidth != width || mFailedHeight != height))
+                {   // once per size, not at every retry
+                    LL_WARNS("Render") << "SSR hi-Z pyramid " << width << "x" << height << " could not be allocated" << LL_ENDL;
+                }
+                mFailedWidth = width;
+                mFailedHeight = height;
+                mFailedAt = now;
                 release();
                 return false;
             }
 
+            mFailedWidth = 0;
+            mFailedHeight = 0;
             mWidth = width;
             mHeight = height;
             mLevels = levels;
@@ -188,24 +300,36 @@ namespace
             drawLevel(0, screen_triangle);
             sCopyProgram.unbind();
 
-            // Levels 1..N. Only level N-1 is made visible to the sampler while level N is
-            // rendered, so the texture is never read and written at the same level.
+            // Levels 1..N. Only level N-1 is visible to the sampler while level N is rendered, so
+            // the texture is never read and written at the same level: through the view of level
+            // N-1 where there are views, else by narrowing the texture's base and max level to N-1.
             sDownProgram.bind();
             channel = sDownProgram.enableTexture(LLShaderMgr::DEFERRED_DIFFUSE);
             if (channel > -1)
             {
                 LLTexUnit* unit = gGL.getTexUnit(channel);
-                unit->bindManual(LLTexUnit::TT_TEXTURE, mTexture, true);
-                for (U32 level = 1; level < mLevels; ++level)
+                if (!mViews.empty())
                 {
-                    unit->activate();
-                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, level - 1);
-                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, level - 1);
-                    drawLevel(level, screen_triangle);
+                    for (U32 level = 1; level < mLevels; ++level)
+                    {
+                        unit->bindManual(LLTexUnit::TT_TEXTURE, mViews[level - 1], false);
+                        drawLevel(level, screen_triangle);
+                    }
                 }
-                unit->activate();
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, mLevels - 1);
+                else
+                {
+                    unit->bindManual(LLTexUnit::TT_TEXTURE, mTexture, true);
+                    for (U32 level = 1; level < mLevels; ++level)
+                    {
+                        unit->activate();
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, level - 1);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, level - 1);
+                        drawLevel(level, screen_triangle);
+                    }
+                    unit->activate();
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, mLevels - 1);
+                }
                 unit->unbind(LLTexUnit::TT_TEXTURE);
             }
             sDownProgram.unbind();
@@ -259,6 +383,11 @@ bool FSSSRHiZ::enabled()
     static LLCachedControl<bool> ssr(gSavedSettings, "RenderScreenSpaceReflections", false);
     static LLCachedControl<bool> hiz(gSavedSettings, "FSRenderSSRHiZ", true);
     return ssr && hiz;
+}
+
+bool FSSSRHiZ::usable()
+{
+    return enabled() && !sUnsupported;
 }
 
 void FSSSRHiZ::loadShaders(S32 shader_level)
@@ -347,7 +476,8 @@ void FSSSRHiZ::bind(LLGLSLShader& shader, const LLRenderTarget& scene_map, bool 
     shader.uniform1f(sSteps, (F32)llclamp((S32)steps, 4, 256));
     shader.uniform1f(sThickness, llclamp((F32)thickness, 0.01f, 10.f));
     shader.uniform1f(sEdgeFade, llclamp((F32)edge_fade, 0.f, 0.5f));
-    shader.uniform1f(sConeTrace, cone_trace ? 1.f : 0.f);
+    // The cone trace reads the pyramid's coarser levels: never from a pyramid the driver can't build
+    shader.uniform1f(sConeTrace, cone_trace && usable() ? 1.f : 0.f);
 }
 
 void FSSSRHiZ::bindWater(LLGLSLShader& shader, const LLRenderTarget& color)
