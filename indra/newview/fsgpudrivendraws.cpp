@@ -95,8 +95,9 @@ namespace
     const LLStaticHashedString sClip("fs_shadow_clip");
     const LLStaticHashedString sCascade("fs_shadow_cascade");
 
-    // positions only, three quarters of FSPerfGPUDrivenDrawsArenaMB, the rest indices
-    FSGDDArena sArena("FSPerfGPUDrivenDraws shadow arena", { LLVertexBuffer::TYPE_VERTEX }, "FSPerfGPUDrivenDrawsArenaMB", 256, 4);
+    // positions only, two thirds of FSPerfGPUDrivenDrawsArenaMB, the rest indices, until the copies show the
+    // split they need (their indices take about half as many bytes as their positions)
+    FSGDDArena sArena("FSPerfGPUDrivenDraws shadow arena", { LLVertexBuffer::TYPE_VERTEX }, "FSPerfGPUDrivenDrawsArenaMB", 256, 3);
 
     // per multi-draw data, rebuilt for each call
     FSGDDBuffer sIndirectBuffer;

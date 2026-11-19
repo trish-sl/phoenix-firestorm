@@ -40,18 +40,27 @@ namespace
     constexpr U32 FS_GDD_COPIES_PER_FRAME = 2048;   // vertex buffers copied into an arena per frame, at most
     constexpr U32 FS_GDD_EVICT_AFTER = 600;         // frames an entry may go unused before it is dropped
     // An arena only grows, doubling, so after a crowd or a big region has left it holds video memory
-    // it no longer uses. Holding at least this much and using less than a third of it at a sweep, it is dropped
-    // and refills at the size it needs (copies on the GPU, at most FS_GDD_COPIES_PER_FRAME a frame; what isn't
-    // back yet is drawn the old way meanwhile). It grows back in one step to what was in use and a quarter more
-    // (FS_GDD_REFILL_SHARE), not by doubling up from the first size: each growth copies the buffer, and the
-    // doublings back to a few hundred MB were hitches in a row. Refilled that way, it is well over a third used,
-    // so it isn't dropped again at the next sweep (doubling left it about half used, and below half was too
-    // close: a shadow arena using 86 of 176 MB was dropped, grew back to 176 MB and was dropped again every 40 s).
+    // it no longer uses. Holding at least this much and using less than a quarter of it at a sweep, it is
+    // dropped and refills at the size it needs (copies on the GPU, at most FS_GDD_COPIES_PER_FRAME a frame; what
+    // isn't back yet is drawn the old way meanwhile). It grows back in one step to twice what was in use, not by
+    // doubling up from the first size: each growth copies the buffer, and the doublings back to a few hundred MB
+    // were hitches in a row. Refilled that way it is half used, twice the share it is dropped at, so ordinary
+    // coming and going doesn't drop it again (a quarter more than in use, against a drop below a third, left too
+    // little room: one growth by doubling and it was a third used again, and on an AMD card the shadow arena was
+    // dropped and refilled about every minute). Over the video memory budget it refills at what was in use and a
+    // quarter more (FS_GDD_REFILL_SHARE): then the memory is worth more than the room to grow.
     // It drops at most once every FS_GDD_SHRINK_INTERVAL seconds.
     constexpr U64 FS_GDD_SHRINK_MIN_BYTES = 64ull << 20;
-    constexpr U64 FS_GDD_SHRINK_USED_SHARE = 3;
+    constexpr U64 FS_GDD_SHRINK_USED_SHARE = 4;
     constexpr F64 FS_GDD_SHRINK_INTERVAL = 30.0;
-    constexpr U32 FS_GDD_REFILL_SHARE = 4;          // the refill size is what was in use plus a quarter of it
+    constexpr U32 FS_GDD_REFILL_SHARE = 4;          // over budget, the refill size is what was in use plus a quarter of it
+    // The arena-full warning: at most this often, with how many times it filled in between
+    constexpr F64 FS_GDD_FULL_WARN_INTERVAL = 60.0;
+    // Once this much is in use, the size limit is split between vertices and indices as the copies in the
+    // arena split it (limits), between these shares for the indices; before that by the arena's index_share
+    constexpr U64 FS_GDD_SPLIT_MIN_USED = 16ull << 20;
+    constexpr F64 FS_GDD_SPLIT_MIN_INDEX = 1.0 / 8.0;
+    constexpr F64 FS_GDD_SPLIT_MAX_INDEX = 1.0 / 2.0;
     // glGetError waits for the render thread to run everything queued before it (with the render thread on,
     // a frame's worth of commands and the driver's lock, 300 ms at times). A growth already waits for this
     // much video memory free beyond its size (allocate); only with less than this free is a failed allocation
@@ -245,7 +254,17 @@ void FSGDDArena::limits(U32 frame, U32& max_verts, U32& max_indices)
         mb = control->getValue().asInteger();
     }
     const U64 bytes = (U64)llclamp(mb, 16, 2048) << 20;
-    const U64 index_bytes = bytes / mIndexShare;
+    // A fixed share ran out of indices first with half the vertex part still free (the shadow arena, whose
+    // copies hold about half as many bytes of indices as of positions): split it as the copies held split it
+    U64 index_bytes = bytes / mIndexShare;
+    const U64 used_vertex_bytes = (U64)mVerts.used() * mStride;
+    const U64 used_index_bytes = (U64)mIndices.used() * sizeof(U16);
+    if (used_vertex_bytes + used_index_bytes >= FS_GDD_SPLIT_MIN_USED)
+    {
+        const F64 share = llclamp((F64)used_index_bytes / (F64)(used_vertex_bytes + used_index_bytes), FS_GDD_SPLIT_MIN_INDEX,
+                                  FS_GDD_SPLIT_MAX_INDEX);
+        index_bytes = (U64)((F64)bytes * share);
+    }
     max_verts = (U32)llmin((U64)U32_MAX / 64, (bytes - index_bytes) / mStride);
     max_indices = (U32)llmin((U64)U32_MAX / 4, index_bytes / sizeof(U16));
     mMaxVerts = max_verts;
@@ -270,6 +289,33 @@ void FSGDDArena::clearCounts()
     {
         count = 0;
     }
+}
+
+// Warns when the arena turns full, not for every buffer that doesn't fit (formatting the message for each
+// was over a thousand strings a minute), and at most every FS_GDD_FULL_WARN_INTERVAL seconds
+void FSGDDArena::noteFull(U32 frame)
+{
+    mLastFullFrame = frame;
+    if (mInFull)
+    {
+        return;
+    }
+    mInFull = true;
+    ++mFullTimes;
+    const F64 now = LLFrameTimer::getElapsedSeconds();
+    if (now - mFullWarnedAt < FS_GDD_FULL_WARN_INTERVAL)
+    {
+        return;
+    }
+    U32 max_verts = 0;
+    U32 max_indices = 0;
+    limits(frame, max_verts, max_indices);
+    LL_WARNS("Rendering") << mName << ": the arena is full (" << vertexMB() << " of " << (U32)(((U64)max_verts * mStride) >> 20)
+                          << " MB vertices, " << indexMB() << " of " << (U32)(((U64)max_indices * sizeof(U16)) >> 20)
+                          << " MB indices, limit " << mBudgetSetting << "), what doesn't fit is drawn the old way; full "
+                          << mFullTimes << " times since the last warning" << LL_ENDL;
+    mFullWarnedAt = now;
+    mFullTimes = 0;
 }
 
 void FSGDDArena::fail(U32 reason, U32* out)
@@ -576,6 +622,11 @@ void FSGDDArena::beginFrame(U32 frame)
         mIndices.release(mHeld[i + 2], mHeld[i + 3]);
     }
     mHeld.clear();
+    // A frame went by without the arena filling up: the next time it does is worth a warning
+    if (mInFull && frame - mLastFullFrame > 1)
+    {
+        mInFull = false;
+    }
     // A growth whose check (in stream order, see verify_grown) is back: its buffers replace the old ones,
     // or are dropped. Here, before this frame's first lookup, so the whole frame draws from one set.
     resolveGrowth();
@@ -603,8 +654,16 @@ void FSGDDArena::beginFrame(U32 frame)
             const U32 used_verts = mVerts.used();
             const U32 used_indices = mIndices.used();
             releaseGL();
-            mRefillVerts = used_verts + used_verts / FS_GDD_REFILL_SHARE;
-            mRefillIndices = used_indices + used_indices / FS_GDD_REFILL_SHARE;
+            if (LLViewerTexture::sFreeVRAMMegabytes <= 0.f)
+            {   // over budget: as little as it needs
+                mRefillVerts = used_verts + used_verts / FS_GDD_REFILL_SHARE;
+                mRefillIndices = used_indices + used_indices / FS_GDD_REFILL_SHARE;
+            }
+            else
+            {
+                mRefillVerts = (U32)llmin((U64)used_verts * 2, (U64)U32_MAX / 64);
+                mRefillIndices = (U32)llmin((U64)used_indices * 2, (U64)U32_MAX / 4);
+            }
         }
     }
 }
@@ -705,9 +764,7 @@ FSGDDArenaEntry* FSGDDArena::find(LLVertexBuffer* vb, U32 frame, U32* reason)
     {
         if (mGrowBuffers.empty())   // else it is growing, once the driver is known to have given it the room
         {
-            LL_WARNS_ONCE("Rendering") << mName << ": the arena is full (" << vertexMB() << " MB vertices, " << indexMB()
-                                       << " MB indices, limit " << mBudgetSetting << "), what doesn't fit is drawn the old way"
-                                       << LL_ENDL;
+            noteFull(frame);
         }
         fail(FAIL_FULL, reason);
         return nullptr;

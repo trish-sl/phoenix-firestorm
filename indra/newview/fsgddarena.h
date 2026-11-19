@@ -93,7 +93,8 @@ public:
     static const char* failName(U32 reason);
 
     // types: the LLVertexBuffer::AttributeType values held. budget_setting: the S32 setting with the size
-    // limit in MB; index_share: the part of it for indices is 1 / index_share. optional_mask: held types
+    // limit in MB; index_share: the part of it for indices is 1 / index_share until the arena holds enough
+    // to split it as its copies do (limits). optional_mask: held types
     // (1 << type) a buffer may lack; they are copied when it has them (FSGDDArenaEntry::mTypeMask says which).
     FSGDDArena(const char* name, const std::vector<U32>& types, const char* budget_setting, S32 default_mb, U32 index_share,
                U32 optional_mask = 0);
@@ -171,6 +172,7 @@ private:
     void dropGrowth();
     void setBufferBytes(U64& buffer_bytes, U64 bytes);
     void fail(U32 reason, U32* out);
+    void noteFull(U32 frame);
 
     std::string mName;
     std::vector<U32> mTypes;
@@ -218,6 +220,12 @@ private:
     U32 mUploads = 0;               // since clearCounts
     U32 mFallbacks = 0;
     U32 mFails[FAIL_COUNT] = {};
+    // The arena-full warning (noteFull): full in a frame without a frame of room since, the last such frame,
+    // the times it turned full since the last warning, and when that was (seconds)
+    bool mInFull = false;
+    U32 mLastFullFrame = 0;
+    U32 mFullTimes = 0;
+    F64 mFullWarnedAt = -1.0e9;
 };
 
 #endif // FS_GDDARENA_H
