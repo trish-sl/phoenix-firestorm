@@ -54,6 +54,14 @@ uniform float fs_ind_history;               // weight of the history, 0 when the
 vec4 fsCatmullRom(sampler2D tex, vec2 uv); // fsBicubicF.glsl, FSRenderBicubicUpsample
 #endif
 
+// A value that isn't a finite number (a zero-length normalize upstream, or garbage read from a
+// texture) would stay in the history for good, mix(x, NaN, 0) being NaN still, and spread through
+// the neighbourhood averages. Such values are left out instead.
+bool fsFinite4(vec4 v)
+{
+    return !(any(isnan(v)) || any(isinf(v)));
+}
+
 void main()
 {
     ivec2 size = textureSize(fs_indirect_gi, 0);
@@ -62,7 +70,7 @@ void main()
     vec4 bend_c = texelFetch(fs_indirect_bent, texel, 0);
     float z = gi_c.a;
 
-    if (z <= 0.0)
+    if (z <= 0.0 || !fsFinite4(gi_c))
     {
         frag_data[0] = vec4(0);
         frag_data[1] = vec4(0);
@@ -84,10 +92,15 @@ void main()
         {
             continue;
         }
+        vec4 b = texelFetch(fs_indirect_bent, t, 0);
+        if (!fsFinite4(g) || !fsFinite4(b))
+        {
+            continue;
+        }
         float rel = abs(g.a - z) * inv_tol;
         float w = (i == 4 ? 2.0 : 1.0) / (1.0 + rel * rel * 4.0);
         gi_sum += w * g.rgb;
-        bend_sum += w * texelFetch(fs_indirect_bent, t, 0).xyz;
+        bend_sum += w * b.xyz;
         w_sum += w;
         if (rel < 1.0)
         {
@@ -127,6 +140,12 @@ void main()
                 w_hist = gi_h.a > 0.0 ? fs_ind_history * (1.0 - smoothstep(0.03, 0.12, rel)) : 0.0;
                 // last frame's camera space to this one's: the inverse of the rotation above
                 bend_h = transpose(mat3(fs_ind_to_prev_view)) * bend_h;
+                if (!fsFinite4(gi_h) || !fsFinite4(vec4(bend_h, 0.0)))
+                {   // a bad history is no history
+                    w_hist = 0.0;
+                    gi_h = vec4(0);
+                    bend_h = vec3(0);
+                }
             }
         }
     }
@@ -136,6 +155,7 @@ void main()
     vec3 margin = (hi - lo) * 0.25 + vec3(0.002);
     vec3 gi_hist = clamp(gi_h.rgb, lo - margin, hi + margin);
 
-    frag_data[0] = vec4(max(mix(gi, gi_hist, w_hist), vec3(0.0)), z);
-    frag_data[1] = vec4(mix(bend, bend_h, w_hist), z);
+    // Without history weight the history isn't touched at all, whatever it holds
+    frag_data[0] = vec4(max(w_hist > 0.0 ? mix(gi, gi_hist, w_hist) : gi, vec3(0.0)), z);
+    frag_data[1] = vec4(w_hist > 0.0 ? mix(bend, bend_h, w_hist) : bend, z);
 }

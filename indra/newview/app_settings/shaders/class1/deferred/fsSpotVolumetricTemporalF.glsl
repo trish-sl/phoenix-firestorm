@@ -49,11 +49,23 @@ const float SKY_DIST = 65000.0;
 vec4 fsCatmullRom(sampler2D tex, vec2 uv); // fsBicubicF.glsl, FSRenderBicubicUpsample
 #endif
 
+// A value that isn't a finite number would stay in the history for good (mix(x, NaN, 0) is NaN)
+// and spread through the neighbourhood clamp. Such values are left out instead.
+bool fsFinite4(vec4 v)
+{
+    return !(any(isnan(v)) || any(isinf(v)));
+}
+
 void main()
 {
     ivec2 size = textureSize(diffuseRect, 0);
     ivec2 texel = ivec2(gl_FragCoord.xy);
     vec4 cur = texelFetch(diffuseRect, texel, 0);
+    if (!fsFinite4(cur))
+    {   // nothing usable this frame: dark, and at a distance no history matches
+        frag_color = vec4(0.0);
+        return;
+    }
 
     if (fs_vol_history <= 0.0)
     {
@@ -72,6 +84,10 @@ void main()
         }
         ivec2 o = ivec2(i % 3, i / 3) - ivec2(1);
         vec3 n = texelFetch(diffuseRect, clamp(texel + o, ivec2(0), size - ivec2(1)), 0).rgb;
+        if (!fsFinite4(vec4(n, 0.0)))
+        {
+            continue;
+        }
         lo = min(lo, n);
         hi = max(hi, n);
     }
@@ -100,10 +116,15 @@ void main()
     // below stays bilinear, a cubic would ring across depth steps
     hist.rgb = fsCatmullRom(specularRect, prev_tc).rgb;
 #endif
+    if (!fsFinite4(hist))
+    {   // a bad history is no history
+        frag_color = cur;
+        return;
+    }
     // the history saw another surface there (disocclusion): start over
     float rel = abs(hist.a - cur.a) / max(cur.a, 0.1);
     float w = fs_vol_history * (1.0 - smoothstep(0.05, 0.2, rel));
 
     vec3 clamped = clamp(hist.rgb, lo, hi);
-    frag_color = vec4(mix(cur.rgb, clamped, w), cur.a);
+    frag_color = vec4(w > 0.0 ? mix(cur.rgb, clamped, w) : cur.rgb, cur.a);
 }

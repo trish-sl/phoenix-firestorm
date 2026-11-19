@@ -20,6 +20,12 @@ out vec4 frag_color;
 
 uniform sampler2D diffuseRect;
 
+// Luminance weight of the Karis average: never a division by zero or less
+float fsKaris(vec3 c)
+{
+    return 1.0 / (1.0 + max(dot(c, vec3(0.2126, 0.7152, 0.0722)), 0.0));
+}
+
 #ifdef FS_SSR_HIZ_COPY
 
 // Level 0: the scene map's colour and depth, depth turned linear.
@@ -31,6 +37,9 @@ void main()
 {
     ivec2 px = ivec2(gl_FragCoord.xy);
     vec3 col = texelFetch(diffuseRect, px, 0).rgb;
+    // One NaN or Inf in the scene would spread into every coarser level (and through the cone trace
+    // back into the scene): such a texel is black, and colour is never negative
+    col = (any(isnan(col)) || any(isinf(col))) ? vec3(0.0) : max(col, vec3(0.0));
     float d = texelFetch(depthMap, px, 0).r;
 #ifdef REVERSE_Z
     float ndcz = d;
@@ -44,6 +53,10 @@ void main()
     // Half float storage rounds to nearest (up to 1/2048 relative): pull the depth toward the
     // camera by more than that, so the stored nearest depth never lies behind the surface.
     lin *= 1.0 - 1.0 / 1024.0;
+    if (isnan(lin))
+    {
+        lin = 60000.0; // as far as it goes: nothing a ray could hit
+    }
     // Half float storage: keep the far plane (or an infinite one) finite.
     frag_color = vec4(col, clamp(lin, 0.0, 60000.0));
 }
@@ -68,8 +81,7 @@ void main()
 
     // Luminance-weighted (Karis) average: one very bright texel would otherwise spread into a
     // firefly over every coarser level the cone-traced reflections read
-    vec4 w = 1.0 / (1.0 + vec4(dot(a.rgb, vec3(0.2126, 0.7152, 0.0722)), dot(b.rgb, vec3(0.2126, 0.7152, 0.0722)),
-                               dot(c.rgb, vec3(0.2126, 0.7152, 0.0722)), dot(d.rgb, vec3(0.2126, 0.7152, 0.0722))));
+    vec4 w = vec4(fsKaris(a.rgb), fsKaris(b.rgb), fsKaris(c.rgb), fsKaris(d.rgb));
     vec3 col = (a.rgb * w.x + b.rgb * w.y + c.rgb * w.z + d.rgb * w.w) / (w.x + w.y + w.z + w.w);
     float z = min(min(a.a, b.a), min(c.a, d.a));
 

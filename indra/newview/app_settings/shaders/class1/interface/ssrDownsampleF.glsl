@@ -41,7 +41,10 @@ in vec2 vary_fragcoord;
 
 float karis(vec4 c)
 {
-    return 1.0 / (1.0 + dot(c.rgb, vec3(0.2126, 0.7152, 0.0722)));
+    // <FS:Trish> never a division by zero or less
+    //return 1.0 / (1.0 + dot(c.rgb, vec3(0.2126, 0.7152, 0.0722)));
+    return 1.0 / (1.0 + max(dot(c.rgb, vec3(0.2126, 0.7152, 0.0722)), 0.0));
+    // </FS:Trish>
 }
 
 void main()

@@ -48,6 +48,14 @@ bool isFarDepth(float d);
 GBufferInfo getGBuffer(vec2 screenpos);
 float unpackRoughness(vec2 p);
 
+// <FS:Trish> A value that isn't a finite number would stay in the history for good (mix(x, NaN, 0)
+// is NaN) and spread through the 3x3 moments. Such values are left out instead.
+bool fsResolveFinite(vec4 v)
+{
+    return !(any(isnan(v)) || any(isinf(v)));
+}
+// </FS:Trish>
+
 // single-scalar clip; per-channel clamps break premultiplied rgb/a ratios
 vec4 clipToAABB(vec4 v, vec4 mn, vec4 mx)
 {
@@ -99,6 +107,7 @@ void main()
 {
     ivec2 px = ivec2(gl_FragCoord.xy);
     vec4 cur = texelFetch(fs_ssr_trace, px, 0);
+    cur = fsResolveFinite(cur) ? cur : vec4(0.0); // <FS:Trish/> a bad trace texel is a miss
 
     // the full-resolution pixel the trace took this texel from
     ivec2 full = min(ivec2(gl_FragCoord.xy * (fs_ssr_full_res / fs_ssr_res)), ivec2(fs_ssr_full_res) - 1);
@@ -127,6 +136,7 @@ void main()
         for (int x = -1; x <= 1; ++x)
         {
             vec4 s = texelFetch(fs_ssr_trace, clamp(px + ivec2(x, y), ivec2(0), sz - 1), 0);
+            s = fsResolveFinite(s) ? s : vec4(0.0); // <FS:Trish/>
             m1 += s;
             m2 += s * s;
         }
@@ -161,9 +171,19 @@ void main()
     }
 
     // Salvi variance bound; min/max would clamp accumulation to the noise extremes
-    vec4 hist = clipToAABB(sampleHistoryCatmullRom(prevUV, vec2(textureSize(fs_ssr_history, 0))),
-                           mu - sigma * 1.25, mu + sigma * 1.25);
+    // <FS:Trish> a bad history is no history, and without history weight it isn't touched at all
+    //vec4 hist = clipToAABB(sampleHistoryCatmullRom(prevUV, vec2(textureSize(fs_ssr_history, 0))),
+    //                       mu - sigma * 1.25, mu + sigma * 1.25);
+    vec4 hist_raw = sampleHistoryCatmullRom(prevUV, vec2(textureSize(fs_ssr_history, 0)));
+    if (!fsResolveFinite(hist_raw))
+    {
+        w = 0.0;
+        hist_raw = filtered;
+    }
+    vec4 hist = clipToAABB(hist_raw, mu - sigma * 1.25, mu + sigma * 1.25);
+    // </FS:Trish>
 
     // alpha blends too, so accumulated confidence stays coherent with color
-    frag_color = mix(filtered, hist, w);
+    //frag_color = mix(filtered, hist, w);
+    frag_color = w > 0.0 ? mix(filtered, hist, w) : filtered; // <FS:Trish/>
 }
