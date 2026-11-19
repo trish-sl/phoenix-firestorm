@@ -160,6 +160,15 @@ vec3 pbrCalcPointLightOrSpotLight(vec3 diffuseColor, vec3 specularColor,
 void fsFadeIn(); // fsFadeInF.glsl
 #endif
 
+// <FS:Trish> Cheap avatar alpha (fsavataralpha.cpp, FSRenderCheapAvatarAlpha): the per draw flag of the
+// legacy alpha program (class2 alphaF.glsl, named for its first use there, particles), 0 for every other
+// draw. Bit 2: cheap lighting, as alphaF takes it: one sun shadow tap, the sky probe alone and the four
+// nearest local lights; fog as before. Uniform per draw: the branches are coherent.
+uniform int fs_particle;
+float fsSampleDirectionalShadowCheap(vec3 pos, vec3 norm); // shadowUtil.glsl
+void fsSampleReflectionProbesCheap(inout vec3 ambenv, inout vec3 glossenv, vec3 pos, vec3 norm, float glossiness, vec3 amblit); // reflectionProbeF.glsl
+// </FS:Trish>
+
 void main()
 {
 #ifdef FS_FADE_IN
@@ -262,6 +271,8 @@ void main()
     }
 #endif
 
+    bool fs_cheap = (fs_particle & 2) != 0; // <FS:Trish/> cheap avatar alpha
+
     float scol = 1.0;
     vec3 sunlit;
     vec3 amblit;
@@ -279,7 +290,8 @@ void main()
     //scol = sampleDirectionalShadow(pos.xyz, norm.xyz, frag);
     if (dot(norm.xyz, light_dir) > 0.0)
     {
-        scol = sampleDirectionalShadow(pos.xyz, norm.xyz, frag);
+        //scol = sampleDirectionalShadow(pos.xyz, norm.xyz, frag);
+        scol = fs_cheap ? fsSampleDirectionalShadowCheap(pos.xyz, norm.xyz) : sampleDirectionalShadow(pos.xyz, norm.xyz, frag); // cheap avatar alpha: one tap
     }
     // </FS:Trish>
 #endif
@@ -292,7 +304,17 @@ void main()
     // tapScreenSpaceReflection, where it drives the screen-edge vignette and the per-pixel
     // ray jitter, and vary_position is an eye-space metre offset -- outside [0,1] for all but
     // a sliver of the frame, so the vignette never fades and the jitter stops decorrelating.
-    sampleReflectionProbes(irradiance, radiance, frag, pos.xyz, norm.xyz, gloss, true, amblit);
+    // <FS:Trish> Cheap avatar alpha: the sky probe alone, no walk over the probes, no screen-space reflection
+    //sampleReflectionProbes(irradiance, radiance, frag, pos.xyz, norm.xyz, gloss, true, amblit);
+    if (fs_cheap)
+    {
+        fsSampleReflectionProbesCheap(irradiance, radiance, pos.xyz, norm.xyz, gloss, amblit);
+    }
+    else
+    {
+        sampleReflectionProbes(irradiance, radiance, frag, pos.xyz, norm.xyz, gloss, true, amblit);
+    }
+    // </FS:Trish>
 
     // A normal map can aim the reflection below the surface it sits on, where the probe happily
     // returns radiance arriving through the geometry. vary_normal is the untouched interpolated
@@ -319,9 +341,14 @@ void main()
     LIGHT_LOOP(2)
     LIGHT_LOOP(3)
     LIGHT_LOOP(4)
+    // <FS:Trish> Cheap avatar alpha: the four lights nearest the camera (the list is sorted by distance)
+    if (!fs_cheap)
+    {
+    // </FS:Trish>
     LIGHT_LOOP(5)
     LIGHT_LOOP(6)
     LIGHT_LOOP(7)
+    } // <FS:Trish/>
 
     color.rgb += light.rgb;
 

@@ -103,7 +103,17 @@ out vec4 frag_color;
 
 #ifdef HAS_SUN_SHADOW
 float sampleDirectionalShadow(vec3 pos, vec3 norm, vec2 pos_screen);
+float fsSampleDirectionalShadowCheap(vec3 pos, vec3 norm); // <FS:Trish/> shadowUtil.glsl, cheap avatar alpha
 #endif
+
+// <FS:Trish> Cheap avatar alpha (fsavataralpha.cpp, FSRenderCheapAvatarAlpha): the per draw flag of the
+// legacy alpha program (class2 alphaF.glsl, named for its first use there, particles), 0 for every other
+// draw. Bit 2: cheap lighting, as alphaF takes it: one sun shadow tap, the sky probe alone and the four
+// nearest local lights; fog as before. Uniform per draw: the branches are coherent.
+uniform int fs_particle;
+void fsSampleReflectionProbesLegacyCheap(inout vec3 ambenv, inout vec3 glossenv, inout vec3 legacyenv,
+        vec3 pos, vec3 norm, float glossiness, float envIntensity, vec3 amblit); // reflectionProbeF.glsl
+// </FS:Trish>
 
 void sampleReflectionProbesLegacy(inout vec3 ambenv, inout vec3 glossenv, inout vec3 legacyenv,
         vec2 tc, vec3 pos, vec3 norm, float glossiness, float envIntensity, bool transparent, vec3 amblit_linear);
@@ -405,7 +415,15 @@ void main()
 
     vec3 pos = vary_position;
 
+    // <FS:Trish> Cheap avatar alpha: one sun shadow tap
+    //float shadow = getShadow(pos, norm);
+    bool fs_cheap = (fs_particle & 2) != 0;
+#ifdef HAS_SUN_SHADOW
+    float shadow = fs_cheap ? fsSampleDirectionalShadowCheap(pos, norm) : getShadow(pos, norm);
+#else
     float shadow = getShadow(pos, norm);
+#endif
+    // </FS:Trish>
 
     vec4 diffuse = diffcol;
 
@@ -427,7 +445,17 @@ void main()
     vec3 ambenv = amblit;
     vec3 glossenv = vec3(0.0);
     vec3 legacyenv = vec3(0.0);
-    sampleReflectionProbesLegacy(ambenv, glossenv, legacyenv, gl_FragCoord.xy / screen_res, pos.xyz, norm.xyz, glossiness, env, true, amblit_linear);
+    // <FS:Trish> Cheap avatar alpha: the sky probe alone, no walk over the probes, no screen-space reflection
+    //sampleReflectionProbesLegacy(ambenv, glossenv, legacyenv, gl_FragCoord.xy / screen_res, pos.xyz, norm.xyz, glossiness, env, true, amblit_linear);
+    if (fs_cheap)
+    {
+        fsSampleReflectionProbesLegacyCheap(ambenv, glossenv, legacyenv, pos.xyz, norm.xyz, glossiness, env, amblit_linear);
+    }
+    else
+    {
+        sampleReflectionProbesLegacy(ambenv, glossenv, legacyenv, gl_FragCoord.xy / screen_res, pos.xyz, norm.xyz, glossiness, env, true, amblit_linear);
+    }
+    // </FS:Trish>
 
     color = ambenv;
 
@@ -500,9 +528,14 @@ void main()
         LIGHT_LOOP(2)
         LIGHT_LOOP(3)
         LIGHT_LOOP(4)
+        // <FS:Trish> Cheap avatar alpha: the four lights nearest the camera (the list is sorted by distance)
+        if (!fs_cheap)
+        {
+        // </FS:Trish>
         LIGHT_LOOP(5)
         LIGHT_LOOP(6)
         LIGHT_LOOP(7)
+        } // <FS:Trish/>
 
     color += light;
 

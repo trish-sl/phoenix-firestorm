@@ -442,6 +442,8 @@ namespace
         { "FSPerfAlphaGlowSkip", CS, VN },
         { "FSRenderOcclusionAfterOpaque", CS, VN },
         { "FSRenderCheapParticles", CS, VL },
+        { "FSRenderCheapAvatarAlpha", CS, VL },
+        { "FSRenderCheapAvatarAlphaDistance", CS, VL },
         { "FSPerfLightRescanThrottle", CS, VN },
         { "FSPerfHeroProbeSkipHiddenFaces", CS, VN },
         { "FSPerfProbeUniformCache", CS, VN },

@@ -57,6 +57,7 @@
 #include "fsfoginterior.h" // <FS:Trish/> height fog kept out of interiors
 #include "fsgpudrivenalpha.h" // <FS:Trish/> FSPerfGPUDrivenAlpha
 #include "fsparticlerender.h" // <FS:Trish/> particle draws: cheap lighting, early-out, GPU timings
+#include "fsavataralpha.h" // <FS:Trish/> FSRenderCheapAvatarAlpha
 #include "fssoftparticles.h" // <FS:Trish/> FSRenderSoftParticles
 #include <optional> // <FS:Trish/>
 
@@ -993,7 +994,29 @@ void LLDrawPoolAlpha::renderAlpha(U32 mask, bool depth_only, bool rigged, EWBOIT
     // phases and the two-pass hair passes; their programs are bound as the stock ones are (fs_bind_program).
     const bool fs_gdd = !depth_only && wboit_phase == WBOIT_OFF && mHairPass == HAIR_OFF && !gCubeSnapshot &&
         fsGDDAlphaBeginPass(rigged, simple_shader, fullbright_shader, mAlphaSFactor, mAlphaDFactor, MINIMUM_ALPHA);
-    const fs_gdd_alpha_bind_t fs_gdd_bind = fs_bind_program;
+    //const fs_gdd_alpha_bind_t fs_gdd_bind = fs_bind_program;
+    // </FS:Trish>
+
+    // <FS:Trish> FSRenderCheapAvatarAlpha (fsavataralpha.cpp): whether this pass may light the alpha of distant
+    // avatars cheaply. A GPU-driven run is drawn with one bind of its program, so its draws share one lighting:
+    // the run's flags go on the program as it binds, and a draw of another lighting starts a new run. With GPU
+    // timings on, a rigged pass is the zone "alpha avatars" whole.
+    const bool fs_avatar_pass = FSAvatarAlpha::beginPass();
+    S32 fs_gdd_run_flags = 0;
+    const fs_gdd_alpha_bind_t fs_gdd_bind = !fs_avatar_pass ? fs_gdd_alpha_bind_t(fs_bind_program) :
+        fs_gdd_alpha_bind_t([&](LLGLSLShader& shader)
+        {
+            fs_bind_program(shader);
+            if (LLGLSLShader::sCurBoundShaderPtr == &shader)
+            {
+                FSParticleRender::apply(shader, fs_gdd_run_flags);
+            }
+        });
+    std::optional<LLFSGPUZone::Scope> fs_rigged_zone;
+    if (rigged && LLFSGPUZone::sActive.load(std::memory_order_relaxed))
+    {
+        fs_rigged_zone.emplace("alpha avatars");
+    }
     // </FS:Trish>
 
     // <FS:Trish> Soft particles: whether this pass can fade them (main view, no rigged or depth only pass)
@@ -1097,6 +1120,18 @@ void LLDrawPoolAlpha::renderAlpha(U32 mask, bool depth_only, bool rigged, EWBOIT
             }
             // </FS:Trish>
 
+            // <FS:Trish> FSRenderCheapAvatarAlpha: the wearer of a group of non-rigged attachments (a rigged draw
+            // names its avatar itself); with GPU timings on, such a group is part of the zone "alpha avatars"
+            const bool fs_attachment_group = !rigged && group->getSpatialPartition()->mPartitionType == LLViewerRegion::PARTITION_AVATAR;
+            const LLVOAvatar* fs_group_avatar = fs_attachment_group && (fs_avatar_pass || FSAvatarAlpha::statsOn()) ?
+                FSAvatarAlpha::groupAvatar(group) : nullptr;
+            std::optional<LLFSGPUZone::Scope> fs_attachment_zone;
+            if (fs_attachment_group && FSAvatarAlpha::openZone())
+            {
+                fs_attachment_zone.emplace("alpha avatars");
+            }
+            // </FS:Trish>
+
             bool disable_cull = is_particle_or_hud_particle;
             LLGLDisable cull(disable_cull ? GL_CULL_FACE : 0);
 
@@ -1181,6 +1216,17 @@ void LLDrawPoolAlpha::renderAlpha(U32 mask, bool depth_only, bool rigged, EWBOIT
                         double_sided_cull.reset();
                         initialized_lighting = true;
                         light_enabled = !params.mFullbright;
+                        // FSRenderCheapAvatarAlpha: the pending run is drawn first when this draw is lit otherwise
+                        {
+                            const LLVOAvatar* fs_avatar = params.mAvatar.notNull() ? params.mAvatar.get() : fs_group_avatar;
+                            const S32 fs_avatar_flags = fs_avatar_pass ? FSAvatarAlpha::flags(fs_avatar) : 0;
+                            if (fs_avatar_flags != fs_gdd_run_flags)
+                            {
+                                fsGDDAlphaFlush(fs_gdd_bind);
+                                fs_gdd_run_flags = fs_avatar_flags;
+                            }
+                            FSAvatarAlpha::noteDraw(fs_avatar, fs_avatar_flags);
+                        }
                         fsGDDAlphaQueue(fs_command, fs_gdd_bind);
                         if (getType() != LLDrawPool::POOL_ALPHA_PRE_WATER &&
                             params.mVertexBuffer->hasDataType(LLVertexBuffer::TYPE_EMISSIVE) && needs_glow(params))
@@ -1379,13 +1425,23 @@ void LLDrawPoolAlpha::renderAlpha(U32 mask, bool depth_only, bool rigged, EWBOIT
 
                     // <FS:Trish> Particle draws: the early-out only where a discarded fragment changes
                     // nothing, source alpha blending in a colour pass that writes no depth
+                    // FSRenderCheapAvatarAlpha: the draws of avatars carry their avatar's flags, every other
+                    // draw 0 (so does every draw while it is off)
                     {
+                        const LLVOAvatar* fs_avatar = params.mAvatar.notNull() ? params.mAvatar.get() : fs_group_avatar;
+                        const S32 fs_avatar_flags = fs_avatar_pass ? FSAvatarAlpha::flags(fs_avatar) : 0;
+                        //const S32 fs_particle_flags = fs_particle_group ?
+                        //    FSParticleRender::flags(params.mBlendFuncSrc == LLRender::BF_SOURCE_ALPHA && !depth_only && !mFSWriteDepth) : 0;
                         const S32 fs_particle_flags = fs_particle_group ?
-                            FSParticleRender::flags(params.mBlendFuncSrc == LLRender::BF_SOURCE_ALPHA && !depth_only && !mFSWriteDepth) : 0;
+                            FSParticleRender::flags(params.mBlendFuncSrc == LLRender::BF_SOURCE_ALPHA && !depth_only && !mFSWriteDepth) : fs_avatar_flags;
                         FSParticleRender::apply(*current_shader, fs_particle_flags);
                         if (fs_particle_group)
                         {
                             FSParticleRender::noteDraw(fs_particle_flags, params.mCount);
+                        }
+                        else if (!depth_only)
+                        {
+                            FSAvatarAlpha::noteDraw(fs_avatar, fs_avatar_flags);
                         }
                     }
                     // </FS:Trish>
@@ -1527,6 +1583,14 @@ void LLDrawPoolAlpha::renderAlpha(U32 mask, bool depth_only, bool rigged, EWBOIT
     if (fs_gdd)
     {
         fsGDDAlphaEndPass();
+    }
+    // </FS:Trish>
+
+    // <FS:Trish> FSRenderCheapAvatarAlpha: no program keeps an avatar's flag past this pass (the rigged and
+    // PBR programs draw elsewhere too, the GLTF scene for one)
+    if (FSAvatarAlpha::endPass())
+    {
+        FSParticleRender::resetAll();
     }
     // </FS:Trish>
 

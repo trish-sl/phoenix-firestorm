@@ -242,6 +242,10 @@
     <real>0.15</real>
     <key>FSRenderBloomThreshold</key>
     <real>1.0</real>
+    <key>FSRenderCheapAvatarAlpha</key>
+    <boolean>1</boolean>
+    <key>FSRenderCheapAvatarAlphaDistance</key>
+    <real>12.0</real>
     <key>FSRenderCheapParticles</key>
     <boolean>1</boolean>
     <key>FSRenderChromaticAberration</key>

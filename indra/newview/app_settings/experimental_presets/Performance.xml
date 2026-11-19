@@ -184,6 +184,10 @@
     <integer>1</integer>
     <key>FSRenderAvatarShadowDistance</key>
     <real>30.0</real>
+    <key>FSRenderCheapAvatarAlpha</key>
+    <boolean>1</boolean>
+    <key>FSRenderCheapAvatarAlphaDistance</key>
+    <real>6.0</real>
     <key>FSRenderCheapParticles</key>
     <boolean>1</boolean>
     <key>FSRenderClusteredLights</key>

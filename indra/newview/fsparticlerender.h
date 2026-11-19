@@ -43,7 +43,8 @@ class LLSpatialGroup;
 //   fade leaves below the minimum alpha is discarded before the lighting (the picture is the same:
 //   the stock minimum alpha test already drops such fragments when their texture alpha is that low);
 // - CHEAP: FSRenderCheapParticles, lit from the sky probe's ambient, one shadow tap and the four
-//   nearest lights.
+//   nearest lights. FSRenderCheapAvatarAlpha (fsavataralpha.h) sets it for distant avatars' alpha too,
+//   on the same uniform, which class2 pbralphaF and class3 materialF also have for that.
 // With FSRenderGPUTimings on, each in-world particle group's draws (and glow) are a GPU zone
 // "alpha particles", and a line next to the timings gives the draws and the screen they cover.
 // Main thread only, like the rest of the render pipeline.
@@ -62,6 +63,11 @@ namespace FSParticleRender
     // Before a draw: the flags (0 for anything that isn't a particle). Programs without the uniform
     // are left alone; a program is only touched again once it holds a non-zero value.
     void apply(LLGLSLShader& shader, S32 flags);
+
+    // Every program that holds a non-zero value back to 0 (binding each, then the program bound before
+    // again), so a flag set for the alpha pool's draws never reaches whatever else draws with the program
+    // later (FSRenderCheapAvatarAlpha flags the rigged and PBR programs too, which other passes use)
+    void resetAll();
 
     // Main thread, every frame (llappviewer.cpp, with FSGPUTimers): stats on or off, logged every interval
     void frame(bool enabled, F32 interval_seconds);

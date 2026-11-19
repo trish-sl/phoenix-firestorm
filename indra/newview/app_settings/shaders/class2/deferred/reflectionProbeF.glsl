@@ -77,6 +77,20 @@ void sampleReflectionProbesLegacy(inout vec3 ambenv, inout vec3 glossenv, inout 
     glossenv = legacyenv;
 }
 
+// <FS:Trish> Cheap avatar alpha (FSRenderCheapAvatarAlpha, pbralphaF.glsl and materialF.glsl): without
+// reflection probes the full paths are one environment map tap already, so they are taken as they are
+void fsSampleReflectionProbesCheap(inout vec3 ambenv, inout vec3 glossenv, vec3 pos, vec3 norm, float glossiness, vec3 amblit)
+{
+    sampleReflectionProbes(ambenv, glossenv, vec2(0.0), pos, norm, glossiness, true, amblit);
+}
+
+void fsSampleReflectionProbesLegacyCheap(inout vec3 ambenv, inout vec3 glossenv, inout vec3 legacyenv,
+        vec3 pos, vec3 norm, float glossiness, float envIntensity, vec3 amblit)
+{
+    sampleReflectionProbesLegacy(ambenv, glossenv, legacyenv, vec2(0.0), pos, norm, glossiness, envIntensity, true, amblit);
+}
+// </FS:Trish>
+
 void applyGlossEnv(inout vec3 color, vec3 glossenv, vec4 spec, vec3 pos, vec3 norm)
 {
 

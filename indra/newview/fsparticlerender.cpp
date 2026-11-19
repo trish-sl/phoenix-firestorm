@@ -47,7 +47,8 @@ extern bool gCubeSnapshot;
 namespace
 {
     // Programs that hold a non-zero fs_particle. Only the legacy alpha program draws particles, the
-    // fullbright one has no uniform, so this holds one or two entries at most.
+    // fullbright one has no uniform; FSRenderCheapAvatarAlpha adds the rigged, material and PBR
+    // programs (and the GPU-driven copies), so this holds a handful of entries at most.
     std::vector<LLGLSLShader*> sFlagged;
 
     // A zone per particle group per pass: a scene full of emitters would otherwise take the zone
@@ -121,6 +122,33 @@ void FSParticleRender::apply(LLGLSLShader& shader, S32 flags)
     else if (!flags && flagged)
     {
         sFlagged.erase(it);
+    }
+}
+
+void FSParticleRender::resetAll()
+{
+    if (sFlagged.empty())
+    {
+        return;
+    }
+    static LLStaticHashedString name("fs_particle");
+    LLGLSLShader* bound = LLGLSLShader::sCurBoundShaderPtr;
+    for (LLGLSLShader* shader : sFlagged)
+    {
+        if (!shader->mProgramObject)
+        {
+            continue; // unloaded since (a particle flag can be older than this pass); a new program holds 0
+        }
+        shader->bind();
+        if (LLGLSLShader::sCurBoundShaderPtr == shader)
+        {
+            shader->uniform1i(name, 0);
+        }
+    }
+    sFlagged.clear();
+    if (bound && LLGLSLShader::sCurBoundShaderPtr != bound)
+    {
+        bound->bind();
     }
 }
 

@@ -687,6 +687,47 @@ vec3 fsSampleProbeAmbientCheap(vec3 pos, vec3 norm, vec3 amblit)
     float dw = 0.0;
     return tapIrradianceMap(pos, norm, w, dw, refSphere[0].xyz, 0, amblit);
 }
+
+// Cheap avatar alpha (FSRenderCheapAvatarAlpha, pbralphaF.glsl and materialF.glsl): as above, and the
+// reflection from the sky probe alone too, without the walk over the local probes, the screen-space
+// reflection and the mirror probe. Same lobe directions and mips as the full paths.
+vec3 fsTapSkyProbeCheap(vec3 pos, vec3 dir, float lod)
+{
+    if (refmapCount < 1)
+    {
+        return vec3(0.0);
+    }
+    float w = 0.0;
+    float dw = 0.0;
+    return tapRefMap(pos, dir, w, dw, lod, refSphere[0].xyz, 0);
+}
+
+// for sampleReflectionProbes (PBR)
+void fsSampleReflectionProbesCheap(inout vec3 ambenv, inout vec3 glossenv, vec3 pos, vec3 norm, float glossiness, vec3 amblit)
+{
+    float perceptualRoughness = 1.0 - glossiness;
+    vec3 refnormpersp = getSpecularDominantDir(norm.xyz, normalize(reflect(pos.xyz, norm.xyz)), perceptualRoughness);
+    ambenv = fsSampleProbeAmbientCheap(pos, norm, amblit);
+    glossenv = fsTapSkyProbeCheap(pos, refnormpersp, perceptualRoughness * max_probe_lod);
+}
+
+// for sampleReflectionProbesLegacy
+void fsSampleReflectionProbesLegacyCheap(inout vec3 ambenv, inout vec3 glossenv, inout vec3 legacyenv,
+        vec3 pos, vec3 norm, float glossiness, float envIntensity, vec3 amblit)
+{
+    vec3 refnormpersp = reflect(pos.xyz, norm.xyz);
+    ambenv = fsSampleProbeAmbientCheap(pos, norm, amblit);
+    if (glossiness > 0.0)
+    {
+        float perceptualRoughness = 1.0 - glossiness;
+        vec3 dominantDir = getSpecularDominantDir(norm.xyz, normalize(refnormpersp), perceptualRoughness);
+        glossenv = fsTapSkyProbeCheap(pos, dominantDir, perceptualRoughness * max_probe_lod);
+    }
+    if (envIntensity > 0.0)
+    {
+        legacyenv = fsTapSkyProbeCheap(pos, normalize(refnormpersp), 0.0);
+    }
+}
 // </FS:Trish>
 
 vec3 sampleProbes(vec3 pos, vec3 dir, float lod)
