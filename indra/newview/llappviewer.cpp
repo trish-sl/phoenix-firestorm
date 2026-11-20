@@ -193,6 +193,55 @@
 #   include <sys/file.h> // For processMarkerFiles
 #endif
 
+// <FS:Trish> The first run's experimental preset depends on the graphics card, known before GL is up
+#if LL_WINDOWS
+#   include "llwin32headers.h"
+#   include <dxgi.h>
+#endif
+
+namespace
+{
+    // Whether the adapter with the most dedicated video memory (the one the viewer renders on, as in
+    // LLWindowWin32) is an AMD card. Asked through DXGI, loaded here, because GL isn't up yet when
+    // the first run's settings are made. False when it can't be told.
+    bool fs_first_run_gpu_is_amd()
+    {
+#if LL_WINDOWS
+        HMODULE dxgi = LoadLibraryW(L"dxgi.dll");
+        if (!dxgi)
+        {
+            return false;
+        }
+        typedef HRESULT(WINAPI* create_factory_t)(REFIID, void**);
+        create_factory_t create_factory = (create_factory_t)GetProcAddress(dxgi, "CreateDXGIFactory1");
+        bool amd = false;
+        IDXGIFactory1* factory = nullptr;
+        if (create_factory && SUCCEEDED(create_factory(__uuidof(IDXGIFactory1), (void**)&factory)) && factory)
+        {
+            SIZE_T most_vram = 0;
+            IDXGIAdapter1* adapter = nullptr;
+            for (UINT i = 0; factory->EnumAdapters1(i, &adapter) != DXGI_ERROR_NOT_FOUND; ++i)
+            {
+                DXGI_ADAPTER_DESC1 desc;
+                if (SUCCEEDED(adapter->GetDesc1(&desc)) && !(desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) &&
+                    desc.DedicatedVideoMemory > most_vram)
+                {
+                    most_vram = desc.DedicatedVideoMemory;
+                    amd = desc.VendorId == 0x1002;
+                }
+                adapter->Release();
+            }
+            factory->Release();
+        }
+        FreeLibrary(dxgi);
+        return amd;
+#else
+        return false;
+#endif
+    }
+}
+// </FS:Trish>
+
 #include "llapr.h"
 #include <boost/lexical_cast.hpp>
 
@@ -3738,10 +3787,11 @@ bool LLAppViewer::initConfiguration()
         }
         // </FS>
 
-        // <FS:Trish> A fresh install starts on the built-in Mid-Nvidia experimental preset.
+        // <FS:Trish> A fresh install starts on the built-in Mid-Nvidia experimental preset, or Mid-AMD on an AMD card.
         // Settings it doesn't list keep their defaults; Stock Firestorm in the preset bar goes back to stock.
         {
-            const std::string preset_path = gDirUtilp->getExpandedFilename(LL_PATH_APP_SETTINGS, "experimental_presets", "Mid-Nvidia.xml");
+            const char* preset_file_name = fs_first_run_gpu_is_amd() ? "Mid-AMD.xml" : "Mid-Nvidia.xml";
+            const std::string preset_path = gDirUtilp->getExpandedFilename(LL_PATH_APP_SETTINGS, "experimental_presets", preset_file_name);
             llifstream preset_file(preset_path.c_str());
             LLSD preset;
             if (preset_file.is_open() && LLSDSerialize::fromXML(preset, preset_file) != LLSDParser::PARSE_FAILURE

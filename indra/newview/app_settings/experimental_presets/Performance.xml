@@ -232,8 +232,6 @@
     <boolean>1</boolean>
     <key>FSRenderVRSPeriphery</key>
     <real>0.0</real>
-    <key>RenderAMDDisableShaderCache</key>
-    <boolean>1</boolean>
     <key>RenderAMDDisableTextureThreading</key>
     <boolean>1</boolean>
     <key>RenderGLMultiThreadedTexturesNVIDIA</key>

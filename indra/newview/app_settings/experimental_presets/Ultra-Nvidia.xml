@@ -644,8 +644,6 @@
     <real>3.0</real>
     <key>RenderAlphaBlendShadows</key>
     <integer>0</integer>
-    <key>RenderAMDDisableShaderCache</key>
-    <boolean>1</boolean>
     <key>RenderAMDDisableTextureThreading</key>
     <boolean>1</boolean>
     <key>RenderGLMultiThreadedTexturesNVIDIA</key>

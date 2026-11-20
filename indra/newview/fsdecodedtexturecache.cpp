@@ -1327,6 +1327,7 @@ private:
     static constexpr const char* PRESET_BUILTIN_PREFIX = "builtin:";
     static constexpr const char* PRESET_USER_PREFIX = "user:";
     static constexpr const char* PRESET_DEFAULT_BUILTIN = "Mid-Nvidia";
+    static constexpr const char* PRESET_DEFAULT_BUILTIN_AMD = "Mid-AMD";
     static constexpr S32 PRESET_VERSION = 1;
     static constexpr size_t PRESET_NAME_MAX_LENGTH = 64;
 
@@ -1588,7 +1589,7 @@ private:
         // Nothing chosen yet: the preset a fresh install starts on (LLAppViewer::initConfiguration)
         if (selection.empty())
         {
-            selection = std::string(PRESET_BUILTIN_PREFIX) + PRESET_DEFAULT_BUILTIN;
+            selection = std::string(PRESET_BUILTIN_PREFIX) + (gGLManager.mIsAMD ? PRESET_DEFAULT_BUILTIN_AMD : PRESET_DEFAULT_BUILTIN);
         }
         if (!mPresetCombo->selectByValue(LLSD(selection)))
         {
