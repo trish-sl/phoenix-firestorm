@@ -624,7 +624,28 @@ namespace FSMirrorPlanar
         const LLQuaternion rot = hero->mDrawable->getWorldRotation();
         const LLVector3 ax = LLVector3::x_axis * rot * (scale.mV[VX] * 0.5f * GROW);
         const LLVector3 ay = LLVector3::y_axis * rot * (scale.mV[VY] * 0.5f * GROW);
-        const LLVector3 corners[4] = { mirror_pos - ax - ay, mirror_pos + ax - ay, mirror_pos + ax + ay, mirror_pos - ax + ay };
+        // What glossy surfaces anywhere in the probe box read, on the middle plane: the middle
+        // rectangle and the box's front and back faces carried along their reflected rays to it
+        // (see fs_to_middle_plane). The camera is the reflected eye reflected back.
+        const LLVector3 normal = LLVector3::z_axis * rot;
+        const LLVector3 cam = virtual_eye + normal * (2.f * ((mirror_pos - virtual_eye) * normal));
+        const LLVector3 thick = normal * (scale.mV[VZ] * 0.5f);
+        std::vector<LLVector3> rects[3];
+        fs_face_rect(rects[0], mirror_pos, ax, ay);
+        for (U32 side = 1; side < 3; ++side)
+        {
+            std::vector<LLVector3> face;
+            fs_face_rect(face, mirror_pos + (side == 1 ? thick : -thick), ax, ay);
+            for (const LLVector3& p : face)
+            {
+                LLVector3 q;
+                if (!fs_to_middle_plane(p, cam, virtual_eye, mirror_pos, normal, q))
+                {
+                    return 0; // too close to bound them: every face
+                }
+                rects[side].push_back(q);
+            }
+        }
 
         // Face order and orientation of LLViewerWindow::cubeSnapshot: +X, -X, +Y, -Y, +Z, -Z. A face
         // sees the directions d with |d.u| <= d.look and |d.v| <= d.look.
@@ -637,12 +658,21 @@ namespace FSMirrorPlanar
             const LLVector3 look = (face & 1) ? -axes[a] : axes[a];
             const LLVector3& u = axes[(a + 1) % 3];
             const LLVector3& v = axes[(a + 2) % 3];
-            poly.assign(corners, corners + 4);
-            fs_clip(poly, look - u, virtual_eye, 0.f);
-            fs_clip(poly, look + u, virtual_eye, 0.f);
-            fs_clip(poly, look - v, virtual_eye, 0.f);
-            fs_clip(poly, look + v, virtual_eye, 0.f);
-            if (poly.size() < 3)
+            bool reached = false;
+            for (const std::vector<LLVector3>& rect : rects)
+            {
+                poly = rect;
+                fs_clip(poly, look - u, virtual_eye, 0.f);
+                fs_clip(poly, look + u, virtual_eye, 0.f);
+                fs_clip(poly, look - v, virtual_eye, 0.f);
+                fs_clip(poly, look + v, virtual_eye, 0.f);
+                if (poly.size() >= 3)
+                {
+                    reached = true;
+                    break;
+                }
+            }
+            if (!reached)
             {
                 mask |= 1U << face;
             }
