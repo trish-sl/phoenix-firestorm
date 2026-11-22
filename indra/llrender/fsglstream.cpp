@@ -754,6 +754,15 @@ namespace
 
     F32 sGLVersion = 0.f;   // context version, from ContextOps
 
+    // The pname for reading a query result the driver has reported available. GL 4.4 has a read that never
+    // waits: an AMD driver was seen blocking forever in a GL_QUERY_RESULT read right after reporting the
+    // result available (a hang at login with the main thread waiting in present). With the no-wait read
+    // the value is left as it was if there is no result after all.
+    GLenum queryResultPname()
+    {
+        return sGLVersion >= 4.4f ? GL_QUERY_RESULT_NO_WAIT : GL_QUERY_RESULT;
+    }
+
     bool bindQuerySupported(int slot)
     {
         switch (slot)
@@ -3315,18 +3324,32 @@ namespace
                 sQueryPending[keep++] = q;
                 continue;
             }
-            misses = 0;
-            GLuint64 value = 0;
+            constexpr GLuint64 NOT_WRITTEN = ~(GLuint64)0;
+            GLuint64 value = NOT_WRITTEN;
             if (res64_fn)
             {
-                res64_fn(q.mId, GL_QUERY_RESULT, &value);
+                res64_fn(q.mId, queryResultPname(), &value);
             }
             else
             {
-                GLuint v32 = 0;
-                avail_fn(q.mId, GL_QUERY_RESULT, &v32);
-                value = v32;
+                GLuint v32 = ~(GLuint)0;
+                avail_fn(q.mId, queryResultPname(), &v32);
+                value = (v32 == ~(GLuint)0) ? NOT_WRITTEN : v32;
             }
+            if (value == NOT_WRITTEN)
+            {
+                // reported available but the no-wait read had nothing: keep polling it, and give up in time
+                if (now > q.mEndNs && now - q.mEndNs > QUERY_GIVE_UP_NS)
+                {
+                    std::lock_guard<std::mutex> lock(sQueryResultMutex);
+                    sQueryResults[q.mId] = { q.mGen, 0, true };
+                    continue;
+                }
+                ++misses;
+                sQueryPending[keep++] = q;
+                continue;
+            }
+            misses = 0;
             std::lock_guard<std::mutex> lock(sQueryResultMutex);
             sQueryResults[q.mId] = { q.mGen, (U64)value, false };
         }
@@ -3494,7 +3517,7 @@ namespace
             fn(id, GL_QUERY_RESULT_AVAILABLE, &avail);
             if (avail != (T)0)
             {
-                fn(id, GL_QUERY_RESULT, params);
+                fn(id, queryResultPname(), params);
                 return;
             }
             if (!flushed)
