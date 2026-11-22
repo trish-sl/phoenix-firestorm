@@ -1149,17 +1149,18 @@ void LLOcclusionCullingGroup::checkOcclusion()
             // collected, never with a read that waits for it. A query it doesn't track (one issued before the stream
             // was paused and resumed for a shader build, which forgets them all) used to be read that way, a wait
             // each, hundreds a minute while walking: the group is shown instead (a hidden result it can't confirm
-            // is not kept) and asked again this frame, as when a result is late. With the option off, nothing is
-            // peeked (peeking hands the stream's pending work over early): FSRenderMotionStats only counts the
-            // reads that wait.
+            // is not kept) and asked again this frame, as when a result is late. With the option off, only queries the
+            // stream doesn't track are handled that way (below); the others are read as before, from what the render
+            // thread collected: FSRenderMotionStats counts the reads that wait.
             bool fs_async = false;
             bool fs_ready = false;
             U64 fs_value = 0;
-            if (FSGLStream::isRecording() && !FSMoving::asyncOcclusion() && FSMoving::statsEnabled())
-            {
-                ++FSMoving::stats().mOcclusionWaited;
-            }
-            if (FSGLStream::isRecording() && FSMoving::asyncOcclusion())
+            // A query the stream doesn't track is dropped this way with the option off as well: it was issued before
+            // a shader reload or another DirectScope (which forget every query), or its result never came in and the
+            // render thread gave up on it. Reading such a query asks the driver, and a result that never comes (a
+            // query the driver lost) then waited in the driver for good, hanging the viewer until the watchdog
+            // ended it (Display:CullQueryResult) after a shader reload.
+            if (FSGLStream::isRecording())
             {
                 const FSGLStream::EQueryState fs_state =
                     FSGLStream::peekQueryState(mOcclusionQuery[LLViewerCamera::sCurCameraID], fs_value);
@@ -1175,15 +1176,22 @@ void LLOcclusionCullingGroup::checkOcclusion()
                     clearOcclusionState(QUERY_PENDING); // doOcclusion issues a new one
                     return;
                 }
-                else
+                else if (FSMoving::asyncOcclusion())
                 {
                     fs_async = true;
                     fs_ready = fs_state == FSGLStream::QUERY_READY;
                     ++(fs_ready ? fs_stats.mOcclusionCached : fs_stats.mOcclusionPending);
                 }
+                else if (FSMoving::statsEnabled())
+                {
+                    ++fs_stats.mOcclusionWaited;
+                }
             }
             // </FS:Trish>
-            GLuint available;
+            // <FS:Trish> FSRenderThread: a read the driver refuses leaves it as it was, not available
+            //GLuint available;
+            GLuint available = GL_FALSE;
+            // </FS:Trish>
             {
                 LL_PROFILE_ZONE_NAMED_CATEGORY_OCTREE("co - query available");
                 // <FS:Trish> FSRenderAsyncOcclusionReadback
@@ -1224,7 +1232,10 @@ void LLOcclusionCullingGroup::checkOcclusion()
             if (available || mOcclusionCheckCount[LLViewerCamera::sCurCameraID] > occlusion_timeout)
             {
                 mOcclusionCheckCount[LLViewerCamera::sCurCameraID] = 0;
-                GLuint query_result;    // Will be # samples drawn, or a boolean depending on mHasOcclusionQuery2 (both are type GLuint)
+                // <FS:Trish> FSRenderThread: a read that gives up (no result in time) or fails leaves the group visible
+                //GLuint query_result;    // Will be # samples drawn, or a boolean depending on mHasOcclusionQuery2 (both are type GLuint)
+                GLuint query_result = 1;    // Will be # samples drawn, or a boolean depending on mHasOcclusionQuery2 (both are type GLuint)
+                // </FS:Trish>
                 {
                     LL_PROFILE_ZONE_NAMED_CATEGORY_OCTREE("co - query result");
                     // <FS:Trish> FSRenderAsyncOcclusionReadback: already collected

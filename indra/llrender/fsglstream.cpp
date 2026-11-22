@@ -3166,7 +3166,7 @@ namespace
     // Query objects: the render thread collects results, the main thread
     // reads them without waiting. Availability may come later than before,
     // which GL allows; a blocking read of a result that isn't in yet is
-    // synchronous, as it was.
+    // synchronous, as it was, but waits for the driver a bounded time.
 
     NameMap<U64> sQueryIssued;                              // main: id -> generation of its latest end
     std::unordered_map<GLenum, GLuint> sQueryActive;        // main: target -> open query
@@ -3298,8 +3298,17 @@ namespace
             {
                 if (now > q.mEndNs && now - q.mEndNs > QUERY_GIVE_UP_NS)
                 {
-                    std::lock_guard<std::mutex> lock(sQueryResultMutex);
-                    sQueryResults[q.mId] = { q.mGen, 0, true };
+                    {
+                        std::lock_guard<std::mutex> lock(sQueryResultMutex);
+                        sQueryResults[q.mId] = { q.mGen, 0, true };
+                    }
+                    static U32 s_given_up = 0;  // render thread only
+                    if (++s_given_up <= 5)
+                    {
+                        LL_WARNS("FSRenderThread") << "Query " << q.mId << " still had no result "
+                                                   << (now - q.mEndNs) / 1000000ull << " ms after its end: no longer collected"
+                                                   << LL_ENDL;
+                    }
                     continue;
                 }
                 ++misses;
@@ -3424,13 +3433,11 @@ namespace
             if (r && r->mGen == *issued)
             {
                 if (r->mDropped)
-                {   // the render thread gave up on it (2 s): the GPU has long finished, so call it available
-                    // without asking the driver, and let the driver answer the result itself
-                    if (pname == GL_QUERY_RESULT_AVAILABLE)
-                    {
-                        *params = (T)GL_TRUE;
-                        return true;
-                    }
+                {   // The render thread gave up on it (not in after 2 s): only the driver can tell. It used to be
+                    // called available here without asking, and the caller's GL_QUERY_RESULT read that followed then
+                    // waited in the driver for a result that never came: the main thread hung on that read until
+                    // the watchdog ended the viewer (Display:CullQueryResult). Both reads now go to the driver, the
+                    // availability as it is and the result with a bounded wait (boundedQueryResult).
                     return false;
                 }
                 have = true;
@@ -3466,12 +3473,69 @@ namespace
         }
     }
 
+    // A GL_QUERY_RESULT read the cache can't answer waits on the render thread for at most this long. A query that
+    // never becomes available (its begin failed, or the driver lost it) would otherwise keep the render thread in
+    // the driver, and the main thread waiting on it, for good.
+    constexpr U64 QUERY_RESULT_WAIT_NS = 1000000000ull;
+    std::atomic<U32> sQueryResultTimeouts{ 0 };
+
+    // Render thread: fn's GL_QUERY_RESULT read of id, made only once the driver calls it available. A result not
+    // in within QUERY_RESULT_WAIT_NS is not read: params is left as it was and a warning logged (the first few).
+    template <typename T, typename Fn>
+    void boundedQueryResult(Fn fn, GLuint id, T* params)
+    {
+        const U64 start = nowNs();
+        bool flushed = false;
+        for (U32 tries = 0; ; ++tries)
+        {
+            // A read the driver refuses (not a query object, or one still active) leaves the value as it was: the
+            // result read below then fails the same way at once, without waiting
+            T avail = (T)-1;
+            fn(id, GL_QUERY_RESULT_AVAILABLE, &avail);
+            if (avail != (T)0)
+            {
+                fn(id, GL_QUERY_RESULT, params);
+                return;
+            }
+            if (!flushed)
+            {
+                FSGL_REAL(glFlush)();
+                flushed = true;
+            }
+            if (nowNs() - start > QUERY_RESULT_WAIT_NS)
+            {
+                const U32 n = sQueryResultTimeouts.fetch_add(1, std::memory_order_relaxed);
+                if (n < 5)
+                {
+                    LL_WARNS("FSRenderThread") << "Query " << id << " had no result after "
+                                               << (QUERY_RESULT_WAIT_NS / 1000000ull)
+                                               << " ms: its read gives up instead of waiting in the driver" << LL_ENDL;
+                }
+                return;
+            }
+            if (tries < 64)
+            {
+                _mm_pause();
+            }
+            else
+            {
+                std::this_thread::sleep_for(std::chrono::microseconds(200));
+            }
+        }
+    }
+
 #define FSGL_QUERYOBJECT(name, T) \
     FSGL_BEGIN(name) \
         static void APIENTRY call(GLuint id, GLenum pname, T* params) \
         { \
             if (!tRecording) { P::passthrough(id, pname, params); return; } \
             if (cachedQueryRead(id, pname, params)) return; \
+            if (pname == GL_QUERY_RESULT && params) \
+            { \
+                auto fn = P::real(); \
+                syncCall<void>(FSGL_ID_##name, [&]() { boundedQueryResult<T>(fn, id, params); }); \
+                return; \
+            } \
             P::sync(id, pname, params); \
         } \
     FSGL_END

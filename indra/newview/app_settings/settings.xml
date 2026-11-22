@@ -31882,7 +31882,7 @@ Change of this parameter will affect the layout of buttons in notification toast
     <key>FSRenderAsyncOcclusionReadback</key>
     <map>
       <key>Comment</key>
-      <string>With the render thread (FSRenderThread): occlusion query results are read from what the render thread has collected, never with a read that waits for it. A query it no longer tracks (after the stream was paused for a shader build) is not waited for: its group shows until a new query answers. Off: as before.</string>
+      <string>With the render thread (FSRenderThread): occlusion query results are read from what the render thread has collected, never with a read that waits for it. A query it no longer tracks (after the stream was paused for a shader build) is not waited for: its group shows until a new query answers. Off: results are read as before, but a query it no longer tracks is still not waited for.</string>
       <key>Persist</key>
       <integer>1</integer>
       <key>Type</key>
