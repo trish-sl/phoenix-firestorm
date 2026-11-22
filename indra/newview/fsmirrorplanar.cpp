@@ -163,6 +163,39 @@ namespace
         }
         poly.swap(out);
     }
+
+    // The mirror reflects every glossy surface inside its probe box, not only the ones on the plane
+    // through its middle, and a surface off that plane reads the reflection along directions that
+    // cross the middle plane elsewhere: nearer the camera than the middle plane, further out (from the
+    // camera's foot on the plane), by D / (D - offset) with D the camera's distance to the plane.
+    // Carries p, on a surface parallel to the mirror, along its reflected ray from virtual_eye to the
+    // middle plane. False when the reflected ray doesn't reach it (the camera inside the box's
+    // thickness), so no view through the mirror covers it.
+    bool fs_to_middle_plane(const LLVector3& p, const LLVector3& cam, const LLVector3& virtual_eye,
+                            const LLVector3& mirror_pos, const LLVector3& normal, LLVector3& q)
+    {
+        LLVector3 r = p - cam;
+        r -= normal * (2.f * (r * normal));
+        const F32 rn = r * normal;
+        const F32 depth = (mirror_pos - virtual_eye) * normal;
+        if (rn <= 0.02f * r.length() || depth <= 0.f)
+        {
+            return false;
+        }
+        q = virtual_eye + r * (depth / rn);
+        return true;
+    }
+
+    // The rectangle of the mirror's sides around centre (the middle plane, or the probe box's front
+    // or back face)
+    void fs_face_rect(std::vector<LLVector3>& poly, const LLVector3& centre, const LLVector3& ax, const LLVector3& ay)
+    {
+        poly.clear();
+        poly.push_back(centre - ax - ay);
+        poly.push_back(centre + ax - ay);
+        poly.push_back(centre + ax + ay);
+        poly.push_back(centre - ax + ay);
+    }
 }
 
 namespace FSMirrorPlanar
@@ -274,16 +307,20 @@ namespace FSMirrorPlanar
         const F32 tan_x = tan_y * cam.getAspect();
         const bool snapshot = gSnapshot;
 
-        fs_clip(poly, at, cam_pos, cam.getNear());
-        if (!snapshot)
+        auto clip_to_view = [&](std::vector<LLVector3>& face)
         {
-            const F32 kx = tan_x * SCREEN_MARGIN;
-            const F32 ky = tan_y * SCREEN_MARGIN;
-            fs_clip(poly, at * kx - right, cam_pos, 0.f);
-            fs_clip(poly, at * kx + right, cam_pos, 0.f);
-            fs_clip(poly, at * ky - up, cam_pos, 0.f);
-            fs_clip(poly, at * ky + up, cam_pos, 0.f);
-        }
+            fs_clip(face, at, cam_pos, cam.getNear());
+            if (!snapshot)
+            {
+                const F32 kx = tan_x * SCREEN_MARGIN;
+                const F32 ky = tan_y * SCREEN_MARGIN;
+                fs_clip(face, at * kx - right, cam_pos, 0.f);
+                fs_clip(face, at * kx + right, cam_pos, 0.f);
+                fs_clip(face, at * ky - up, cam_pos, 0.f);
+                fs_clip(face, at * ky + up, cam_pos, 0.f);
+            }
+        };
+        clip_to_view(poly);
         if (poly.size() < 3)
         {
             sMode = -1;
@@ -314,11 +351,39 @@ namespace FSMirrorPlanar
         }
         sFade = llclamp((extent_px - MIN_SCREEN_PIXELS) / (FADE_SCREEN_PIXELS - MIN_SCREEN_PIXELS), 0.f, 1.f);
 
+        // What the view has to cover: the directions read by every glossy surface in the probe box
+        // the camera sees, not only by the ones on its middle plane. A surface nearer the camera
+        // reads further out on the middle plane, up to D / (D - half its thickness) times as far from
+        // the camera's foot on it, so the box's front and back faces, carried along their reflected
+        // rays to the middle plane, bound them. (Fitted to the middle plane alone, a mirror surface
+        // in front of it showed the ordinary reflections past a line across it when seen up close.)
+        std::vector<LLVector3> reach(poly);
+        const LLVector3 thick = mirror_normal * (scale.mV[VZ] * 0.5f);
+        if (thick.lengthSquared() > 1e-8f)
+        {
+            std::vector<LLVector3> face;
+            face.reserve(12);
+            for (F32 side : { 1.f, -1.f })
+            {
+                fs_face_rect(face, mirror_pos + thick * side, ax, ay);
+                clip_to_view(face);
+                for (const LLVector3& p : face)
+                {
+                    LLVector3 q;
+                    if (!fs_to_middle_plane(p, cam_pos, virtual_eye, mirror_pos, mirror_normal, q))
+                    {
+                        return false; // too close to the mirror for one view: the cube
+                    }
+                    reach.push_back(q);
+                }
+            }
+        }
+
         // The planar view from the reflected eye, around those points. The camera stays an ordinary
         // (not mirrored) camera at the reflected eye, as for the cube faces, so winding and culling
         // are the same as for any other view.
         LLVector3 look;
-        for (const LLVector3& p : poly)
+        for (const LLVector3& p : reach)
         {
             LLVector3 d = p - virtual_eye;
             const F32 len = d.normVec();
@@ -347,7 +412,7 @@ namespace FSMirrorPlanar
         const LLVector3 view_up = look % view_left;
 
         F32 fit_x = 0.f, fit_y = 0.f, z_min = F32_MAX;
-        for (const LLVector3& p : poly)
+        for (const LLVector3& p : reach)
         {
             const LLVector3 d = p - virtual_eye;
             const F32 z = d * look;
