@@ -1657,6 +1657,23 @@ void LLIMModel::LLIMSession::loadHistory()
     // Group and ad-hoc history retain the synchronous legacy loader.
     chat_message_list_t history;
     LLLogChat::loadChatHistory(mHistoryFileName, history, LLSD(), isGroupChat());
+    // <FS:Trish> The log ends with the logged copies of the messages received live, which stay
+    // live. Drop them (newest first) or a reload showed them a second time, greyed, as history.
+    // This is the case at login: transcripts read empty until the Chat Service state is loaded.
+    auto logged = history.rbegin();
+    for (const LLSD& message : mMsgs)
+    {
+        if (logged == history.rend())
+        {
+            break;
+        }
+        if (!message["is_history"].asBoolean() && (*logged)[LL_IM_TEXT].asString() == message["message"].asString())
+        {
+            ++logged;
+        }
+    }
+    history.erase(logged.base(), history.end());
+    // </FS:Trish>
     // <FS:Trish> FSChatHistoryLinesShown
     while (lines_shown > 0 && history.size() > (size_t)lines_shown)
     {
@@ -2240,14 +2257,19 @@ LLIMModel::LLIMSession* LLIMModel::addMessageSilently(const LLUUID& session_id, 
     //if (log2file)
 
     // Do announcements have to get recorded server side? Go with no for now...
-    if (session->isP2P() && !is_announcement)
+    // <FS:Trish> ...unless the announcement reports a message Chat Service keeps (sent auto-response), then it claims that copy
+    const bool record_announcement = is_announcement && history_context["fs_chat_service_announcement"].asBoolean();
+    //if (session->isP2P() && !is_announcement)
+    if (session->isP2P() && (!is_announcement || record_announcement))
+    // </FS:Trish>
     {
         history_context = LLChatServiceHistory::prepareLiveMessage(utf8_text, timestamp, history_context);
     }
     // Append without recomposing stale history. History loads and snapshot
     // updates reconcile copies when their source data is published.
     addToHistory(session_id, from_name, from_id, utf8_text, is_region_msg, timestamp, is_announcement);
-    if (session->isP2P() && !is_announcement)
+    //if (session->isP2P() && !is_announcement)
+    if (session->isP2P() && (!is_announcement || record_announcement)) // <FS:Trish/>
     {
         LLChatServiceHistory::recordLiveMessage(session->mMsgs.front(), history_context);
     }
@@ -4067,7 +4089,10 @@ void LLIMMgr::addMessage(
         LLIMModel::instance().addMessage(new_session_id, message_display_name, display_id, msg, true, is_region_msg, timestamp,
                                        incoming_direct
                                            ? LLChatServiceHistoryCore::incomingContext(original_text, !is_offline_msg)
-                                           : LLSD(),
+                                           //: LLSD(),
+                                           // <FS:Trish> An announcement may bring the Chat Service context of what it reports (sent auto-response)
+                                           : (is_announcement && original_text.isMap()) ? original_text : LLSD(),
+                                           // </FS:Trish>
                                        is_announcement, keyword_alert_performed); // <FS:Ansariel> Added is_announcement parameter
     }
 

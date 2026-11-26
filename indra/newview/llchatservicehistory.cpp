@@ -2121,8 +2121,23 @@ bool clickTicks(U64& ticks)
     return ticks < UUID_TICK_LIMIT;
 }
 
-bool legacyWallEpoch(const std::string& text, F64& epoch)
+// <FS:Trish> Seconds in chat timestamps
+//bool legacyWallEpoch(const std::string& text, F64& epoch)
+bool legacyWallEpoch(const std::string& logged_text, F64& epoch)
+// </FS:Trish>
 {
+    // <FS:Trish> Lines logged with FSSecondsinChatTimestamps read "YYYY/MM/DD HH:MM:SS[ AM]". The seconds
+    // are disregarded: the matching works to the minute, and a line that failed to parse was never matched
+    // to its Chat Service copy nor to the live message, so the IM showed it twice.
+    std::string text = logged_text;
+    const size_t colon = text.find(':');
+    if (colon != std::string::npos && colon + 5 < text.size() && text[colon + 3] == ':' &&
+        isdigit((unsigned char)text[colon + 4]) && isdigit((unsigned char)text[colon + 5]))
+    {
+        text.erase(colon + 3, 3);
+    }
+    // </FS:Trish>
+
     if (text.size() < 15)
     {
         return false;
@@ -2181,26 +2196,6 @@ bool legacyWallEpoch(const std::string& text, F64& epoch)
         return false;
     }
 }
-
-// <FS:Trish> Seconds in chat timestamps: drops the ":SS" of "YYYY/MM/DD HH:MM:SS[ AM]" so the
-// time reads as the minute it falls in, which is what legacyWallEpoch and the matching expect.
-// Other text is returned unchanged.
-std::string fsLegacyWallMinute(const std::string& text)
-{
-    const size_t space = text.find(' ');
-    const size_t colon = space == std::string::npos ? std::string::npos : text.find(':', space);
-    if (colon == std::string::npos || colon + 5 >= text.size() ||
-        !isdigit((unsigned char)text[colon + 1]) || !isdigit((unsigned char)text[colon + 2]) ||
-        text[colon + 3] != ':' ||
-        !isdigit((unsigned char)text[colon + 4]) || !isdigit((unsigned char)text[colon + 5]))
-    {
-        return text;
-    }
-    std::string minute = text;
-    minute.erase(colon + 3, 3);
-    return minute;
-}
-// </FS:Trish>
 
 LLSD serviceMessage(const Row& row)
 {
@@ -2263,12 +2258,7 @@ LLChatServiceHistory::HistoryResult readStitched(
     for (const LLSD& message : legacy)
     {
         F64 wall = 0.0;
-        // <FS:Trish> Lines logged with FSSecondsinChatTimestamps read "YYYY/MM/DD HH:MM:SS[ AM]",
-        // which legacyWallEpoch rejects. Such a line then got no wall time, was never matched
-        // to its Chat Service copy nor to the live message, and the IM showed it twice.
-        //if (!legacyWallEpoch(message[LL_IM_DATE_TIME].asString(), wall))
-        if (!legacyWallEpoch(fsLegacyWallMinute(message[LL_IM_DATE_TIME].asString()), wall))
-        // </FS:Trish>
+        if (!legacyWallEpoch(message[LL_IM_DATE_TIME].asString(), wall))
         {
             result.messages.push_back(message);
         }

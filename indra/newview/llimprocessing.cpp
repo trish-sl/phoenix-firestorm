@@ -275,6 +275,23 @@ void LLIMProcessing::sendAutoresponseTextForAvatar(const LLUUID&       from_id,
     std::string my_name;
     LLAgentUI::buildFullname(my_name);
 
+    // <FS:Trish> Chat Service keeps the sent auto-response as a message from us. The "auto response sent"
+    // notice below claims that copy like a local echo does, otherwise the history also showed it as a second line.
+    // Captured before sending, as for any IM, so an older copy of the same text can't be claimed instead.
+    LLSD history_context;
+    if (is_standard_im)
+    {
+        LLIMModel::LLIMSession* session = LLIMModel::instance().findIMSession(session_id);
+        if (session && session->isP2P())
+        {
+            history_context = session->mChatServiceHistory.outgoingContext(from_id);
+            history_context["chat_service_original_text"] = response;
+            history_context["chat_service_time_source"] = "local";
+            history_context["fs_chat_service_announcement"] = true;
+        }
+    }
+    // </FS:Trish>
+
     pack_instant_message(
         gMessageSystem,
         gAgentID,
@@ -308,7 +325,8 @@ void LLIMProcessing::sendAutoresponseTextForAvatar(const LLUUID&       from_id,
             0,
             LLUUID::null,
             "",
-            LLSD(),
+            //LLSD(),
+            history_context, // <FS:Trish/> Chat Service: claims the sent auto-response's copy
             true
         );
 

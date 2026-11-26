@@ -604,8 +604,38 @@ void FSFloaterNearbyChat::reloadMessages(bool clean_messages/* = false*/)
 {
     if (clean_messages)
     {
+        // <FS:Trish> Messages received live stay live. Transcripts read empty at login until the
+        // Chat Service state is loaded, which then reloads the history; the messages received in
+        // between were already logged, came back from the log as history and were all greyed.
+        //mMessageArchive.clear();
+        //loadHistory();
+        std::vector<LLChat> live;
+        for (const LLChat& chat : mMessageArchive)
+        {
+            if (chat.mChatStyle != CHAT_STYLE_HISTORY)
+            {
+                live.push_back(chat);
+            }
+        }
         mMessageArchive.clear();
         loadHistory();
+
+        // The log ends with the logged copies of the live messages, drop them (newest first)
+        size_t history_end = mMessageArchive.size();
+        for (auto chat = live.rbegin(); chat != live.rend() && history_end > 0; ++chat)
+        {
+            if (mMessageArchive[history_end - 1].mText == chat->mText)
+            {
+                --history_end;
+            }
+        }
+        mMessageArchive.erase(mMessageArchive.begin() + history_end, mMessageArchive.end());
+        mMessageArchive.insert(mMessageArchive.end(), live.begin(), live.end());
+        if (mMessageArchive.size() > 200)
+        {
+            mMessageArchive.erase(mMessageArchive.begin(), mMessageArchive.end() - 200);
+        }
+        // </FS:Trish>
     }
 
     mChatHistory->clear();
