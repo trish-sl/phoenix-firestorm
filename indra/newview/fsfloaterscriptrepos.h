@@ -72,6 +72,8 @@ private:
     void onBrowse();
     void onFolderPicked(const std::vector<std::string>& folders);
     void onRemove();
+    void onRepoListCommit();
+    void onPermsChanged();
     void onForget();
     void onTokenCommit();
     void onSettingsChanged();
@@ -82,6 +84,9 @@ private:
     void onCancel();
     void refreshRepos();
     void refreshToken();
+    void refreshPerms();
+    S32 selectedRepo() const;     // -1 when none
+    bool anyEnabled() const;
     void setBusy(bool busy);
     void setStatus(const std::string& text);
     void setProgress(size_t done, size_t total);
@@ -117,6 +122,9 @@ private:
     LLLineEditor* mPrefixEdit{ nullptr };
     LLLineEditor* mTokenEdit{ nullptr };
     LLCheckBoxCtrl* mImages{ nullptr };
+    LLCheckBoxCtrl* mPermModify{ nullptr };
+    LLCheckBoxCtrl* mPermCopy{ nullptr };
+    LLCheckBoxCtrl* mPermTransfer{ nullptr };
     LLComboBox* mKind{ nullptr };
     LLTextBox* mStatus{ nullptr };
     LLProgressBar* mProgress{ nullptr };

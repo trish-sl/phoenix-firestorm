@@ -4,10 +4,10 @@
  title="Script Repositories"
  help_topic="fs_script_repos"
  can_resize="true"
- height="480"
+ height="506"
  width="760"
  min_width="700"
- min_height="360"
+ min_height="386"
  layout="topleft"
  save_rect="true"
  single_instance="true">
@@ -32,7 +32,8 @@
     <string name="applying">Applying [DONE] of [TOTAL]...</string>
     <string name="cancelled">Cancelled. What was already done stays.</string>
     <string name="nothing_listed">Nothing to apply.</string>
-    <string name="inventory_summary">[REPO] @ [COMMIT]: [CREATE] to create, [UPDATE] to update, [UNCHANGED] unchanged, [GONE] no longer in the repository, [SKIP] skipped</string>
+    <string name="none_checked">No repository is checked. Check the ones to sync in the list.</string>
+    <string name="inventory_summary">[REPO] @ [COMMIT]: [CREATE] to create, [UPDATE] to update, [PERMS] to get new permissions, [UNCHANGED] unchanged, [GONE] no longer in the repository, [SKIP] skipped</string>
     <string name="nothing_to_do">[REPO] @ [COMMIT]: nothing to do</string>
     <string name="inventory_ready">Nothing has been changed yet. Apply creates and updates the items listed.</string>
     <string name="images_cost">Image uploads: about L$[COST] (the grid charges per image).</string>
@@ -41,6 +42,7 @@
     <string name="action_update">update</string>
     <string name="action_gone">not in repo</string>
     <string name="action_skip">skipped</string>
+    <string name="action_perms">permissions</string>
     <string name="action_error">error</string>
     <string name="action_done">done</string>
     <string name="action_failed">failed</string>
@@ -54,6 +56,8 @@
     <string name="note_create_failed">could not create the item</string>
     <string name="note_upload_failed">could not save: [ERROR]</string>
     <string name="note_kept">left in the inventory</string>
+    <string name="note_perms">next owner permissions of the repository</string>
+    <string name="note_item_gone">the item is no longer in the inventory</string>
     <string name="region_busy">Another region script tool is running. Try again when it is done.</string>
     <string name="region_scanning">Finding every object in this region...</string>
     <string name="region_progress">Reading your objects, and new ones as they arrive: [READ] of [TOTAL] prims read, [LISTED] scripts listed. Apply works on the rows listed so far; Cancel stops.</string>
@@ -97,6 +101,7 @@
      height="84"
      draw_heading="true"
      multi_select="false">
+        <scroll_list.columns name="sync" label="Sync" width="40" tool_tip="Checked repositories are checked and synced; unchecked ones are left as they are." />
         <scroll_list.columns name="repo" label="Repository" relative_width="0.4" />
         <scroll_list.columns name="branch" label="Branch" relative_width="0.25" />
         <scroll_list.columns name="synced" label="Last sync" relative_width="0.35" />
@@ -160,6 +165,44 @@
      left_pad="4"
      width="60"
      height="22" />
+    <text
+     name="perms_label"
+     layout="topleft"
+     follows="left|top"
+     left="8"
+     top="128"
+     height="20"
+     width="340">Next owner of items synced from the selected repository:</text>
+    <check_box
+     name="perm_modify"
+     label="Modify"
+     tool_tip="Scripts, notecards and images synced from the selected repository can be modified by their next owner. Until you change these, new items get your default permissions."
+     layout="topleft"
+     follows="left|top"
+     left_pad="4"
+     top="126"
+     height="20"
+     width="70" />
+    <check_box
+     name="perm_copy"
+     label="Copy"
+     tool_tip="Scripts, notecards and images synced from the selected repository can be copied by their next owner. Without copy, transfer stays on."
+     layout="topleft"
+     follows="left|top"
+     left_pad="4"
+     top="126"
+     height="20"
+     width="60" />
+    <check_box
+     name="perm_transfer"
+     label="Transfer"
+     tool_tip="Scripts, notecards and images synced from the selected repository can be given away by their next owner."
+     layout="topleft"
+     follows="left|top"
+     left_pad="4"
+     top="126"
+     height="20"
+     width="80" />
     <check_box
      name="images"
      label="Also upload images (L$)"
@@ -167,7 +210,7 @@
      layout="topleft"
      follows="left|top"
      left="8"
-     top="126"
+     top="152"
      height="20"
      width="170" />
     <text
@@ -233,7 +276,7 @@
      layout="topleft"
      follows="left|top"
      left="8"
-     top="156"
+     top="182"
      width="140"
      height="22" />
     <button
@@ -251,7 +294,7 @@
      follows="all"
      left="8"
      right="-8"
-     top="186"
+     top="212"
      bottom="-56"
      draw_heading="true"
      multi_select="false">

@@ -158,7 +158,10 @@ namespace tut
         ensure("readme", e.kind == Kind::NOTECARD);
         ensure_equals(e.name, "README");
 
-        ensure("other md", classify("docs/x.md", "x", {}, false).kind == Kind::SKIPPED);
+        e = classify("docs/Guide.MD", "x", {}, false);
+        ensure("other md", e.kind == Kind::NOTECARD);
+        ensure_equals(e.name, "Guide");
+        ensure_equals(e.folder, "docs");
 
         e = classify("img/a.png", "\x89PNG", {}, false);
         ensure("image off", e.kind == Kind::SKIPPED);
@@ -173,8 +176,10 @@ namespace tut
         const std::vector<std::string> ignore = splitIgnore(DEFAULT_IGNORE);
         ensure("dot folder", classify(".github/x.lsl", "x", ignore, false).kind == Kind::SKIPPED);
         ensure("ignored", classify("a.test.lsl", "x", ignore, false).kind == Kind::SKIPPED);
-        ensure("too big", classify("big.lsl", std::string(MAX_TEXT_BYTES + 1, 'a'), {}, false).kind == Kind::SKIPPED);
-        ensure("max size ok", classify("max.lsl", std::string(MAX_TEXT_BYTES, 'a'), {}, false).kind == Kind::LSL);
+        ensure("notecard too big", classify("big.txt", std::string(MAX_TEXT_BYTES + 1, 'a'), {}, false).kind == Kind::SKIPPED);
+        ensure("notecard max size ok", classify("max.txt", std::string(MAX_TEXT_BYTES, 'a'), {}, false).kind == Kind::NOTECARD);
+        ensure("big lsl ok", classify("big.lsl", std::string(4 * MAX_TEXT_BYTES, 'a'), {}, false).kind == Kind::LSL);
+        ensure("big luau ok", classify("big.luau", std::string(4 * MAX_TEXT_BYTES, 'a'), {}, false).kind == Kind::LUA);
 
         Entry e = classify("bad.txt", "\xff\xfe", {}, false);
         ensure("not utf8", e.kind == Kind::SKIPPED);
@@ -291,6 +296,8 @@ namespace tut
         a.files["x/a.lsl"] = { md5Hex("a"), LLUUID::generateNewID(), LLUUID::generateNewID(), true, true };
         a.files["y/fails.lsl"] = { md5Hex("f"), LLUUID::generateNewID(), LLUUID::generateNewID(), false, true };
         a.files["b.txt"] = { md5Hex("b"), LLUUID::generateNewID() };
+        a.enabled = false;
+        a.next_owner = 0x80000 | 0x4000;    // PERM_MOVE | PERM_MODIFY
         RepoState b;
         ensure("parse b", parseRepoRef("p/q", "", b.ref));
 
@@ -310,8 +317,12 @@ namespace tut
         ensure("compile checked kept", back[0].files["x/a.lsl"].compile_checked);
         ensure("failed compile kept", !back[0].files["y/fails.lsl"].compiled && back[0].files["y/fails.lsl"].compile_checked);
         ensure("unknown by default", !back[0].files["b.txt"].compiled && !back[0].files["b.txt"].compile_checked);
+        ensure("unchecked kept", !back[0].enabled);
+        ensure_equals(back[0].next_owner, a.next_owner);
         ensure_equals(back[1].ref.owner, "p");
         ensure_equals(back[1].files.size(), 0U);
+        ensure("checked by default", back[1].enabled);
+        ensure_equals(back[1].next_owner, 0U);
         ensure("empty llsd", fromLLSD(LLSD()).empty());
 
         // Entries written before other hosts: GitHub
@@ -325,6 +336,8 @@ namespace tut
         ensure_equals(back.size(), 1U);
         ensure("old is github", back[0].ref.provider == Provider::GITHUB);
         ensure_equals(back[0].ref.host, "github.com");
+        ensure("old is checked", back[0].enabled);
+        ensure_equals(back[0].next_owner, 0U);
     }
 
     // git ref names

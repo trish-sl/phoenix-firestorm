@@ -687,7 +687,7 @@ Entry classify(const std::string& path, std::string data, const std::vector<std:
         e.kind = Kind::LUA;
         ending = 5;
     }
-    else if (lower == "readme.md")
+    else if (endsWith(lower, ".md"))
     {
         e.kind = Kind::NOTECARD;
         ending = 3;
@@ -736,7 +736,8 @@ Entry classify(const std::string& path, std::string data, const std::vector<std:
     {
         return images ? e : skip("images off");
     }
-    if (e.data.size() > MAX_TEXT_BYTES)
+    // Scripts go up whatever their size: the region compiles them and says when one is too big
+    if (e.kind == Kind::NOTECARD && e.data.size() > MAX_TEXT_BYTES)
     {
         return skip("over 64 KB");
     }
@@ -1021,6 +1022,11 @@ LLSD toLLSD(const std::vector<RepoState>& repos)
             }
         }
         r["files"] = files;
+        r["enabled"] = repo.enabled;
+        if (repo.next_owner)
+        {
+            r["next_owner"] = static_cast<LLSD::Integer>(repo.next_owner);
+        }
         out.append(r);
     }
     return out;
@@ -1067,6 +1073,8 @@ std::vector<RepoState> fromLLSD(const LLSD& sd)
         }
         repo.commit = r["commit"].asString();
         repo.synced = r["synced"].asDate();
+        repo.enabled = !r.has("enabled") || r["enabled"].asBoolean();     // entries from before the choice: on
+        repo.next_owner = static_cast<U32>(r["next_owner"].asInteger());
         for (const auto& file : llsd::inMap(r["files"]))
         {
             repo.files[file.first] = { file.second["md5"].asString(), file.second["item"].asUUID(),

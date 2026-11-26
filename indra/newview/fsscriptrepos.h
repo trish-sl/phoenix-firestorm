@@ -22,7 +22,7 @@ namespace FSScriptRepos
 {
     constexpr size_t MAX_ZIP_BYTES = 52428800;  // 50 MB per archive (downloaded or unpacked) or folder
     constexpr size_t MAX_ZIP_ENTRIES = 10000;   // files per archive or folder
-    constexpr size_t MAX_TEXT_BYTES = 65536;    // script and notecard text
+    constexpr size_t MAX_TEXT_BYTES = 65536;    // notecard text (scripts have no limit here)
     constexpr size_t MAX_NAME_BYTES = 63;       // inventory names (DB_INV_ITEM_NAME_STR_LEN)
     const std::string DEFAULT_IGNORE("*.test.*");
 
@@ -125,12 +125,18 @@ namespace FSScriptRepos
         std::string commit;
         LLDate synced;
         std::map<std::string, FileState> files;   // by repo path
+        bool enabled{ true };   // checked in the list: checks and syncs include it
+        // Next owner permissions (PERM_MODIFY, PERM_COPY, PERM_TRANSFER, PERM_MOVE) for every item synced from it.
+        // 0: not chosen, each item gets the viewer's default permissions for its kind and is left as it is
+        U32 next_owner{ 0 };
     };
 
     LLSD toLLSD(const std::vector<RepoState>& repos);
     std::vector<RepoState> fromLLSD(const LLSD& sd);
 
-    enum class InvAction { CREATE, UPDATE, UNCHANGED, GONE, SKIP };
+    // PERMS: the text is current but the item's next owner permissions are not the repository's (decided by the
+    // window, which can see the item; decideInventory never returns it)
+    enum class InvAction { CREATE, UPDATE, UNCHANGED, GONE, SKIP, PERMS };
     // entry == nullptr: the file is no longer in the repo.
     InvAction decideInventory(const Entry* entry, const FileState* state, bool item_present);
 

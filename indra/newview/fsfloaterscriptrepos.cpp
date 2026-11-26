@@ -142,8 +142,46 @@ namespace
         return result.has("timeout") ? LLUUID::null : result["id"].asUUID();
     }
 
-    // Suspends. Null on failure.
-    LLUUID createItem(const LLUUID& folder, const Entry& entry, LLEventPump& pump)
+    // A repository's next owner permissions as chosen: copy or transfer, as the default permissions window requires
+    U32 nextOwnerMask(bool modify, bool copy, bool transfer)
+    {
+        return PERM_MOVE | (modify ? PERM_MODIFY : PERM_NONE) | (copy ? PERM_COPY : PERM_NONE) |
+            (transfer || !copy ? PERM_TRANSFER : PERM_NONE);
+    }
+
+    // wanted: a repository's next owner permissions, 0 when not chosen (then nothing differs)
+    bool nextOwnerDiffers(U32 wanted, const LLUUID& item_id)
+    {
+        const LLViewerInventoryItem* item = wanted ? gInventory.getItem(item_id) : nullptr;
+        return item && (item->getPermissions().getMaskNextOwner() & PERM_ITEM_UNRESTRICTED) !=
+            (wanted & PERM_ITEM_UNRESTRICTED);
+    }
+
+    // Gives an item in the inventory the next owner permissions wanted. False when the item is not there.
+    bool setNextOwner(const LLUUID& item_id, U32 wanted)
+    {
+        LLViewerInventoryItem* item = gInventory.getItem(item_id);
+        if (!item)
+        {
+            return false;
+        }
+        if (!nextOwnerDiffers(wanted, item_id))
+        {
+            return true;
+        }
+        LLPermissions perm = item->getPermissions();
+        perm.setMaskNext((perm.getMaskNextOwner() & ~PERM_ITEM_UNRESTRICTED) | (wanted & PERM_ITEM_UNRESTRICTED) |
+            PERM_MOVE);
+        LLPointer<LLViewerInventoryItem> new_item = new LLViewerInventoryItem(item);
+        new_item->setPermissions(perm);
+        update_inventory_item(new_item.get(), nullptr);
+        gInventory.updateItem(new_item);
+        gInventory.notifyObservers();
+        return true;
+    }
+
+    // Suspends. Null on failure. next_owner: the repository's choice, 0 for the default permissions.
+    LLUUID createItem(const LLUUID& folder, const Entry& entry, U32 next_owner, LLEventPump& pump)
     {
         const bool script = entry.kind == Kind::LSL || entry.kind == Kind::LUA;
         const LLAssetType::EType asset_type = script ? LLAssetType::AT_LSL_TEXT : LLAssetType::AT_NOTECARD;
@@ -156,7 +194,7 @@ namespace
         create_inventory_item(gAgent.getID(), gAgent.getSessionID(), folder, LLTransactionID::tnull, entry.name, desc,
             asset_type, script ? LLInventoryType::IT_LSL : LLInventoryType::IT_NOTECARD,
             entry.kind == Kind::LUA ? SST_LUA : NO_INV_SUBTYPE,
-            LLFloaterPerms::getNextOwnerPerms(script ? "Scripts" : "Notecards"), cb);
+            next_owner ? next_owner : LLFloaterPerms::getNextOwnerPerms(script ? "Scripts" : "Notecards"), cb);
         LLSD result = waitOn(own, FOLDER_TIMEOUT);
         return result.has("timeout") ? LLUUID::null : result["id"].asUUID();
     }
@@ -236,8 +274,8 @@ namespace
         return true;
     }
 
-    // Suspends. The new texture item, or null.
-    LLUUID uploadImage(const LLUUID& folder, const Entry& entry, S32 cost)
+    // Suspends. The new texture item, or null. next_owner: the repository's choice, 0 for the default permissions.
+    LLUUID uploadImage(const LLUUID& folder, const Entry& entry, U32 next_owner, S32 cost)
     {
         const size_t dot = entry.path.rfind('.');
         const std::string file = gDirUtilp->getExpandedFilename(LL_PATH_TEMP,
@@ -265,7 +303,7 @@ namespace
 
         LLResourceUploadInfo::ptr_t info = std::make_shared<LLNewFileResourceUploadInfo>(file, entry.name,
             std::string(), 0, LLFolderType::FT_TEXTURE, LLInventoryType::IT_TEXTURE,
-            LLFloaterPerms::getNextOwnerPerms("Uploads"), LLFloaterPerms::getGroupPerms("Uploads"),
+            next_owner ? next_owner : LLFloaterPerms::getNextOwnerPerms("Uploads"), LLFloaterPerms::getGroupPerms("Uploads"),
             LLFloaterPerms::getEveryonePerms("Uploads"), cost, folder, false);
         upload_new_resource(info);
 
@@ -309,6 +347,9 @@ bool FSFloaterScriptRepos::postBuild()
     mPrefixEdit = getChild<LLLineEditor>("prefix_edit");
     mTokenEdit = getChild<LLLineEditor>("token_edit");
     mImages = getChild<LLCheckBoxCtrl>("images");
+    mPermModify = getChild<LLCheckBoxCtrl>("perm_modify");
+    mPermCopy = getChild<LLCheckBoxCtrl>("perm_copy");
+    mPermTransfer = getChild<LLCheckBoxCtrl>("perm_transfer");
     mKind = getChild<LLComboBox>("kind");
     mStatus = getChild<LLTextBox>("status");
     mProgress = getChild<LLProgressBar>("progress");
@@ -322,7 +363,12 @@ bool FSFloaterScriptRepos::postBuild()
     childSetAction("apply", [this](LLUICtrl*, const LLSD&) { onApply(); });
     childSetAction("cancel", [this](LLUICtrl*, const LLSD&) { onCancel(); });
     mRepoEdit->setCommitCallback([this](LLUICtrl*, const LLSD&) { onAdd(); });
-    mRepoList->setCommitCallback([this](LLUICtrl*, const LLSD&) { refreshToken(); });
+    // A click on a row's sync box commits the list too
+    mRepoList->setCommitCallback([this](LLUICtrl*, const LLSD&) { onRepoListCommit(); });
+    for (LLCheckBoxCtrl* perm : { mPermModify, mPermCopy, mPermTransfer })
+    {
+        perm->setCommitCallback([this](LLUICtrl*, const LLSD&) { onPermsChanged(); });
+    }
     mTokenEdit->setCommitOnFocusLost(true);
     mTokenEdit->setCommitCallback([this](LLUICtrl*, const LLSD&) { onTokenCommit(); });
     mIgnoreEdit->setCommitOnFocusLost(true);
@@ -418,27 +464,125 @@ void FSFloaterScriptRepos::refreshRepos()
         const RepoState& state = mRepos[i].state;
         LLSD row;
         row["value"] = (S32)i;
-        row["columns"][0]["column"] = "repo";
-        row["columns"][0]["value"] = state.ref.display();
-        row["columns"][1]["column"] = "branch";
-        row["columns"][1]["value"] = state.ref.provider == Provider::ZIP ? getString("zip_link") :
+        row["columns"][0]["column"] = "sync";
+        row["columns"][0]["type"] = "checkbox";
+        row["columns"][0]["value"] = state.enabled;
+        row["columns"][1]["column"] = "repo";
+        row["columns"][1]["value"] = state.ref.display();
+        row["columns"][2]["column"] = "branch";
+        row["columns"][2]["value"] = state.ref.provider == Provider::ZIP ? getString("zip_link") :
             state.ref.provider == Provider::LOCAL ? getString("local_folder") :
             state.ref.ref.empty() ? getString("default_branch") : state.ref.ref;
-        row["columns"][2]["column"] = "synced";
-        row["columns"][2]["value"] = state.commit.empty() && state.files.empty() ? getString("never_synced") :
+        row["columns"][3]["column"] = "synced";
+        row["columns"][3]["value"] = state.commit.empty() && state.files.empty() ? getString("never_synced") :
             state.synced.toHTTPDateString("%Y-%m-%d %H:%M") + (state.commit.empty() ? "" : " @ " + shortCommit(state.commit));
         mRepoList->addElement(row);
     }
+}
+
+S32 FSFloaterScriptRepos::selectedRepo() const
+{
+    const LLScrollListItem* item = mRepoList->getFirstSelected();
+    const S32 index = item ? item->getValue().asInteger() : -1;
+    return index >= 0 && index < (S32)mRepos.size() ? index : -1;
+}
+
+bool FSFloaterScriptRepos::anyEnabled() const
+{
+    for (const Repo& repo : mRepos)
+    {
+        if (repo.state.enabled)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+void FSFloaterScriptRepos::onRepoListCommit()
+{
+    // The sync boxes: a change while busy is undone (the check or apply running works on the repositories it began
+    // with)
+    const LLScrollListColumn* column = mRepoList->getColumn("sync");
+    bool changed = false;
+    for (LLScrollListItem* item : mRepoList->getAllData())
+    {
+        const S32 index = item->getValue().asInteger();
+        LLScrollListCell* cell = column ? item->getColumn(column->mIndex) : nullptr;
+        if (!cell || index < 0 || index >= (S32)mRepos.size())
+        {
+            continue;
+        }
+        RepoState& state = mRepos[index].state;
+        const bool checked = cell->getValue().asBoolean();
+        if (checked == state.enabled)
+        {
+            continue;
+        }
+        if (mBusy)
+        {
+            cell->setValue(state.enabled);
+            continue;
+        }
+        state.enabled = checked;
+        changed = true;
+    }
+    if (changed)
+    {
+        // Rows listed for a repository just unchecked must not be applied
+        clearResults();
+        save();
+        setStatus(std::string());
+        setBusy(false);
+    }
+    refreshToken();
+    refreshPerms();
+}
+
+void FSFloaterScriptRepos::refreshPerms()
+{
+    // The selected repository's choice; before one is made, what new scripts get by default
+    const S32 index = selectedRepo();
+    const U32 chosen = index < 0 ? 0 : mRepos[index].state.next_owner;
+    const U32 shown = index < 0 ? PERM_NONE : chosen ? chosen : LLFloaterPerms::getNextOwnerPerms("Scripts");
+    mPermModify->set((shown & PERM_MODIFY) != 0);
+    mPermCopy->set((shown & PERM_COPY) != 0);
+    mPermTransfer->set((shown & PERM_TRANSFER) != 0);
+    const bool editable = index >= 0 && !mBusy;
+    mPermModify->setEnabled(editable);
+    mPermCopy->setEnabled(editable);
+    mPermTransfer->setEnabled(editable && mPermCopy->get());  // no copy: transfer stays on
+}
+
+void FSFloaterScriptRepos::onPermsChanged()
+{
+    const S32 index = selectedRepo();
+    if (index < 0 || mBusy)
+    {
+        refreshPerms();
+        return;
+    }
+    const U32 mask = nextOwnerMask(mPermModify->get(), mPermCopy->get(), mPermTransfer->get());
+    if (mask != mRepos[index].state.next_owner)
+    {
+        mRepos[index].state.next_owner = mask;
+        save();
+        // Items already synced may need the new permissions: the next check lists them
+        clearResults();
+        setStatus(std::string());
+    }
+    refreshPerms();
+    setBusy(false);
 }
 
 void FSFloaterScriptRepos::refreshToken()
 {
     // The token field is for the selected repository's host (the first repository's when none is selected)
     const RepoRef* ref = nullptr;
-    if (LLScrollListItem* item = mRepoList->getFirstSelected())
+    const S32 selected = selectedRepo();
+    if (selected >= 0)
     {
-        const S32 index = item->getValue().asInteger();
-        ref = index >= 0 && index < (S32)mRepos.size() ? &mRepos[index].state.ref : nullptr;
+        ref = &mRepos[selected].state.ref;
     }
     if (!ref && !mRepos.empty())
     {
@@ -483,6 +627,7 @@ void FSFloaterScriptRepos::setBusy(bool busy)
     getChildView("apply")->setEnabled((!busy && mMode == Mode::INVENTORY && !mInvRows.empty()) ||
         (mMode == Mode::REGION && !mRegionRows.empty() && !mApplyAfterCheck));
     getChildView("cancel")->setEnabled(busy);
+    refreshPerms();
 }
 
 void FSFloaterScriptRepos::setStatus(const std::string& text)
@@ -717,6 +862,11 @@ void FSFloaterScriptRepos::onCheck()
     {
         return;
     }
+    if (!anyEnabled())
+    {
+        setStatus(getString("none_checked"));
+        return;
+    }
     if (!inventoryReady())
     {
         return;
@@ -737,6 +887,11 @@ void FSFloaterScriptRepos::onRegionCheck()
     if (!gAgent.getRegion())
     {
         setStatus(getString("no_region"));
+        return;
+    }
+    if (!anyEnabled())
+    {
+        setStatus(getString("none_checked"));
         return;
     }
     if (!inventoryReady())
@@ -910,7 +1065,9 @@ bool FSFloaterScriptRepos::fetchRepo(LLHandle<LLFloater> handle, size_t index, b
         const LLUUID folder = floater->findRepoFolder(index);
         for (const auto& file : synced.state.files)
         {
-            if (!floater->itemPresent(file.second.item_id, folder))
+            // An item without the repository's next owner permissions needs the check's rows too
+            if (!floater->itemPresent(file.second.item_id, folder) ||
+                nextOwnerDiffers(synced.state.next_owner, file.second.item_id))
             {
                 return false;
             }
@@ -1003,6 +1160,10 @@ void FSFloaterScriptRepos::checkCoro(LLHandle<LLFloater> handle)
         {
             break;
         }
+        if (!floater->mRepos[i].state.enabled)
+        {
+            continue;   // unchecked in the list
+        }
         floater->setProgress(i, count);
         floater->setStatus(floater->getString("checking", fargs({ { "REPO", floater->mRepos[i].state.ref.display() } })));
 
@@ -1036,7 +1197,7 @@ void FSFloaterScriptRepos::checkCoro(LLHandle<LLFloater> handle)
         const LLUUID folder = floater->findRepoFolder(i);
         std::vector<std::pair<size_t, InvAction>> decided;
         std::set<std::string> paths;
-        S32 counts[5] = { 0, 0, 0, 0, 0 };
+        S32 counts[6] = { 0, 0, 0, 0, 0, 0 };
         repo.held_back = false;
         for (size_t e = 0; e < repo.entries.size(); ++e)
         {
@@ -1057,6 +1218,11 @@ void FSFloaterScriptRepos::checkCoro(LLHandle<LLFloater> handle)
                 action = InvAction::SKIP;
                 repo.held_back = true;
             }
+            // Same text, other next owner permissions than the repository's: only those are set
+            if (action == InvAction::UNCHANGED && nextOwnerDiffers(repo.state.next_owner, file_state->item_id))
+            {
+                action = InvAction::PERMS;
+            }
             decided.emplace_back(e, action);
             ++counts[(int)action];
         }
@@ -1073,6 +1239,7 @@ void FSFloaterScriptRepos::checkCoro(LLHandle<LLFloater> handle)
         args["[UNCHANGED]"] = llformat("%d", counts[(int)InvAction::UNCHANGED]);
         args["[GONE]"] = llformat("%d", counts[(int)InvAction::GONE]);
         args["[SKIP]"] = llformat("%d", counts[(int)InvAction::SKIP]);
+        args["[PERMS]"] = llformat("%d", counts[(int)InvAction::PERMS]);
         floater->addResult("", floater->getString("inventory_summary", args), "", "");
 
         for (const auto& [e, action] : decided)
@@ -1084,6 +1251,11 @@ void FSFloaterScriptRepos::checkCoro(LLHandle<LLFloater> handle)
             case InvAction::UPDATE:
                 floater->addResult(floater->getString(action == InvAction::CREATE ? "action_create" : "action_update"),
                     entry.path, floater->kindLabel(entry.kind), "");
+                floater->mInvRows.push_back({ i, e, action });
+                break;
+            case InvAction::PERMS:
+                floater->addResult(floater->getString("action_perms"), entry.path, floater->kindLabel(entry.kind),
+                    floater->getString("note_perms"));
                 floater->mInvRows.push_back({ i, e, action });
                 break;
             case InvAction::SKIP:
@@ -1175,6 +1347,24 @@ void FSFloaterScriptRepos::applyInventoryCoro(LLHandle<LLFloater> handle)
         {
             old_state = found->second;
         }
+        const U32 next_owner = floater->mRepos[row.repo].state.next_owner;
+
+        // Only the permissions: nothing uploaded, the recorded state stays
+        if (row.action == InvAction::PERMS)
+        {
+            const bool set = setNextOwner(old_state.item_id, next_owner);
+            if (set)
+            {
+                ++ok;
+            }
+            else
+            {
+                ++failed;
+            }
+            floater->addResult(floater->getString(set ? "action_done" : "action_failed"), entry.path,
+                floater->kindLabel(entry.kind), set ? floater->getString("note_perms") : floater->getString("note_item_gone"));
+            continue;
+        }
 
         std::string error;
         std::string compile_error;
@@ -1205,7 +1395,7 @@ void FSFloaterScriptRepos::applyInventoryCoro(LLHandle<LLFloater> handle)
         }
         else if (entry.kind == Kind::IMAGE)
         {
-            item_id = uploadImage(folder, entry, image_cost);
+            item_id = uploadImage(folder, entry, next_owner, image_cost);
             saved = item_id.notNull();
             if (saved && row.action == InvAction::UPDATE)
             {
@@ -1221,9 +1411,14 @@ void FSFloaterScriptRepos::applyInventoryCoro(LLHandle<LLFloater> handle)
         {
             if (item_id.isNull())
             {
-                item_id = createItem(folder, entry, pump);
+                item_id = createItem(folder, entry, next_owner, pump);
             }
             saved = item_id.notNull() && uploadText(item_id, entry, pump, error, compile_error, asset_id);
+            if (saved)
+            {
+                // An item updated in place keeps the permissions it had: the repository's choice may be newer
+                setNextOwner(item_id, next_owner);
+            }
         }
 
         if (!(floater = self(handle)))
@@ -1390,6 +1585,10 @@ void FSFloaterScriptRepos::regionCheckCoro(LLHandle<LLFloater> handle)
     const size_t count = floater->mRepos.size();
     for (size_t i = 0; i < count; ++i)
     {
+        if (!floater->mRepos[i].state.enabled)
+        {
+            continue;   // unchecked in the list
+        }
         floater->setStatus(floater->getString("checking", fargs({ { "REPO", floater->mRepos[i].state.ref.display() } })));
         std::string error;
         const bool fetched = fetchRepo(handle, i, true, error);
@@ -1414,7 +1613,8 @@ void FSFloaterScriptRepos::regionCheckCoro(LLHandle<LLFloater> handle)
     std::set<std::string> names;
     for (size_t i = 0; i < floater->mRepos.size(); ++i)
     {
-        if (!floater->mRepos[i].loaded)
+        // An unchecked repository may still hold the files of an earlier check
+        if (!floater->mRepos[i].loaded || !floater->mRepos[i].state.enabled)
         {
             continue;
         }
