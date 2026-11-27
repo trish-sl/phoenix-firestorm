@@ -231,12 +231,22 @@ struct CompareProbeDistance
             return lhs->mPriority > rhs->mPriority;
         }
 
+        // <FS:Trish> Within each kind, probes in view first: in a wide view more probes are on screen than there
+        // are slots, and the ones behind the camera were keeping slots that visible ones went without
+        if (lhs->mInView != rhs->mInView)
+        {
+            return lhs->mInView;
+        }
+        // </FS:Trish>
+
         return lhs->mDistance < rhs->mDistance;
     }
 };
 
 // <FS:Trish> Importance-weighted update order (FSPerfProbeUpdatePriority), set once per update()
 static bool sImportancePriority = false;
+// A probe in view has a slot but no map yet: refreshes of complete probes wait (set once per update())
+static bool sMissingInView = false;
 
 // How much a refresh of this probe is worth per second of age: probes the camera can see and
 // probes close to it go stale visibly, an off-screen probe 100 m away hardly at all. Age is a
@@ -274,8 +284,8 @@ static bool check_priority(LLReflectionMap* a, LLReflectionMap* b)
     }
     else if (!a->mComplete && !b->mComplete)
     { //neither probe is complete, generate the placed one first, then use distance
-        // <FS:Trish> With importance ordering, a missing probe on screen is filled before one off screen
-        if (sImportancePriority && a->mInView != b->mInView)
+        // <FS:Trish> A missing probe on screen is filled before one off screen
+        if (a->mInView != b->mInView)
         {
             return a->mInView;
         }
@@ -292,7 +302,8 @@ static bool check_priority(LLReflectionMap* a, LLReflectionMap* b)
     }
 
     // a or b is not complete,
-    if (sUpdateCount % 3 == 0)
+    //if (sUpdateCount % 3 == 0)
+    if (!sMissingInView && sUpdateCount % 3 == 0) // <FS:Trish/> not while a probe on screen has no map yet
     { // every third update, allow complete probes to cut in line in front of non-complete probes to avoid spammy probe generators from deadlocking scheduler (SL-20258))
         return !b->mComplete;
     }
@@ -499,6 +510,22 @@ void LLReflectionMapManager::update()
     LLReflectionMap* oldestProbe = nullptr;
     LLReflectionMap* oldestOccluded = nullptr;
 
+    // <FS:Trish> FSRenderProbeNewFacesPerFrame: a probe in view that has no map yet renders several cube faces a
+    // frame instead of one, so it shows after 2 frames (6 faces) rather than 12. Refreshes of complete probes
+    // stay at one face a frame.
+    static LLCachedControl<U32> fs_new_faces(gSavedSettings, "FSRenderProbeNewFacesPerFrame", 6);
+    auto run_probe_faces = [this]()
+    {
+        LLReflectionMap* probe = mUpdatingProbe;
+        const U32 faces = (!probe->mComplete && (probe->mInView || probe == mDefaultProbe)) ?
+            llclamp((U32)fs_new_faces, 1U, 12U) : 1U;
+        for (U32 k = 0; k < faces && mUpdatingProbe == probe; ++k)
+        {
+            doProbeUpdate();
+        }
+    };
+    // </FS:Trish>
+
     if (mUpdatingProbe != nullptr)
     {
         did_update = true;
@@ -513,7 +540,8 @@ void LLReflectionMapManager::update()
         const bool refreshing = mUpdatingProbe->mComplete;
         if (!refreshing || refresh_interval <= 1 || (LLFrameTimer::getFrameCount() % refresh_interval) == 0)
         {
-            doProbeUpdate();
+            //doProbeUpdate();
+            run_probe_faces(); // FSRenderProbeNewFacesPerFrame
         }
         // </FS:Trish>
     }
@@ -626,9 +654,11 @@ void LLReflectionMapManager::update()
     LLViewerCamera* camera = LLViewerCamera::getInstance(); // <FS:Trish/>
     for (auto& probe : mProbes)
     {
-        // <FS:Trish> On screen! Spare the poor probe
+        // <FS:Trish> On screen! Spare the poor probe. A few meters of margin, so a probe at the edge of the view
+        // doesn't jump between the front and the back of the slot order as the camera turns a little.
+        constexpr F32 IN_VIEW_MARGIN = 8.f;
         probe->mInView = probe == mDefaultProbe ||
-            camera->sphereInFrustum(LLVector3(probe->mOrigin.getF32ptr()), probe->mRadius) != 0;
+            camera->sphereInFrustum(LLVector3(probe->mOrigin.getF32ptr()), probe->mRadius + IN_VIEW_MARGIN) != 0;
         // </FS:Trish>
 
         if (probe == mDefaultProbe)
@@ -644,6 +674,7 @@ void LLReflectionMapManager::update()
           // pass only ever looks past mReflectionProbeCount, so a probe that stopped mattering
           // while close to the camera used to hold its slot indefinitely
             probe->mDistance = FLT_MAX;
+            probe->mInView = false; // <FS:Trish/> or the in-view ordering would sort it ahead of relevant ones
             continue;
         }
 
@@ -687,6 +718,12 @@ void LLReflectionMapManager::update()
     // next distribute the free indices
     U32 count = llmin(mReflectionProbeCount, (U32)mProbes.size());
 
+    // <FS:Trish> Only a probe clearly inside the budget takes a slot from another. Without the band, two
+    // probes either side of the last place traded the slot every time walking swapped their distances, and
+    // each lost its capture before it was finished.
+    const U32 evict_margin = llmin(16U, count / 8);
+    // </FS:Trish>
+
     //for (U32 i = 1; i < count && !mCubeFree.empty(); ++i)
     for (U32 i = 1; i < count; ++i) // <FS:Trish/> evictCubeIndex can make room
     {
@@ -703,7 +740,7 @@ void LLReflectionMapManager::update()
             //llassert(idx > 0); //if we're still in this loop, mCubeFree should not be empty and allocateCubeIndex should be returning good indices
             //probe->mCubeArray = mTexture;
             //probe->mCubeIndex = idx;
-            if (mCubeFree.empty() && !evictCubeIndex(count))
+            if (mCubeFree.empty() && (i + evict_margin >= count || !evictCubeIndex(count)))
             {
                 break;
             }
@@ -711,6 +748,19 @@ void LLReflectionMapManager::update()
             // </FS:Trish>
         }
     }
+
+    // <FS:Trish> Is a probe on screen waiting for its first map? Then refreshes of complete probes wait.
+    sMissingInView = false;
+    for (U32 i = 1; i < mProbes.size() && i < mReflectionProbeCount; ++i)
+    {
+        const LLReflectionMap* probe = mProbes[i];
+        if (probe->mCubeIndex != -1 && !probe->mComplete && probe->mInView && !probe->mOrphaned && probe->isRelevant())
+        {
+            sMissingInView = true;
+            break;
+        }
+    }
+    // </FS:Trish>
 
     for (unsigned int i = 0; i < mProbes.size(); ++i)
     {
@@ -855,7 +905,9 @@ void LLReflectionMapManager::update()
                                  mDefaultProbe->mFSEnvVersion == mEnvVersion && since >= 0.f && since < (F32)fs_sky_period;
       // FSRenderMovingProbeHold: a held sky probe doesn't take the turn of a probe that has no map yet
       const bool sky_held = fs_probe_hold && mDefaultProbe->mComplete && mDefaultProbe->mLastUpdateTime > 0.f;
-      if (!sky_unchanged && !sky_held)
+      // and a complete sky probe doesn't take the turn of a probe on screen that has no map yet
+      const bool sky_waits = sMissingInView && mDefaultProbe->mComplete && oldestProbe != nullptr && !oldestProbe->mComplete;
+      if (!sky_unchanged && !sky_held && !sky_waits)
       {
           oldestProbe = mDefaultProbe;
       }
@@ -897,8 +949,9 @@ void LLReflectionMapManager::update()
             mRadiancePass = true;
             ++mFSIrradianceReused;
         }
+        //doProbeUpdate();
+        run_probe_faces(); // FSRenderProbeNewFacesPerFrame
         // </FS:Trish>
-        doProbeUpdate();
     }
 
     if (oldestOccluded)

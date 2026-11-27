@@ -446,6 +446,11 @@ void LLReflectionMap::doOcclusion(const LLVector4a& eye, bool in_frustum) // <FS
     // a bounding sphere, pad radius so we assume if the eye is within
     // the bounding sphere of the bounding cube, the node is not culled
     F32 dist = mRadius * F_SQRT3 + 1.f;
+    // <FS:Trish> Probes close to the camera are never culled: they light what fills most of the screen, and a
+    // late or borderline query dropping one left a dark patch right in front of the viewer
+    static LLCachedControl<F32> keep_distance(gSavedSettings, "FSRenderProbeOcclusionKeepDistance", 32.f);
+    dist += llmax((F32)keep_distance, 0.f);
+    // </FS:Trish>
 
     LLVector4a o;
     o.setSub(mOrigin, eye);
@@ -489,21 +494,32 @@ void LLReflectionMap::doOcclusion(const LLVector4a& eye, bool in_frustum) // <FS
         {
             do_query = true;
             glGetQueryObjectuiv(mOcclusionQuery, GL_QUERY_RESULT, &result);
-            // <FS:Trish> Cull on the 2nd occluded result in a row
-            // Then show again on the first visible case so probe become less flaky.
+            // <FS:Trish> Cull only once every result for a while has said occluded, and show again on the
+            // first visible one. Results arrive frames late, so while walking a probe dropped on the
+            // second occluded result kept popping out and back (several times a second at the edge of
+            // buildings and foliage). Placed probes hold out longer: they are what a builder lit the
+            // place with, and an automatic probe dropping out is the smaller change.
             //mOccluded = result == 0;
+            constexpr F32 OCCLUDED_HOLD_AUTO = 0.5f;
+            constexpr F32 OCCLUDED_HOLD_MANUAL = 2.f;
             if (mDiscardOcclusionResult)
             {
                 mDiscardOcclusionResult = false;
             }
             else if (result == 0)
             {
+                if (mOccludedResults == 0)
+                {
+                    mOccludedSince = (F32)gFrameTimeSeconds;
+                }
                 if (mOccludedResults < 255)
                 {
                     ++mOccludedResults;
                 }
+                const F32 hold = mViewerObject ? OCCLUDED_HOLD_MANUAL : OCCLUDED_HOLD_AUTO;
+                const F32 occluded_for = (F32)gFrameTimeSeconds - mOccludedSince;
                 const bool was_occluded = mOccluded;
-                mOccluded = mOccludedResults >= 2;
+                mOccluded = mOccludedResults >= 2 && (occluded_for >= hold || occluded_for < 0.f);
                 if (mOccluded && !was_occluded)
                 {
                     LLReflectionMapManager::logCull("occluded", this);

@@ -167,6 +167,7 @@ public:
 
     // <FS:Trish> Probe culling stability
     U8 mOccludedResults = 0;
+    F32 mOccludedSince = 0.f;   // frame time of the first of the mOccludedResults occluded results in a row
     bool mDiscardOcclusionResult = false;
     bool mInView = false;
     S32 mRetainedCubeIndex = -1;

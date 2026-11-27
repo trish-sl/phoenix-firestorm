@@ -27075,6 +27075,28 @@ Change of this parameter will affect the layout of buttons in notification toast
       <key>Value</key>
       <integer>0</integer>
     </map>
+    <key>FSRenderProbeNewFacesPerFrame</key>
+    <map>
+      <key>Comment</key>
+      <string>Cube faces rendered per frame for a reflection probe in view that has no map yet (1 to 12; a full capture is 12). Higher fills newly visible areas sooner at some frame time while they catch up. Refreshes of complete probes stay at one face a frame.</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>U32</string>
+      <key>Value</key>
+      <integer>6</integer>
+    </map>
+    <key>FSRenderProbeOcclusionKeepDistance</key>
+    <map>
+      <key>Comment</key>
+      <string>Reflection probes whose influence comes within this many meters of the camera are never dropped by occlusion culling (0: only when the camera is inside them).</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>F32</string>
+      <key>Value</key>
+      <real>32.0</real>
+    </map>
     <key>FSDebugDcThreshold</key>
     <map>
       <key>Comment</key>
