@@ -516,6 +516,7 @@ public:
     // <FS:Trish> FSTextureVisibleFirstMax: on screen at the last priority update, and listed for the visible-first pass
     bool mFSOnScreen = false;
     bool mFSInVisibleFirstList = false;
+    bool mFSFreshQueued = false; // FSTextureNewlyVisibleFirst: queued for the next frame's update
     // </FS:Trish>
 
     // <FS:Techwolf Lupindo> texture comment decoder

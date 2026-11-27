@@ -50,6 +50,7 @@ const bool IMMEDIATE_NO = false;
 
 class LLImageJ2C;
 class LLMessageSystem;
+class LLDrawable; // <FS:Trish/> FSTextureNewlyVisibleFirst
 class LLTextureView;
 struct FSTexturePriorityFaces; // <FS:Trish/> FSPerfParallelTexturePriority
 
@@ -161,6 +162,11 @@ public:
     //void updateImageDecodePriority(LLViewerFetchedTexture* imagep, bool flush_images = true);
     void updateImageDecodePriority(LLViewerFetchedTexture* imagep, bool flush_images = true,
                                    const FSTexturePriorityFaces* fs_pre = nullptr, FSTexturePriorityFaces* fs_out = nullptr);
+    // </FS:Trish>
+
+    // <FS:Trish> FSTextureNewlyVisibleFirst: the textures of a drawable the main camera has just started to
+    // see, updated first thing next frame instead of when the round-robin sweep comes round to them
+    void fsNoteNewlyVisible(LLDrawable* drawablep);
     // </FS:Trish>
 
 private:
@@ -277,6 +283,9 @@ private:
     // the round-robin (the urgent lane walks this instead of scanning the map for visible ones)
     std::vector<LLPointer<LLViewerFetchedTexture> > mFSVisibleFirstList;
     size_t mFSVisibleFirstIndex = 0;
+    // </FS:Trish>
+    // <FS:Trish> FSTextureNewlyVisibleFirst: textures of drawables that just came into view (fsNoteNewlyVisible)
+    std::vector<LLPointer<LLViewerFetchedTexture> > mFSFreshVisible;
     // </FS:Trish>
     // <FS:Trish> The fetch priority refresh lane walks the fetching set instead of the whole map,
     // and the urgent-lane set is reused instead of allocated every frame

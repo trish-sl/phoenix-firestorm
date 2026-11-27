@@ -57,6 +57,8 @@
 #include "llviewerregion.h"
 #include "llviewerstats.h"
 #include "pipeline.h"
+#include "lldrawable.h" // <FS:Trish/> FSTextureNewlyVisibleFirst
+#include "llface.h" // <FS:Trish/> FSTextureNewlyVisibleFirst
 #include "llappviewer.h"
 #include "llviewercamera.h" // <FS:Trish/>
 #include "llxuiparser.h"
@@ -383,6 +385,13 @@ void LLViewerTextureList::shutdown()
     }
     mFSVisibleFirstList.clear();
     mFSVisibleFirstIndex = 0;
+    // </FS:Trish>
+    // <FS:Trish> FSTextureNewlyVisibleFirst
+    for (auto& imagep : mFSFreshVisible)
+    {
+        imagep->mFSFreshQueued = false;
+    }
+    mFSFreshVisible.clear();
     // </FS:Trish>
     // </FS:Trish>
     // clear out preloads
@@ -1502,6 +1511,41 @@ namespace
 }
 // </FS:Trish>
 
+// <FS:Trish> FSTextureNewlyVisibleFirst: called by the main camera's state sort for a drawable it did not
+// see last frame. A texture that comes into view was only asked for more detail once the round-robin
+// sweep reached it (a lap takes 10 to 20 frames) and its faces' pixel area was due again (every 10
+// frames), so at a high memory bias, turning the camera showed blurred surfaces for a while.
+void LLViewerTextureList::fsNoteNewlyVisible(LLDrawable* drawablep)
+{
+    static LLCachedControl<bool> enabled(gSavedSettings, "FSTextureNewlyVisibleFirst", true);
+    if (!enabled || !drawablep || !sTrackFetching)
+    {
+        return;
+    }
+    constexpr size_t FRESH_CAP = 4096;
+    for (S32 fi = 0; fi < drawablep->getNumFaces(); ++fi)
+    {
+        LLFace* facep = drawablep->getFace(fi);
+        if (!facep)
+        {
+            continue;
+        }
+        facep->mLastTextureUpdate = 0; // its pixel area is worked out again at the texture's next update
+        for (U32 ch = 0; ch < LLRender::NUM_TEXTURE_CHANNELS; ++ch)
+        {
+            LLViewerTexture* texp = facep->getTexture(ch);
+            LLViewerFetchedTexture* imagep = texp ? LLViewerTextureManager::staticCastToFetchedTexture(texp) : nullptr;
+            if (imagep && !imagep->mFSFreshQueued && imagep->isInImageList() && imagep->getDiscardLevel() != 0 &&
+                mFSFreshVisible.size() < FRESH_CAP)
+            {
+                imagep->mFSFreshQueued = true;
+                mFSFreshVisible.emplace_back(imagep);
+            }
+        }
+    }
+}
+// </FS:Trish>
+
 F32 LLViewerTextureList::updateImagesCreateTextures(F32 max_time)
 {
     LL_PROFILE_ZONE_SCOPED_CATEGORY_TEXTURE;
@@ -1880,6 +1924,33 @@ F32 LLViewerTextureList::updateImagesFetchTextures(F32 max_time)
     // Textures done here are skipped by the sweep and the refresh lane this frame (urgent_updates).
     static LLCachedControl<U32> fs_visible_first_max(gSavedSettings, "FSTextureVisibleFirstMax", 256);
     const bool fs_visible_first = fs_visible_first_max > 0;
+    // <FS:Trish> FSTextureNewlyVisibleFirst: textures of drawables that came into view last frame go first.
+    // updateImageDecodePriority puts the ones it finds on screen into the visible-first list. Left over
+    // when the quarter of the budget runs out: next frame.
+    if (!mFSFreshVisible.empty())
+    {
+        LL_PROFILE_ZONE_NAMED_CATEGORY_TEXTURE("vtluift - newly visible");
+        FS_RECORD_BLOCK_TIME(FTM_FS_TEX_FETCH_LANES);
+        size_t done = 0;
+        for (; done < mFSFreshVisible.size() && timer.getElapsedTimeF32() < max_time * 0.25f; ++done)
+        {
+            // The list holds a reference; the texture may be deleted from the map meanwhile
+            LLPointer<LLViewerFetchedTexture> imagep = mFSFreshVisible[done];
+            imagep->mFSFreshQueued = false;
+            if (imagep->getNumRefs() > 2 && !imagep->isDeleted() && imagep->isInImageList() &&
+                !urgent_updates.count(imagep.get()))
+            {
+                updateImageDecodePriority(imagep);
+                if (imagep->isInImageList())
+                {
+                    imagep->updateFetch();
+                    urgent_updates.insert(imagep.get());
+                }
+            }
+        }
+        mFSFreshVisible.erase(mFSFreshVisible.begin(), mFSFreshVisible.begin() + done);
+    }
+    // </FS:Trish>
     if (fs_visible_first && run_urgent_lane && !mFSVisibleFirstList.empty())
     {
         LL_PROFILE_ZONE_NAMED_CATEGORY_TEXTURE("vtluift - visible first");

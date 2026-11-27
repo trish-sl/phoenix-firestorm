@@ -4296,6 +4296,28 @@ void LLPipeline::stateSort(LLCamera& camera, LLCullResult &result)
 
 void LLPipeline::stateSort(LLSpatialGroup* group, LLCamera& camera)
 {
+    // <FS:Trish> FSTextureNewlyVisibleFirst: a group the main camera didn't see last frame (the shared
+    // visibility stamps can't tell: shadow, probe and reflection passes set them too). Its drawables'
+    // textures are updated first next frame. Here rather than in the drawables' state sort, which only
+    // runs when the group's distance changed, not when the camera turns.
+    if (LLViewerCamera::sCurCameraID == LLViewerCamera::CAMERA_WORLD && !gCubeSnapshot)
+    {
+        const U32 frame = (U32)LLFrameTimer::getFrameCount();
+        if (group->mFSMainVisibleFrame + 1 < frame)
+        {
+            for (LLSpatialGroup::element_iter i = group->getDataBegin(); i != group->getDataEnd(); ++i)
+            {
+                LLDrawable* drawablep = (LLDrawable*)(*i)->getDrawable();
+                if (drawablep && !drawablep->isDead())
+                {
+                    gTextureList.fsNoteNewlyVisible(drawablep);
+                }
+            }
+        }
+        group->mFSMainVisibleFrame = frame;
+    }
+    // </FS:Trish>
+
     if (group->changeLOD())
     {
         for (LLSpatialGroup::element_iter i = group->getDataBegin(); i != group->getDataEnd(); ++i)

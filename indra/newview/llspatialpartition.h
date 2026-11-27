@@ -400,6 +400,7 @@ public:
     F32 mDepth;
     F32 mLastUpdateDistance;
     F32 mLastUpdateTime;
+    U32 mFSMainVisibleFrame = 0; // <FS:Trish/> FSTextureNewlyVisibleFirst: last frame the main camera's state sort saw it
 
     F32 mPixelArea;
     F32 mRadius;
