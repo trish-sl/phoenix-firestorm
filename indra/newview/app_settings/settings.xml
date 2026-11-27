@@ -11745,6 +11745,28 @@ Change of this parameter will affect the layout of buttons in notification toast
     <key>Value</key>
     <real>1.0</real>
   </map>
+  <key>FSRenderSSRThicknessFraction</key>
+  <map>
+    <key>Comment</key>
+    <string>Assumed surface thickness for screen-space reflection hits, as a fraction of the view depth (0.02 = 2% of the distance), capped by RenderScreenSpaceReflectionMaxThickness. Full confidence up to it, fading out by twice it. 0 uses RenderScreenSpaceReflectionMaxThickness at every distance.</string>
+    <key>Persist</key>
+    <integer>1</integer>
+    <key>Type</key>
+    <string>F32</string>
+    <key>Value</key>
+    <real>0.02</real>
+  </map>
+  <key>RenderScreenSpaceReflectionMaxStretch</key>
+  <map>
+    <key>Comment</key>
+    <string>SSR hits whose captured pixels are magnified more than this in the reflection start fading, gone by twice it. 0 disables the fade.</string>
+    <key>Persist</key>
+    <integer>1</integer>
+    <key>Type</key>
+    <string>F32</string>
+    <key>Value</key>
+    <real>2.0</real>
+  </map>
   <key>RenderScreenSpaceReflectionDepthBias</key>
   <map>
     <key>Comment</key>

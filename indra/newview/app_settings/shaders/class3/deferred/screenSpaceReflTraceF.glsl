@@ -68,6 +68,8 @@ void main()
     //    glossiness = gb.specular.a;          // Legacy: a = glossiness
     if (GET_GBUFFER_FLAG(gb.gbufferFlag, GBUFFER_FLAG_HAS_PBR))
         glossiness = 1.0 - unpackRoughness(gb.specular.ga);
+    else if (gb.envIntensity > 0.0)
+        glossiness = 1.0;   // GCP: Blinn-Phong env reflections ignore roughness (sharp, like the probes and mirrors)
     else
         glossiness = gb.specular.a;
     // </FS:Trish>

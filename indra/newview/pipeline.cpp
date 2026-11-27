@@ -15029,6 +15029,16 @@ void LLPipeline::bindReflectionProbes(LLGLSLShader& shader)
             shader.uniform1f(LLShaderMgr::DEFERRED_SSR_DEPTH_BIAS, traceDepthBias);
             shader.uniform1f(LLShaderMgr::DEFERRED_SSR_GLOSSY_SAMPLES, (GLfloat)RenderScreenSpaceReflectionGlossySamples);
 
+            // <FS:Trish> GCP hit tests: the surface thickness as a fraction of the view depth (capped by the
+            // thickness above, in metres), and the magnification at which hits start to fade
+            static LLCachedControl<F32> traceThicknessFraction(gSavedSettings, "FSRenderSSRThicknessFraction", 0.02f);
+            static LLCachedControl<F32> traceMaxStretch(gSavedSettings, "RenderScreenSpaceReflectionMaxStretch", 2.f);
+            static LLStaticHashedString sThicknessFraction("thicknessFraction");
+            static LLStaticHashedString sMaxStretch("maxStretch");
+            shader.uniform1f(sThicknessFraction, traceThicknessFraction);
+            shader.uniform1f(sMaxStretch, traceMaxStretch);
+            // </FS:Trish>
+
             // The care package advances this seed at every bind of the SSR trace programs, a new
             // glossy ray pattern every frame for its temporal anti-aliasing to average out. This
             // viewer's reflections are not accumulated over frames: a pattern that changes every

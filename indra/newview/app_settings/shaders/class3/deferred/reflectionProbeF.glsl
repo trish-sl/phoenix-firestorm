@@ -1299,13 +1299,26 @@ void fsSampleReflectionProbesLegacy(inout vec3 ambenv, inout vec3 glossenv, inou
     if (cube_snapshot != 1)
     {
         float roughness = 1.0 - glossiness;
+        // GCP: the env reflection (legacyenv) is Blinn-Phong and ignores roughness: it takes the sharp SSR, and
+        // an env-shiny surface gets SSR however rough its specular is (the trace runs it as a mirror,
+        // screenSpaceReflTraceF). It used to take the roughness-blurred one, or none past roughness 0.7.
+        // A transparent surface traces once here, as a mirror when it is env-shiny: the trace is a single
+        // ray along the mirror direction whatever the roughness, so both reflections can share it.
+        bool env_shiny = envIntensity > 0.0;
+        vec4 ssr_traced = vec4(0.0);
+        if (transparent && (roughness < 0.7 || env_shiny))
+        {
+            tapScreenSpaceReflection(1, tc, pos.xyz, norm, ssr_traced, sceneMap, env_shiny ? 1.0 : glossiness);
+        }
+
         if (roughness < 0.7)
         {
             vec4 ssr = vec4(0.0);
 
             if (transparent)
             {
-                tapScreenSpaceReflection(1, tc, pos.xyz, norm, ssr, sceneMap, glossiness);
+                //tapScreenSpaceReflection(1, tc, pos.xyz, norm, ssr, sceneMap, glossiness);
+                ssr = ssr_traced;
             }
             else
             {
@@ -1325,7 +1338,21 @@ void fsSampleReflectionProbesLegacy(inout vec3 ambenv, inout vec3 glossenv, inou
                     ssr.a *= glossiness;
 
                 glossenv = mix(glossenv, ssr.rgb, ssr.a);
-                legacyenv = mix(legacyenv, ssr.rgb, ssr.a);
+                //legacyenv = mix(legacyenv, ssr.rgb, ssr.a);
+            }
+        }
+
+        if (env_shiny)
+        {
+            vec4 ssr_sharp = transparent ? ssr_traced : textureLod(sceneMap, tc, 0.0);
+
+            if (ssr_sharp.a > 0.001)
+            {
+                ssr_sharp.rgb /= ssr_sharp.a;
+                float l = dot(ssr_sharp.rgb, vec3(0.2126, 0.7152, 0.0722));
+                ssr_sharp.rgb /= max(1.0 - l, 0.02); // capped recovery: emissive hits blow out otherwise
+
+                legacyenv = mix(legacyenv, ssr_sharp.rgb, ssr_sharp.a);
             }
         }
     }
