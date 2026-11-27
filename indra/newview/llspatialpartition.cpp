@@ -64,6 +64,7 @@
 #include "fsshadowcacheoffenders.h" // <FS:Trish/> FSPerfShadowStaticCacheFilter, FSPerfShadowStaticCacheDemote
 #include "fslodfade.h" // <FS:Trish/> FSRenderFadeLOD
 // </FS:Beq>
+#include "rlvactions.h"     // <FS:Zi> Optionally treat @touchthis exceptions as ignore touch
 
 extern bool gShiftFrame;
 
@@ -4330,7 +4331,10 @@ public:
             if (vobj &&
                 (!vobj->isReflectionProbe() || mPickReflectionProbe))
             {
-                if (vobj->getClickAction() == CLICK_ACTION_IGNORE && !LLFloater::isVisible(gFloaterTools))
+                // <FS:Zi> Optionally treat @touchthis exceptions as ignore touch
+                // if (vobj->getClickAction() == CLICK_ACTION_IGNORE && !LLFloater::isVisible(gFloaterTools))
+                if ((vobj->getClickAction() == CLICK_ACTION_IGNORE || RlvActions::isTouchThisIgnored(vobj)) && !LLFloater::isVisible(gFloaterTools))
+                // <FS:Zi>
                 {
                     return false;
                 }
