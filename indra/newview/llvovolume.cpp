@@ -7117,13 +7117,15 @@ void LLVolumeGeometryManager::rebuildMesh(LLSpatialGroup* group)
                         vobj->updateRelativeXform();
                     }
 
-                    // <FS:Trish> Parallel geometry: the queued fills read the rebuild flags
+                    // <FS:Trish> Parallel geometry: the queued fills read the rebuild flags.
+                    // As in rebuildGeom, a drawable awaiting its own update must keep them:
+                    // that update can change the transform after this mesh fill.
                     //drawablep->clearState(LLDrawable::REBUILD_ALL);
                     if (fs_deferred)
                     {
                         FSParallelGeometry::clearStateAfterFill(drawablep, LLDrawable::REBUILD_ALL);
                     }
-                    else
+                    else if (!drawablep->isState(LLDrawable::IN_REBUILD_Q))
                     {
                         drawablep->clearState(LLDrawable::REBUILD_ALL);
                     }

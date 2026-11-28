@@ -579,7 +579,10 @@ void FSParallelGeometry::clearStateAfterFill(LLDrawable* drawablep, U32 state)
     }
     else
     {
-        drawablep->clearState(state);
+        if (!drawablep->isState(LLDrawable::IN_REBUILD_Q))
+        {
+            drawablep->clearState(state);
+        }
     }
 }
 
@@ -590,7 +593,10 @@ void FSParallelGeometry::flush()
     {
         for (auto& clear : sStateClears)
         {
-            clear.first->clearState(clear.second);
+            if (!clear.first->isState(LLDrawable::IN_REBUILD_Q))
+            {
+                clear.first->clearState(clear.second);
+            }
         }
         sStateClears.clear();
         return;
@@ -721,7 +727,10 @@ void FSParallelGeometry::flush()
 
     for (auto& clear : sStateClears)
     {
-        clear.first->clearState(clear.second);
+        if (!clear.first->isState(LLDrawable::IN_REBUILD_Q))
+        {
+            clear.first->clearState(clear.second);
+        }
     }
     sStateClears.clear();
 }

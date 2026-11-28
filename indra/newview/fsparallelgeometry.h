@@ -74,7 +74,7 @@ public:
     static bool deferFill(LLFace* facep, unsigned short index_offset, bool force_rebuild,
                           bool no_debug_assert, LLSpatialGroup* mesh_group);
 
-    // Clear drawable state once the queued fills (which read it) have run.
+    // Clear drawable state once queued fills have run, unless a pending drawable update still needs it.
     static void clearStateAfterFill(LLDrawable* drawablep, unsigned int state);
 
 private:
