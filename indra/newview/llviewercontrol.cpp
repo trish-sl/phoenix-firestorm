@@ -1652,7 +1652,6 @@ void settings_setup_listeners()
     setting_setup_signal_listener(gSavedSettings, "FSRenderColoredShadows", handleSetShaderChanged); // <FS:Trish/>
     setting_setup_signal_listener(gSavedSettings, "FSRenderCloudShadows", handleSetShaderChanged); // <FS:Trish/>
     setting_setup_signal_listener(gSavedSettings, "FSRenderHeightFog", handleSetShaderChanged); // <FS:Trish/>
-    setting_setup_signal_listener(gSavedSettings, "FSRenderContactShadows", handleSetShaderChanged); // <FS:Trish/>
     setting_setup_signal_listener(gSavedSettings, "FSRenderShadowSmoothFade", handleSetShaderChanged); // <FS:Trish/>
     setting_setup_signal_listener(gSavedSettings, "FSRenderMirrorPlanar", handleSetShaderChanged); // <FS:Trish/>
     setting_setup_signal_listener(gSavedSettings, "FSRenderSpotShadowCount", handleSetShaderChanged); // <FS:Trish/>

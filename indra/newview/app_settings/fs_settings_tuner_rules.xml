@@ -157,7 +157,7 @@
     <key>set</key><array>
       <map><key>setting</key><string>FSRenderGTAOHalfRes</string><key>value</key><string>1</string></map>
     </array>
-    <key>looks</key><string>Slightly softer contact shadows in corners</string>
+    <key>looks</key><string>Slightly softer ambient occlusion in corners</string>
     <key>description</key><string>Ground-truth ambient occlusion is computed at half resolution and filtered back up: roughly a quarter of its cost.</string>
   </map>
   <map>
@@ -612,19 +612,6 @@
     </array>
     <key>looks</key><string>Alpha blended objects cast no shadow</string>
     <key>description</key><string>Alpha blended objects (glass, animated transparent effects) are no longer drawn into the shadow maps.</string>
-  </map>
-  <map>
-    <key>id</key><string>contact_shadows_off</string>
-    <key>bound</key><string>gpu</string>
-    <key>zones</key><array><string>gpu:soften shadow</string></array>
-    <key>min_ms</key><real>0.6</real>
-    <key>fraction</key><real>0.3</real>
-    <key>when</key><array><string>RenderShadowDetail ge 1</string><string>FSRenderContactShadows eq 1</string></array>
-    <key>set</key><array>
-      <map><key>setting</key><string>FSRenderContactShadows</string><key>value</key><string>0</string></map>
-    </array>
-    <key>looks</key><string>Small contact shadows (feet, folds, small props) fainter</string>
-    <key>description</key><string>Screen-space contact shadows off: no short ray march towards the sun on every pixel after the shadow blur.</string>
   </map>
   <map>
     <key>id</key><string>glow_iterations</string>
@@ -1226,7 +1213,7 @@
       <map><key>setting</key><string>FSRenderGTAOHalfRes</string><key>value</key><string>0</string></map>
     </array>
     <key>effect</key><string>uses headroom</string>
-    <key>looks</key><string>Crisper contact shadows in corners</string>
+    <key>looks</key><string>Crisper ambient occlusion in corners</string>
     <key>description</key><string>There is headroom: ground-truth ambient occlusion back at full resolution.</string>
   </map>
   <map>

@@ -12990,47 +12990,6 @@ static bool fs_light_map_blurred()
     return (pcss_shadows || LLPipeline::RenderDeferredSSAO) && LLPipeline::RenderShadowBlurSize != 0.f && !gCubeSnapshot;
 }
 
-// Contact shadow uniforms (fsShadowExtrasF.glsl) of the pass that applies them: the sun pass when
-// the light map isn't blurred, otherwise the blur's second pass, so the blur can't wash them out
-static void fs_bind_contact_shadow(LLGLSLShader& shader, bool apply_here)
-{
-    static LLCachedControl<bool> contact_shadows(gSavedSettings, "FSRenderContactShadows", false);
-    static LLCachedControl<F32> contact_length(gSavedSettings, "FSRenderContactShadowLength", 0.5f);
-    static LLCachedControl<F32> contact_strength(gSavedSettings, "FSRenderContactShadowStrength", 0.8f);
-    if (!contact_shadows)
-    {
-        return;
-    }
-    static const LLStaticHashedString sContactShadow("fs_contact_shadow");
-    static const LLStaticHashedString sContactHere("fs_contact_here");
-    // The march's noise moves on every frame while TAA or the photo shadows (FSRenderPhotoShadows) blend
-    // the frames; a still pattern otherwise. While the photo shadows blend, the ray also leaves for this
-    // frame's point of the sun's disc, as the shadow maps do, and takes twice the steps. With nothing
-    // blending the frames the march takes no noise at all (-1): the term is applied after the light map
-    // blur, so a still noise pattern stayed on screen as a stipple.
-    const bool photo = FSPhotoShadows::frameActive() && !gCubeSnapshot;
-    const F32 noise_offset = photo ? FSPhotoShadows::noiseOffset()
-                                   : (FSTAA::frameActive() ? (F32)fmod((F64)gFrameCount * 0.6180339887, 1.0) : -1.f);
-    shader.uniform4f(sContactShadow, llclamp((F32)contact_length, 0.05f, 2.f), llclamp((F32)contact_strength, 0.f, 1.f),
-                     noise_offset, photo ? 48.f : 24.f);
-    static const LLStaticHashedString sContactLightJitter("fs_contact_light_jitter");
-    LLVector3 jitter_view;
-    if (photo)
-    {
-        // toward the light, in agent space, then its change into view space
-        LLVector3 to_light(LLEnvironment::instance().getIsSunUp() ? gPipeline.mSunDir : gPipeline.mMoonDir);
-        to_light.normVec();
-        const LLVector3 moved = -FSPhotoShadows::jitterLightDir(0, -to_light);
-        const glm::vec3 d = glm::mat3(get_current_modelview()) * glm::vec3(moved.mV[VX] - to_light.mV[VX],
-                                                                           moved.mV[VY] - to_light.mV[VY],
-                                                                           moved.mV[VZ] - to_light.mV[VZ]);
-        jitter_view.set(d.x, d.y, d.z);
-    }
-    shader.uniform3fv(sContactLightJitter, 1, jitter_view.mV);
-    shader.uniform1i(sContactHere, (apply_here && !gCubeSnapshot) ? 1 : 0);
-    // the blur program isn't in the environment's shader list, so it doesn't get this otherwise
-    shader.uniform1i(LLShaderMgr::SUN_UP_FACTOR, LLEnvironment::instance().getIsSunUp() ? 1 : 0);
-}
 // </FS:Trish>
 
 // <FS:Trish> Per frame uniforms of the extra sun shadow terms (fsShadowExtrasF.glsl, fsShadowFadeF.glsl).
@@ -13056,8 +13015,6 @@ static void fs_bind_sun_shadow_extras(LLGLSLShader& shader, const glm::mat4& mod
     {
         return; // the shaders leave probe captures alone
     }
-
-    fs_bind_contact_shadow(shader, !fs_light_map_blurred());
 
     if (cloud_shadows)
     {
@@ -13692,7 +13649,7 @@ void LLPipeline::renderDeferredLighting()
                                      mShadowSpotLight[0].isNull() ? 1 : 0,
                                      mShadowSpotLight[1].isNull() ? 1 : 0);
 
-                fs_bind_sun_shadow_extras(sun_shader, mat); // <FS:Trish/> cloud, contact shadows, smooth fade
+                fs_bind_sun_shadow_extras(sun_shader, mat); // <FS:Trish/> cloud shadows, smooth fade
                 fs_bind_shadow_slope_bias(sun_shader); // <FS:Trish/> FSRenderShadowSlopeBias
                 // <FS:Trish> GTAO search radius (metres) and visibility exponent; only a sun
                 // program built with FS_GTAO has these uniforms
@@ -13804,7 +13761,6 @@ void LLPipeline::renderDeferredLighting()
             }
 
             gDeferredBlurLightProgram.uniform2f(sDelta, 1.f, 0.f);
-            fs_bind_contact_shadow(gDeferredBlurLightProgram, false); // <FS:Trish/> contact shadows: second pass only
             gDeferredBlurLightProgram.uniform1f(sDistFactor, dist_factor);
             gDeferredBlurLightProgram.uniform3fv(sKern, kern_length, gauss[0].mV);
             gDeferredBlurLightProgram.uniform1f(sKernScale, blur_size * (kern_length / 2.f - 0.5f));
@@ -13826,7 +13782,6 @@ void LLPipeline::renderDeferredLighting()
             deferred_light_target->bindTarget();
 
             gDeferredBlurLightProgram.uniform2f(sDelta, 0.f, 1.f);
-            fs_bind_contact_shadow(gDeferredBlurLightProgram, true); // <FS:Trish/> applied to the blurred sun shadow
             // <FS:Trish> FSRenderShadowScreenFilter: the second pass, and with the temporal option the
             // light map plus history target pair
             FSShadowScreenFilter::beginBlurSecond(*deferred_light_target);

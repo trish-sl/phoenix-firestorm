@@ -6399,7 +6399,7 @@
                      layout="topleft"
                      left="15"
                      name="fs_fsrenderreversez"
-                     tool_tip="EXPERIMENTAL. Stores depth with the near plane at 1 and the far plane at 0 in a 32 bit floating point depth buffer, which keeps depth precise all the way to the draw distance. Removes the flickering where distant surfaces meet (mainland at 500 m and more) and sharpens what reads depth far away: screen-space reflections, ambient occlusion, contact shadows and fog. Shadow maps are unchanged. Needs OpenGL 4.5; stays off on older drivers. Almost no GPU cost. Changing it rebuilds the shaders."
+                     tool_tip="EXPERIMENTAL. Stores depth with the near plane at 1 and the far plane at 0 in a 32 bit floating point depth buffer, which keeps depth precise all the way to the draw distance. Removes the flickering where distant surfaces meet (mainland at 500 m and more) and sharpens what reads depth far away: screen-space reflections, ambient occlusion and fog. Shadow maps are unchanged. Needs OpenGL 4.5; stays off on older drivers. Almost no GPU cost. Changing it rebuilds the shaders."
                      top="2236"
                      width="475" />
                     <text
@@ -6682,7 +6682,7 @@
              bottom="-1">
                 <panel
                  follows="left|top"
-                 height="1956"
+                 height="1834"
                  layout="topleft"
                  left="0"
                  name="experimental_shadows_settings"
@@ -7628,96 +7628,8 @@
                      height="18"
                      layout="topleft"
                      left="15"
-                     name="fs_heading_contact_shadows"
-                     top="1336"
-                     width="340">
-                        Contact shadows
-                    </text>
-                    <button
-                     follows="left|top"
-                     height="19"
-                     label="Reset to default"
-                     layout="topleft"
-                     left="370"
-                     name="reset_fs_heading_contact_shadows"
-                     tool_tip="Set every option in &quot;Contact shadows&quot; back to its default value."
-                     top="1335"
-                     width="120">
-                        <button.commit_callback
-                         function="FSExperimental.ResetSection"
-                         parameter="FSRenderContactShadows,FSRenderContactShadowLength,FSRenderContactShadowStrength" />
-                    </button>
-                    <check_box
-                     control_name="FSRenderContactShadows"
-                     follows="left|top"
-                     height="20"
-                     label="Contact shadows"
-                     layout="topleft"
-                     left="15"
-                     name="fs_fsrendercontactshadows"
-                     tool_tip="EXPERIMENTAL. Small screen-space shadows where objects touch, which the shadow maps miss (feet on the ground, folds, small props). Needs sun shadows."
-                     top="1362"
-                     width="475" />
-                    <text
-                     follows="left|top"
-                     height="18"
-                     layout="topleft"
-                     left="35"
-                     name="fs_fsrendercontactshadowlength_label"
-                     tool_tip="EXPERIMENTAL. How far towards the sun each pixel looks for an occluder."
-                     top="1390"
-                     width="285">
-                        Contact shadow length (m)
-                    </text>
-                    <spinner
-                     control_name="FSRenderContactShadowLength"
-                     decimal_digits="2"
-                     enabled_control="FSRenderContactShadows"
-                     follows="left|top"
-                     height="20"
-                     increment="0.05"
-                     layout="topleft"
-                     left="330"
-                     max_val="2"
-                     min_val="0.05"
-                     name="fs_fsrendercontactshadowlength"
-                     tool_tip="EXPERIMENTAL. How far towards the sun each pixel looks for an occluder."
-                     top="1388"
-                     width="100" />
-                    <text
-                     follows="left|top"
-                     height="18"
-                     layout="topleft"
-                     left="35"
-                     name="fs_fsrendercontactshadowstrength_label"
-                     tool_tip="EXPERIMENTAL. Darkness of the contact shadows."
-                     top="1418"
-                     width="285">
-                        Contact shadow strength
-                    </text>
-                    <spinner
-                     control_name="FSRenderContactShadowStrength"
-                     decimal_digits="2"
-                     enabled_control="FSRenderContactShadows"
-                     follows="left|top"
-                     height="20"
-                     increment="0.05"
-                     layout="topleft"
-                     left="330"
-                     max_val="1"
-                     min_val="0"
-                     name="fs_fsrendercontactshadowstrength"
-                     tool_tip="EXPERIMENTAL. Darkness of the contact shadows."
-                     top="1416"
-                     width="100" />
-                    <text
-                     follows="left|top"
-                     font="SansSerifBold"
-                     height="18"
-                     layout="topleft"
-                     left="15"
                      name="fs_heading_shadow_fade"
-                     top="1458"
+                     top="1336"
                      width="340">
                         Shadow fade
                     </text>
@@ -7729,7 +7641,7 @@
                      left="370"
                      name="reset_fs_heading_shadow_fade"
                      tool_tip="Set every option in &quot;Shadow fade&quot; back to its default value."
-                     top="1457"
+                     top="1335"
                      width="120">
                         <button.commit_callback
                          function="FSExperimental.ResetSection"
@@ -7744,7 +7656,7 @@
                      left="15"
                      name="fs_fsrendershadowsmoothfade"
                      tool_tip="EXPERIMENTAL. Sun shadows fade out smoothly towards the shadow distance, and the change between shadow cascades is dithered so there is no visible line where shadow quality changes."
-                     top="1484"
+                     top="1362"
                      width="475" />
                     <text
                      follows="left|top"
@@ -7753,7 +7665,7 @@
                      left="35"
                      name="fs_fsrendershadowfadelength_label"
                      tool_tip="EXPERIMENTAL. Part of the shadow distance over which shadows fade out at its far end."
-                     top="1512"
+                     top="1390"
                      width="285">
                         Fade length (fraction of distance)
                     </text>
@@ -7770,7 +7682,7 @@
                      min_val="0.02"
                      name="fs_fsrendershadowfadelength"
                      tool_tip="EXPERIMENTAL. Part of the shadow distance over which shadows fade out at its far end."
-                     top="1510"
+                     top="1388"
                      width="100" />
                     <!-- <FS:Trish> FSRenderShadowCascadeBand -->
                     <text
@@ -7780,7 +7692,7 @@
                      left="35"
                      name="fs_fsrendershadowcascadeband_label"
                      tool_tip="EXPERIMENTAL. Where two sun shadow cascades meet, both are blended (or dithered with smooth shadow fade) over this fraction of the distance either side of the change. 0.25 is the standard width; 0.1 leaves a much narrower band of dither or double lookups and gives each cascade a little more detail. Wider hides the change in shadow sharpness better."
-                     top="1538"
+                     top="1416"
                      width="285">
                         Cascade blend width (fraction of distance)
                     </text>
@@ -7796,7 +7708,7 @@
                      min_val="0.05"
                      name="fs_fsrendershadowcascadeband"
                      tool_tip="EXPERIMENTAL. Where two sun shadow cascades meet, both are blended (or dithered with smooth shadow fade) over this fraction of the distance either side of the change. 0.25 is the standard width; 0.1 leaves a much narrower band of dither or double lookups and gives each cascade a little more detail. Wider hides the change in shadow sharpness better."
-                     top="1536"
+                     top="1414"
                      width="100" />
                     <!-- </FS:Trish> -->
                     <text
@@ -7806,7 +7718,7 @@
                      layout="topleft"
                      left="15"
                      name="fs_heading_coloured_shadows"
-                     top="1578"
+                     top="1456"
                      width="340">
                         Coloured shadows
                     </text>
@@ -7818,7 +7730,7 @@
                      left="370"
                      name="reset_fs_heading_coloured_shadows"
                      tool_tip="Set every option in &quot;Coloured shadows&quot; back to its default value."
-                     top="1577"
+                     top="1455"
                      width="120">
                         <button.commit_callback
                          function="FSExperimental.ResetSection"
@@ -7834,7 +7746,7 @@
                      left="15"
                      name="fs_fsrendercoloredshadows"
                      tool_tip="EXPERIMENTAL. Sunlight passing through stained glass, tinted windows and other alpha-blended surfaces takes on their colour, in proportion to their opacity. Works up to the second sun shadow split (the nearest few tens of metres). Uses two extra textures the size of the shadow maps (about 8 MB each at 1920x1080 with shadow resolution 1) and redraws transparent objects into the two nearest shadow maps. Needs sun shadows."
-                     top="1604"
+                     top="1482"
                      width="475" />
                     <text
                      follows="left|top"
@@ -7843,7 +7755,7 @@
                      left="35"
                      name="fs_fsrendercoloredshadowabsorption_label"
                      tool_tip="EXPERIMENTAL. How much light an opaque-looking transparent surface also blocks. 0 only tints the light; 1 lets a fully opaque surface block it completely. Clear glass is unaffected either way."
-                     top="1632"
+                     top="1510"
                      width="285">
                         Absorption
                     </text>
@@ -7860,7 +7772,7 @@
                      min_val="0.0"
                      name="fs_fsrendercoloredshadowabsorption"
                      tool_tip="EXPERIMENTAL. How much light an opaque-looking transparent surface also blocks. 0 only tints the light; 1 lets a fully opaque surface block it completely. Clear glass is unaffected either way."
-                     top="1630"
+                     top="1508"
                      width="100" />
                     <check_box
                      control_name="FSRenderColoredShadowsProjectors"
@@ -7872,7 +7784,7 @@
                      left="35"
                      name="fs_fsrendercoloredshadowsprojectors"
                      tool_tip="EXPERIMENTAL. Light from shadowed projectors passing through stained glass, tinted windows and other alpha-blended surfaces takes on their colour too. Uses one extra texture per shadowed projector, the size of its shadow map (up to 16 MB each), and redraws transparent objects into each projector shadow map. Needs coloured shadows and projector shadows (Sun/Moon + Projectors)."
-                     top="1662"
+                     top="1540"
                      width="455" />
                     <text
                      follows="left|top"
@@ -7881,7 +7793,7 @@
                      layout="topleft"
                      left="15"
                      name="fs_heading_projector_shadows"
-                     top="1704"
+                     top="1582"
                      width="340">
                         Projector shadows
                     </text>
@@ -7893,7 +7805,7 @@
                      left="370"
                      name="reset_fs_heading_projector_shadows"
                      tool_tip="Set every option in &quot;Projector shadows&quot; back to its default value."
-                     top="1703"
+                     top="1581"
                      width="120">
                         <button.commit_callback
                          function="FSExperimental.ResetSection"
@@ -7906,7 +7818,7 @@
                      left="35"
                      name="fs_fsrenderspotshadowcount_label"
                      tool_tip="EXPERIMENTAL. How many projectors cast shadows at once (2 is the standard viewer, up to 6). Each one past two renders another shadow map every update (see the projector shadow update interval) and uses about 16 MB of video memory at 2048 pixels. Needs projector shadows on."
-                     top="1732"
+                     top="1610"
                      width="285">
                         Shadowed projectors
                     </text>
@@ -7922,7 +7834,7 @@
                      min_val="2"
                      name="fs_fsrenderspotshadowcount"
                      tool_tip="EXPERIMENTAL. How many projectors cast shadows at once (2 is the standard viewer, up to 6). Each one past two renders another shadow map every update (see the projector shadow update interval) and uses about 16 MB of video memory at 2048 pixels. Needs projector shadows on."
-                     top="1730"
+                     top="1608"
                      width="100" />
                     <text
                      follows="left|top"
@@ -7931,7 +7843,7 @@
                      left="35"
                      name="fs_renderspotshadowmaxresolution_label"
                      tool_tip="Largest width and height, in pixels, of the projector shadow maps, which otherwise follow the screen width. Default 2048. 0: no limit, as standard."
-                     top="1760"
+                     top="1638"
                      width="285">
                         Projector shadow map size limit
                     </text>
@@ -7947,7 +7859,7 @@
                      min_val="0"
                      name="fs_renderspotshadowmaxresolution"
                      tool_tip="Largest width and height, in pixels, of the projector shadow maps, which otherwise follow the screen width. Default 2048. 0: no limit, as standard."
-                     top="1758"
+                     top="1636"
                      width="100" />
                     <!-- <FS:Trish> -->
                     <text
@@ -7957,7 +7869,7 @@
                      layout="topleft"
                      left="15"
                      name="fs_heading_photo_shadows"
-                     top="1800"
+                     top="1678"
                      width="340">
                         Photo shadows
                     </text>
@@ -7969,7 +7881,7 @@
                      left="370"
                      name="reset_fs_heading_photo_shadows"
                      tool_tip="Set every option in &quot;Photo shadows&quot; back to its default value."
-                     top="1799"
+                     top="1677"
                      width="120">
                         <button.commit_callback
                          function="FSExperimental.ResetSection"
@@ -7983,8 +7895,8 @@
                      layout="topleft"
                      left="15"
                      name="fs_fsrenderphotoshadows"
-                     tool_tip="EXPERIMENTAL. While the camera is still, and in snapshots, the sun shadows near the camera are drawn every frame with the light from another point of the sun&apos;s disc and blended over the frames. In a second or two they settle into the sun&apos;s real soft shadow: sharp where things touch, softer the further they fall, with no stair steps. Contact shadows blend along. Starts over when the camera moves. Costs nothing while moving; snapshots take longer (see below)."
-                     top="1826"
+                     tool_tip="EXPERIMENTAL. While the camera is still, and in snapshots, the sun shadows near the camera are drawn every frame with the light from another point of the sun&apos;s disc and blended over the frames. In a second or two they settle into the sun&apos;s real soft shadow: sharp where things touch, softer the further they fall, with no stair steps. Starts over when the camera moves. Costs nothing while moving; snapshots take longer (see below)."
+                     top="1704"
                      width="475" />
                     <text
                      follows="left|top"
@@ -7993,7 +7905,7 @@
                      left="35"
                      name="fs_fsrenderphotoshadowsframes_label"
                      tool_tip="EXPERIMENTAL. How many frames photo shadows blend at most while the camera is still. More is smoother; fewer follows the sun and moving shadows sooner."
-                     top="1856"
+                     top="1734"
                      width="285">
                         Frames blended
                     </text>
@@ -8010,7 +7922,7 @@
                      min_val="4"
                      name="fs_fsrenderphotoshadowsframes"
                      tool_tip="EXPERIMENTAL. How many frames photo shadows blend at most while the camera is still. More is smoother; fewer follows the sun and moving shadows sooner."
-                     top="1854"
+                     top="1732"
                      width="100" />
                     <text
                      follows="left|top"
@@ -8019,7 +7931,7 @@
                      left="35"
                      name="fs_fsrenderphotoshadowssnapshotframes_label"
                      tool_tip="EXPERIMENTAL. Frames a snapshot draws before each part it reads, for photo shadows. Each one costs a frame of rendering at the snapshot&apos;s size, the snapshot preview included. 0 keeps the normal shadows in snapshots."
-                     top="1884"
+                     top="1762"
                      width="285">
                         Snapshot frames
                     </text>
@@ -8036,7 +7948,7 @@
                      min_val="0"
                      name="fs_fsrenderphotoshadowssnapshotframes"
                      tool_tip="EXPERIMENTAL. Frames a snapshot draws before each part it reads, for photo shadows. Each one costs a frame of rendering at the snapshot&apos;s size, the snapshot preview included. 0 keeps the normal shadows in snapshots."
-                     top="1882"
+                     top="1760"
                      width="100" />
                     <text
                      follows="left|top"
@@ -8045,7 +7957,7 @@
                      left="35"
                      name="fs_fsrenderphotoshadowssoftness_label"
                      tool_tip="EXPERIMENTAL. Size of the sun&apos;s disc for photo shadows, times the size the sky draws it with. 1 is the real sun; larger gives softer shadows."
-                     top="1912"
+                     top="1790"
                      width="285">
                         Sun disc size
                     </text>
@@ -8062,7 +7974,7 @@
                      min_val="0.0"
                      name="fs_fsrenderphotoshadowssoftness"
                      tool_tip="EXPERIMENTAL. Size of the sun&apos;s disc for photo shadows, times the size the sky draws it with. 1 is the real sun; larger gives softer shadows."
-                     top="1910"
+                     top="1788"
                      width="100" />
                     <!-- </FS:Trish> -->
                 </panel>

@@ -56,7 +56,7 @@ vec3 fsDepthSlopeNormal(vec2 tc, vec3 pos, vec3 fallback);
 #endif
 // </FS:Trish>
 float sampleSpotShadow(vec3 shadow_pos, vec3 norm, int index, vec2 pos_screen);
-#if defined(FS_CLOUD_SHADOWS) || defined(FS_CONTACT_SHADOWS)
+#if defined(FS_CLOUD_SHADOWS)
 float fsSunShadowExtras(float shadow, vec3 pos, vec3 norm); // fsShadowExtrasF.glsl
 #endif
 float calcAmbientOcclusion(vec4 pos, vec3 norm, vec2 pos_screen);
@@ -106,7 +106,7 @@ void main()
     col.r = sampleDirectionalShadow(pos.xyz, norm.xyz, pos_screen);
 #endif
     // </FS:Trish>
-#if defined(FS_CLOUD_SHADOWS) || defined(FS_CONTACT_SHADOWS)
+#if defined(FS_CLOUD_SHADOWS)
     col.r = fsSunShadowExtras(col.r, pos.xyz, norm.xyz);
 #endif
     // Geometric normal, not the shading one. The occlusion test compares neighbouring depths

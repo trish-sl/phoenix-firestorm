@@ -296,16 +296,6 @@ namespace FSPhotoShadows
         }
     }
 
-    F32 noiseOffset()
-    {
-        return sActive ? (F32)fmod((F64)sSample * 0.6180339887, 1.0) : 0.f;
-    }
-
-    bool moreSteps()
-    {
-        return sActive;
-    }
-
     void accumulate(LLRenderTarget& light_map, LLRenderTarget& depth_source, LLVertexBuffer* screen_triangle)
     {
         if (!sActive || !screen_triangle || !gFSPhotoShadowAccumProgram.isComplete() || !gFSPhotoShadowApplyProgram.isComplete())

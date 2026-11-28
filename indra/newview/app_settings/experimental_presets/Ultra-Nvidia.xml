@@ -294,12 +294,6 @@
     <boolean>0</boolean>
     <key>FSRenderColoredShadowsProjectors</key>
     <boolean>1</boolean>
-    <key>FSRenderContactShadowLength</key>
-    <real>0.05</real>
-    <key>FSRenderContactShadows</key>
-    <boolean>0</boolean>
-    <key>FSRenderContactShadowStrength</key>
-    <real>0.35</real>
     <key>FSRenderCreaseAO</key>
     <boolean>1</boolean>
     <key>FSRenderDeband</key>

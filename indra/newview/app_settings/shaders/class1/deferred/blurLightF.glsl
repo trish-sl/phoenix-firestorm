@@ -58,9 +58,6 @@ float ndcZFromScreenDepth(float d);
 vec4 getNorm(vec2 pos_screen);
 vec3 getGeoNorm(vec2 pos_screen); // <FS:Trish/> deferredUtil.glsl
 vec3 fsPositionWithDepthPersp(vec2 pos_screen, float depth); // <FS:Trish/> deferredUtil.glsl: the camera's perspective inverse, seven terms
-#if defined(FS_CONTACT_SHADOWS)
-float fsContactShadowTerm(float shadow, vec3 pos, vec3 norm); // fsShadowExtrasF.glsl, applied after the blur
-#endif
 
 // <FS:Trish> The plane of the surface as the depth buffer holds it, from the nearer neighbour on
 // each axis (so a silhouette picks the pixel's own surface); fallback where there is none. The
@@ -208,8 +205,7 @@ void main()
 
     col /= defined_weight.xyxx;
     //col.y *= col.y;
-    // <FS:Trish> FSRenderShadowScreenFilter: the sun shadow over its penumbra, then the history,
-    // both before the contact shadows below
+    // <FS:Trish> FSRenderShadowScreenFilter: the sun shadow over its penumbra, then the history
 #if defined(FS_SHADOW_SCREEN_FILTER)
     vec2 fs_range;
     col.r = fsScreenFilterShadow(col.r, vary_fragcoord.xy, pos, norm.xyz, fs_range);
@@ -217,9 +213,6 @@ void main()
     frag_data[1] = vec4(clamp(col.r, 0.0, 1.0), -pos.z, 0.0, 1.0);
 #endif
     // </FS:Trish>
-#if defined(FS_CONTACT_SHADOWS)
-    col.r = fsContactShadowTerm(col.r, pos, norm.xyz); // only in the second (vertical) pass
-#endif
 
     frag_color = max(col, vec4(0));
 

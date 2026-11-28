@@ -38,12 +38,6 @@
     <boolean>1</boolean>
     <key>FSRenderCloudShadowStrength</key>
     <real>0.5</real>
-    <key>FSRenderContactShadowLength</key>
-    <real>0.5</real>
-    <key>FSRenderContactShadows</key>
-    <boolean>1</boolean>
-    <key>FSRenderContactShadowStrength</key>
-    <real>0.8</real>
     <key>FSRenderCreaseAO</key>
     <boolean>1</boolean>
     <key>FSRenderMultiscatter</key>

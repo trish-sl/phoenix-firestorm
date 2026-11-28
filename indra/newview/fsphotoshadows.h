@@ -45,12 +45,11 @@ extern LLGLSLShader gFSPhotoShadowApplyProgram;   // fsPhotoShadowApplyF.glsl
 // stair steps of its texels. Here, every frame the near sun cascades (0 and 1, those around the
 // camera) are drawn with the light coming from another point of the sun's disc (a Halton sequence
 // over the disc) and with the shadow map shifted by a fraction of a texel. The sun shadow each
-// pixel ends up with (the light map's sun channel, after the blur and the contact shadows) is
+// pixel ends up with (the light map's sun channel, after the blur) is
 // blended with the frames before it in a history of its own, weighted 1/n up to
 // FSRenderPhotoShadowsFrames, and written back before the lighting pass reads it. The average of
 // those hard shadows converges to the disc's real shadow: contact hard, widening with distance, and
-// free of texel steps. The contact shadows' rays take the same moved light direction (and twice the
-// steps), so they converge to soft contact shadows too.
+// free of texel steps.
 //
 // The blend starts over:
 //  - for the whole picture when the camera moves, turns or zooms (its unjittered matrices), the
@@ -82,10 +81,6 @@ namespace FSPhotoShadows
     LLVector3 jitterLightDir(U32 cascade, const LLVector3& light_dir);
     // ...and its projection moved by a fraction of a shadow map texel
     void jitterProjection(U32 cascade, glm::mat4& proj, F32 map_width, F32 map_height);
-
-    // Contact shadows: how much more noise offset and steps they take while blending
-    F32 noiseOffset();      // 0 to 1, a new one each frame while blending, else 0
-    bool moreSteps();
 
     // renderDeferredLighting, main camera, once the light map's sun channel is final: blends it
     // into the history and writes the blend back. depth_source owns the scene depth.

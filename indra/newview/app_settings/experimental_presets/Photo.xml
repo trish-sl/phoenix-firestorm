@@ -44,12 +44,6 @@
     <real>0.25</real>
     <key>FSRenderColoredShadows</key>
     <boolean>1</boolean>
-    <key>FSRenderContactShadowLength</key>
-    <real>0.5</real>
-    <key>FSRenderContactShadows</key>
-    <boolean>1</boolean>
-    <key>FSRenderContactShadowStrength</key>
-    <real>0.8</real>
     <key>FSRenderCreaseAO</key>
     <boolean>1</boolean>
     <key>FSRenderGTAO</key>

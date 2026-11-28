@@ -21,7 +21,7 @@
  */
 
 // FSRenderPhotoShadows (fsphotoshadows.cpp): blends this frame's sun shadow (the light map's red
-// channel, after the blur and the contact shadows) into the history of the frames before, each
+// channel, after the blur) into the history of the frames before, each
 // drawn with the light from another point of the sun's disc. Output, the next history:
 //  r: the blended sun shadow, g: frames blended (1 when it started over), b: the view depth (m)
 

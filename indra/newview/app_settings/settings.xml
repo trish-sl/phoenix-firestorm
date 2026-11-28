@@ -28274,39 +28274,6 @@ Change of this parameter will affect the layout of buttons in notification toast
       <key>Value</key>
       <real>0.3</real>
     </map>
-    <key>FSRenderContactShadows</key>
-    <map>
-      <key>Comment</key>
-      <string>EXPERIMENTAL. Screen-space contact shadows: a short depth buffer ray march towards the sun adds the small shadows the shadow maps miss (feet on the ground, folds, small props). Needs sun shadows. Changing it rebuilds the shaders.</string>
-      <key>Persist</key>
-      <integer>1</integer>
-      <key>Type</key>
-      <string>Boolean</string>
-      <key>Value</key>
-      <integer>0</integer>
-    </map>
-    <key>FSRenderContactShadowLength</key>
-    <map>
-      <key>Comment</key>
-      <string>EXPERIMENTAL. Length in meters of the contact shadow ray (0.05 to 2).</string>
-      <key>Persist</key>
-      <integer>1</integer>
-      <key>Type</key>
-      <string>F32</string>
-      <key>Value</key>
-      <real>0.5</real>
-    </map>
-    <key>FSRenderContactShadowStrength</key>
-    <map>
-      <key>Comment</key>
-      <string>EXPERIMENTAL. Darkness of the contact shadows (0 to 1).</string>
-      <key>Persist</key>
-      <integer>1</integer>
-      <key>Type</key>
-      <string>F32</string>
-      <key>Value</key>
-      <real>0.8</real>
-    </map>
     <key>FSRenderShadowSmoothFade</key>
     <map>
       <key>Comment</key>
@@ -29729,7 +29696,7 @@ Change of this parameter will affect the layout of buttons in notification toast
     <key>FSRenderReverseZ</key>
     <map>
       <key>Comment</key>
-      <string>EXPERIMENTAL. Reverse-Z depth: the depth buffer holds 1 at the near plane and 0 at the far plane, in 32 bit floating point, which spreads its precision evenly over distance instead of spending it all in the first few metres. Removes z-fighting on distant surfaces and sharpens everything that reads depth far away (screen-space reflections, ambient occlusion, contact shadows, fog). The shadow maps keep the standard depth. Needs OpenGL 4.5 or GL_ARB_clip_control; stays off without it. Changing it rebuilds the shaders and render targets.</string>
+      <string>EXPERIMENTAL. Reverse-Z depth: the depth buffer holds 1 at the near plane and 0 at the far plane, in 32 bit floating point, which spreads its precision evenly over distance instead of spending it all in the first few metres. Removes z-fighting on distant surfaces and sharpens everything that reads depth far away (screen-space reflections, ambient occlusion and fog). The shadow maps keep the standard depth. Needs OpenGL 4.5 or GL_ARB_clip_control; stays off without it. Changing it rebuilds the shaders and render targets.</string>
       <key>Persist</key>
       <integer>1</integer>
       <key>Type</key>
@@ -30004,7 +29971,7 @@ Change of this parameter will affect the layout of buttons in notification toast
     <key>FSRenderPhotoShadows</key>
     <map>
       <key>Comment</key>
-      <string>EXPERIMENTAL. Photo shadows: while the camera is still, and in snapshots, the sun shadows near the camera are drawn every frame with the light from another point of the sun's disc and the shadow map shifted by a fraction of a texel, and blended over the frames (up to FSRenderPhotoShadowsFrames). They settle in a second or two into the sun's real soft shadow: sharp where things touch, softer the further they fall, without stair steps. Contact shadows blend along. Starts over when the camera moves; moving shadows start over where they move. Costs nothing while the camera moves; snapshots take FSRenderPhotoShadowsSnapshotFrames frames more per tile.</string>
+      <string>EXPERIMENTAL. Photo shadows: while the camera is still, and in snapshots, the sun shadows near the camera are drawn every frame with the light from another point of the sun's disc and the shadow map shifted by a fraction of a texel, and blended over the frames (up to FSRenderPhotoShadowsFrames). They settle in a second or two into the sun's real soft shadow: sharp where things touch, softer the further they fall, without stair steps. Starts over when the camera moves; moving shadows start over where they move. Costs nothing while the camera moves; snapshots take FSRenderPhotoShadowsSnapshotFrames frames more per tile.</string>
       <key>Persist</key>
       <integer>1</integer>
       <key>Type</key>
