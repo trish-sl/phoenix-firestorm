@@ -42,7 +42,7 @@ class LLReflectionMapManager;
 // the maps they replace; for the next FSRenderProbeRefreshBlendTime seconds the probe's slot is
 // written again every frame as a mix of the two, from all old to all new. Radiance: two spare cubes
 // at the end of the probe cube array (allocated only while the setting is on; that costs a reset of
-// the probes when it is switched); irradiance: a 9 x 2 target of its own. Only probes that already
+// the probes when it is switched); irradiance: a 9 x 3 target of its own. Only probes that already
 // had complete maps blend (a new probe fades in as before), never the realtime probe (it changes every
 // frame anyway). One probe blends at a time: a refresh that completes while another blends ends that
 // blend at once. A blend is dropped, leaving the new maps, when the probe loses its slot, the cube
@@ -65,6 +65,9 @@ public:
     // The same for the irradiance coefficients of the last face of an irradiance pass
     static bool beginIrradiance(LLReflectionMapManager& mgr, LLReflectionMap* probe);
     static void endIrradiance(LLReflectionMapManager& mgr, LLReflectionMap* probe);
+    // Temporarily expose the new irradiance while capturing the probe's radiance.
+    static bool beginRadianceCapture(LLReflectionMapManager& mgr, LLReflectionMap* probe);
+    static void endRadianceCapture(LLReflectionMapManager& mgr, LLReflectionMap* probe);
 
     // LLReflectionMapManager::update, once a frame: writes the running blends
     static void step(LLReflectionMapManager& mgr);

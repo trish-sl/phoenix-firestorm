@@ -440,6 +440,14 @@ void LLReflectionMapManager::update()
     {
         mInvalidate = false;
         mEnvValid = false; // a new sky: the next version check moves the version on (FSPerfProbeReuseIrradiance, FSPerfProbeSlowSky)
+        // Any partial cube may contain faces from the old environment.
+        mUpdatingProbe = nullptr;
+        mUpdatingFace = 0;
+        mRadiancePass = false;
+        mFSUrgentProbeUpdate = false;
+        mRealtimeProbe = nullptr;
+        mRealtimeFace = 0;
+        mRealtimeRadiancePass = false;
         for (auto& probe : mProbes)
         {
             probe->mLastUpdateTime = 0.f;
@@ -517,7 +525,7 @@ void LLReflectionMapManager::update()
     auto run_probe_faces = [this]()
     {
         LLReflectionMap* probe = mUpdatingProbe;
-        const U32 faces = (!probe->mComplete && (probe->mInView || probe == mDefaultProbe)) ?
+        const U32 faces = ((!probe->mComplete || mFSUrgentProbeUpdate) && (probe->mInView || probe == mDefaultProbe)) ?
             llclamp((U32)fs_new_faces, 1U, 12U) : 1U;
         for (U32 k = 0; k < faces && mUpdatingProbe == probe; ++k)
         {
@@ -538,7 +546,7 @@ void LLReflectionMapManager::update()
         // map is complete: the sky changes slowly, and a moving probe's cube still turns over every
         // 6 x interval frames. A probe still filling its first map keeps one face a frame.
         const bool refreshing = mUpdatingProbe->mComplete;
-        if (!refreshing || refresh_interval <= 1 || (LLFrameTimer::getFrameCount() % refresh_interval) == 0)
+        if (!refreshing || mFSUrgentProbeUpdate || refresh_interval <= 1 || (LLFrameTimer::getFrameCount() % refresh_interval) == 0)
         {
             //doProbeUpdate();
             run_probe_faces(); // FSRenderProbeNewFacesPerFrame
@@ -825,14 +833,14 @@ void LLReflectionMapManager::update()
             // <FS:Trish> Once every probe is complete the oldest one was re-rendered forever, one cube face every frame.
             // Leave complete static probes alone until they reach a minimum age, sky changes reset their update time.
             static LLCachedControl<F32> sMinRefresh(gSavedSettings, "RenderReflectionProbeMinRefresh", 0.f);
-            const bool recently_refreshed = probe->mComplete && !probe->getIsDynamic() &&
+            const bool recently_refreshed = probe->mComplete && probe->mLastUpdateTime > 0.f && !probe->getIsDynamic() &&
                 (gFrameTimeSeconds - probe->mLastUpdateTime) < sMinRefresh;
             // </FS:Trish>
             if (!did_update &&
                 i < mReflectionProbeCount &&
                 !probe->mOrphaned && // <FS:Trish/>
                 !recently_refreshed && // <FS:Trish/>
-                !(skip_unchanged && isProbeUnchanged(probe, fs_max_stale)) && // <FS:Trish/>
+                !(skip_unchanged && probe->mLastUpdateTime > 0.f && isProbeUnchanged(probe, fs_max_stale)) && // <FS:Trish/>
                 !(fs_probe_hold && probe->mComplete && probe->mLastUpdateTime > 0.f) && // <FS:Trish/> FSRenderMovingProbeHold
                 (oldestProbe == nullptr ||
                     check_priority(probe, oldestProbe)))
@@ -914,6 +922,13 @@ void LLReflectionMapManager::update()
       // </FS:Trish>
     }
 
+    // <FS:Trish> The default probe must be ready before local probes can be sampled.
+    if (!mDefaultProbe->mComplete)
+    {
+        oldestProbe = mDefaultProbe;
+    }
+    // </FS:Trish>
+
     // <FS:Trish> FSRenderMovingProbeHold: while the camera walks, runs or turns (FSRenderLighterWhileMoving), probes
     // that already have a map aren't refreshed; they are once the camera is still. New probes, and probes a sky
     // change invalidated (their update time reset), are still captured, and a refresh already under way finishes.
@@ -935,6 +950,7 @@ void LLReflectionMapManager::update()
         probe->autoAdjustOrigin();
 
         sUpdateCount++;
+        mFSUrgentProbeUpdate = (probe->mLastUpdateTime <= 0.f); // <FS:Trish/> sky invalidation
         mUpdatingProbe = probe;
         // <FS:Trish> Remember what the world looked like when this capture started
         probe->mFSUpdateStart = gFrameTimeSeconds;
@@ -958,7 +974,8 @@ void LLReflectionMapManager::update()
     {
         // as far as this occluded probe is concerned, an origin/radius update is as good as a full update
         oldestOccluded->autoAdjustOrigin();
-        oldestOccluded->mLastUpdateTime = gFrameTimeSeconds;
+        if (oldestOccluded->mLastUpdateTime > 0.f) // <FS:Trish/> preserve sky invalidation until recaptured
+            oldestOccluded->mLastUpdateTime = gFrameTimeSeconds;
     }
 }
 
@@ -1066,6 +1083,20 @@ void LLReflectionMapManager::getReflectionMaps(std::vector<LLReflectionMap*>& ma
     LLViewerCamera* camera = LLViewerCamera::getInstance();
     // </FS:Trish>
 
+    // <FS:Trish> Index zero belongs to the default probe. Wait for its new maps.
+    if (mDefaultProbe.isNull() || !mDefaultProbe->mComplete)
+    {
+        for (auto& probe : mProbes)
+        {
+            probe->mProbeIndex = -1;
+        }
+        if (!maps.empty())
+        {
+            maps[0] = nullptr;
+        }
+        return;
+    }
+    // </FS:Trish>
     U32 count = 0;
     U32 lastIdx = 0;
     for (U32 i = 0; count < maps.size() && i < mProbes.size(); ++i)
@@ -1469,6 +1500,10 @@ void LLReflectionMapManager::updateProbeFace(LLReflectionMap* probe, U32 face)
         mLightScale = max_local_light_ambiance / probe->getAmbiance();
     }
 
+    // <FS:Trish> Capture radiance with the new irradiance, while preserving
+    // the old-to-new blend displayed by the main view.
+    const bool fs_capture_new_irradiance = isRadiancePass() && FSProbeBlend::beginRadianceCapture(*this, probe);
+    // </FS:Trish>
     if (probe == mDefaultProbe)
     {
         touch_default_probe(probe);
@@ -1505,6 +1540,11 @@ void LLReflectionMapManager::updateProbeFace(LLReflectionMap* probe, U32 face)
         // </FS:Trish>
     }
 
+    if (fs_capture_new_irradiance) // <FS:Trish> restore the displayed blend
+    {
+        FSProbeBlend::endRadianceCapture(*this, probe);
+    }
+    // </FS:Trish>
     gPipeline.mRT = &gPipeline.mMainRT;
 
     S32 sourceIdx = mReflectionProbeCount;
@@ -1747,6 +1787,12 @@ void LLReflectionMapManager::pause(F32 duration)
 
 void LLReflectionMapManager::resume()
 {
+    // <FS:Trish> Invalidate again once the new sky is in place.
+    if (mPaused)
+    {
+        invalidate();
+    }
+    // </FS:Trish>
     mPaused = false;
 }
 
@@ -2256,7 +2302,7 @@ void LLReflectionMapManager::initReflectionMaps()
         // </FS:Trish>
 
         // if default probe already exists, remember whether or not it's complete (SL-20498)
-        bool default_complete = mDefaultProbe.isNull() ? false : mDefaultProbe->mComplete;
+        //bool default_complete = mDefaultProbe.isNull() ? false : mDefaultProbe->mComplete; // <FS:Trish/> SH storage was reallocated
 
         for (auto& probe : mProbes)
         {
@@ -2302,7 +2348,8 @@ void LLReflectionMapManager::initReflectionMaps()
         mDefaultProbe->mDistance = 64.f;
         mDefaultProbe->mRadius = 4096.f;
         mDefaultProbe->mProbeIndex = 0;
-        mDefaultProbe->mComplete = default_complete;
+        //mDefaultProbe->mComplete = default_complete; // <FS:Trish>
+        mDefaultProbe->mComplete = false; // </FS:Trish>
 
         touch_default_probe(mDefaultProbe);
     }
@@ -2664,6 +2711,12 @@ void LLReflectionMapManager::updateEnvironmentVersion(F32 angle_threshold_deg)
 bool LLReflectionMapManager::reuseIrradiance(LLReflectionMap* probe)
 {
     static LLCachedControl<F32> max_age(gSavedSettings, "FSPerfProbeIrradianceMaxAge", 60.f);
+    // <FS:Trish> Light changes need not rebuild geometry, so recapture in lit scenes.
+    if (probe != mDefaultProbe && gPipeline.getLightCount() > 0)
+    {
+        return false;
+    }
+    // </FS:Trish>
     if (!probe->mComplete || probe->mFSIrradianceTime < 0.f || probe->mFSIrradianceIndex != probe->mCubeIndex ||
         probe->mFSIrradianceEnv != mEnvVersion)
     {
@@ -2704,6 +2757,12 @@ void LLReflectionMapManager::logIrradianceReuse()
 // changes the picture without rebuilding anything).
 bool LLReflectionMapManager::isProbeUnchanged(LLReflectionMap* probe, F32 max_stale)
 {
+    // <FS:Trish> Geometry checks alone cannot detect every local light change.
+    if (gPipeline.getLightCount() > 0)
+    {
+        return false;
+    }
+    // </FS:Trish>
     if (!probe->mComplete || probe == mDefaultProbe || probe->getIsDynamic() || probe->mFSUpdateStart < 0.f)
     {
         return false;

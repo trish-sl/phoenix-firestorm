@@ -295,6 +295,7 @@ private:
 
     LLReflectionMap* mUpdatingProbe = nullptr;
     U32 mUpdatingFace = 0;
+    bool mFSUrgentProbeUpdate = false; // <FS:Trish/> refresh invalidated lighting without the normal throttle
 
     // if true, we're generating the radiance map for the current probe, otherwise we're generating the irradiance map.
     // Update sequence should be to generate the irradiance map from render of the world that has no irradiance,

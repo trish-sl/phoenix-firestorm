@@ -152,6 +152,7 @@ void preProbeSample(vec3 pos)
     // populate self-contained instead of correct by coincidence; it is a no-op on
     // every existing call path.
     probeInfluences = 0;
+    if (refmapCount == 0) return; // <FS:Trish/> no completed default probe
 
 #if REFMAP_LEVEL > 0
 
@@ -681,7 +682,7 @@ vec3 tapIrradianceMap(vec3 pos, vec3 dir, out float w, out float dw, vec3 c, int
 // walk over the local probes. In classic mode the full path takes the sky ambient as it is too.
 vec3 fsSampleProbeAmbientCheap(vec3 pos, vec3 norm, vec3 amblit)
 {
-    if (classic_mode != 0)
+    if (classic_mode != 0 || refmapCount == 0) // <FS:Trish/> no completed default probe
     {
         return amblit;
     }
@@ -734,6 +735,7 @@ void fsSampleReflectionProbesLegacyCheap(inout vec3 ambenv, inout vec3 glossenv,
 
 vec3 sampleProbes(vec3 pos, vec3 dir, float lod)
 {
+    if (refmapCount == 0) return vec3(0.0); // <FS:Trish/> no completed default probe
     float wsum[2];
     wsum[0] = 0;
     wsum[1] = 0;
@@ -792,6 +794,7 @@ vec3 sampleProbes(vec3 pos, vec3 dir, float lod)
 
 vec3 sampleProbeAmbient(vec3 pos, vec3 dir, vec3 amblit)
 {
+    if (refmapCount == 0) return amblit; // <FS:Trish/> no completed default probe
     // modified copy/paste of sampleProbes follows, will likely diverge from sampleProbes further
     // as irradiance map mixing is tuned independently of radiance map mixing
     float wsum[2];
@@ -862,6 +865,14 @@ vec3 sampleProbeAmbient(vec3 pos, vec3 dir, vec3 amblit)
 void sampleProbesAmbientAndGloss(vec3 pos, vec3 norm, vec3 refDir, float lod, vec3 amblit,
                                  out vec3 ambenv, out vec3 glossenv)
 {
+    // <FS:Trish> Use ambient light until the default probe is ready.
+    if (refmapCount == 0)
+    {
+        ambenv = amblit;
+        glossenv = vec3(0.0);
+        return;
+    }
+    // </FS:Trish>
     float wsum[2];
     wsum[0] = 0;
     wsum[1] = 0;
@@ -1175,7 +1186,7 @@ void sampleReflectionProbesWater(inout vec3 ambenv, inout vec3 glossenv,
     preProbeSample(pos);
     sample_automatic = true;
     // always include void probe on water
-    if (probeInfluences < REF_SAMPLE_COUNT)
+    if (refmapCount > 0 && probeInfluences < REF_SAMPLE_COUNT) // <FS:Trish/> no default while recapturing
     {
         probeIndex[probeInfluences++] = 0;
     }

@@ -54,7 +54,7 @@ namespace
     LLGLSLShader sSHProgram;        // irradianceGenV.glsl + fsProbeBlendSHF.glsl
     bool sProgramsTried = false;
 
-    // row 0: the probe's coefficients before the refresh, row 1: after
+    // Rows 0 and 1 hold the old and new coefficients; row 2 saves the on-screen blend during capture.
     LLRenderTarget sSHStash;
 
     struct Blend
@@ -143,7 +143,7 @@ namespace
         {
             return true;
         }
-        if (!sSHStash.allocate(SH_COEFFS, 2, GL_RGBA16F))
+        if (!sSHStash.allocate(SH_COEFFS, 3, GL_RGBA16F))
         {
             return false;
         }
@@ -249,6 +249,30 @@ void FSProbeBlend::endIrradiance(LLReflectionMapManager& mgr, LLReflectionMap* p
     sIrradiance.mIndex = (S32)row;
     sIrradiance.mStart = (F32)gFrameTimeSeconds;
     sIrradiance.mActive = true;
+}
+
+// The radiance pass must see the new irradiance, even while the main view is
+// fading from the old coefficients. Restore the displayed blend after each face.
+bool FSProbeBlend::beginRadianceCapture(LLReflectionMapManager& mgr, LLReflectionMap* probe)
+{
+    if (!sIrradiance.mActive || sIrradiance.mProbe != probe || !probe ||
+        probe->mCubeIndex != sIrradiance.mIndex || !mgr.mSHCoeffs.isComplete() || !sSHStash.isComplete())
+    {
+        return false;
+    }
+    const U32 row = (U32)sIrradiance.mIndex;
+    copy_sh_row(mgr.mSHCoeffs, row, sSHStash, 2);
+    copy_sh_row(sSHStash, 1, mgr.mSHCoeffs, row);
+    return true;
+}
+
+void FSProbeBlend::endRadianceCapture(LLReflectionMapManager& mgr, LLReflectionMap* probe)
+{
+    if (sIrradiance.mActive && sIrradiance.mProbe == probe && probe &&
+        probe->mCubeIndex == sIrradiance.mIndex && mgr.mSHCoeffs.isComplete() && sSHStash.isComplete())
+    {
+        copy_sh_row(sSHStash, 2, mgr.mSHCoeffs, (U32)sIrradiance.mIndex);
+    }
 }
 
 // static

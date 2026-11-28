@@ -1650,6 +1650,14 @@ void LLEnvironment::updateEnvironment(LLSettingsBase::Seconds transition, bool f
         }
         else
         {
+            // <FS:Trish> Instant sky changes do not pass through DayTransition::animate().
+            const LLSettingsSky::ptr_t old_sky = mCurrentEnvironment->getSky();
+            const LLSettingsSky::ptr_t new_sky = pinstance->getSky();
+            if (old_sky && new_sky && old_sky->getHash() != new_sky->getHash())
+            {
+                gPipeline.mReflectionMapManager.invalidate();
+            }
+            // </FS:Trish>
             mCurrentEnvironment = pinstance;
         }
 
@@ -3612,6 +3620,7 @@ namespace
         {
             mBlenderSky.reset();
             mInjectedSky->setSource(psky);
+            gPipeline.mReflectionMapManager.invalidate(); // <FS:Trish/> instant sky change
         }
         else
         {
