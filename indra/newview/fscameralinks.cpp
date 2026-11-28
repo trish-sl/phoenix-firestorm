@@ -1057,6 +1057,36 @@ namespace FSCameraLinks
         LLNotificationsUtil::add("FSCameraLinkTeleport", args, payload, on_teleport_confirmed);
     }
 
+    void applyToCurrentTarget(const View& view)
+    {
+        if (!view.hasTarget())
+        {
+            return;
+        }
+        // An explicit selection lets the user switch targets even while another is being followed.
+        LLViewerObject* target = follow_root(LLSelectMgr::getInstance()->getSelection()->getFirstRootObject(true));
+        if (!target && sFollowActive)
+        {
+            target = find_target(sFollowView.mTarget);
+        }
+        if (!target && !gAgentCamera.getFocusOnAvatar())
+        {
+            target = follow_root(gAgentCamera.getFocusObject().get());
+        }
+        if (!target && gAgentCamera.getFocusOnAvatar() && isAgentAvatarValid())
+        {
+            target = gAgentAvatarp.get();
+        }
+        if (!target || !find_target(target->getID()))
+        {
+            LLNotificationsUtil::add("FSCameraLinkNoTarget");
+            return;
+        }
+        View retargeted = view;
+        retargeted.mTarget = target->getID();
+        activate(retargeted);
+    }
+
     bool buildCheckedLink(const View& view, std::string& link)
     {
         link = buildLink(view);

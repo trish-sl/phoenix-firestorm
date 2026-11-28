@@ -1192,6 +1192,12 @@ void FSFloaterCameraBookmarks::onClickMove(S32 offset)
 bool FSFloaterCameraBookmarks::onBookmarkMenuEnable(const std::string& action)
 {
     const size_t selected = selectedIndices().size();
+    if (action == "apply_target")
+    {
+        const S32 index = selectedIndex();
+        FSCameraLinks::View view;
+        return index >= 0 && FSCameraLinks::parseLink(mBookmarks[index]["link"].asString(), view) && view.hasTarget();
+    }
     if (action == "go" || action == "rename" || action == "update")
     {
         return selected == 1;
@@ -1208,6 +1214,15 @@ void FSFloaterCameraBookmarks::onBookmarkMenu(const std::string& action)
     if (action == "go")
     {
         onClickGo();
+    }
+    else if (action == "apply_target")
+    {
+        FSCameraLinks::View view;
+        const S32 index = selectedIndex();
+        if (index >= 0 && FSCameraLinks::parseLink(mBookmarks[index]["link"].asString(), view) && view.hasTarget())
+        {
+            FSCameraLinks::applyToCurrentTarget(view);
+        }
     }
     else if (action == "copy")
     {

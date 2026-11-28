@@ -90,6 +90,10 @@ namespace FSCameraLinks
     // Follow a given link
     void activate(const View& view);
 
+    // Apply a follow view to the selected object, or the current camera target if none is selected.
+    // The view itself is not changed.
+    void applyToCurrentTarget(const View& view);
+
     // Copy a link to the current camera view to the clipboard (menu item)
     void copyCurrentViewLink();
 

@@ -14,6 +14,17 @@
 		 parameter="go"/>
 	</menu_item_call>
 	<menu_item_call
+	 label="Apply to Current Target"
+	 layout="topleft"
+	 name="apply_target">
+		<menu_item_call.on_click
+		 function="CameraBookmark.Action"
+		 parameter="apply_target"/>
+		<menu_item_call.on_enable
+		 function="CameraBookmark.Enable"
+		 parameter="apply_target"/>
+	</menu_item_call>
+	<menu_item_call
 	 label="Copy Link"
 	 layout="topleft"
 	 name="copy">
