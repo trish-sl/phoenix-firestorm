@@ -44,6 +44,7 @@
 #include "lltoolfocus.h"
 #include "lltoolmgr.h"
 #include "llwebprofile.h"
+#include "fscutoutmaterials.h" // <FS:Trish/> Snapshot paper cutout
 
 // <FS:CR> FIRE-9621 - Hide Profile panel on Snapshots on non-sl grids
 #ifdef OPENSIM
@@ -161,6 +162,9 @@ static void fs_update_avatars_only_options(LLFloaterSnapshotBase* floater)
     {
         floater->getChildView(name)->setEnabled(enabled);
     }
+    // Snapshot paper cutout: needs an avatars only snapshot to cut out
+    LLSnapshotLivePreview* previewp = floater->getPreviewView();
+    floater->getChildView("paper_cutout_btn")->setEnabled(enabled && previewp && previewp->getSnapshotUpToDate());
 }
 // </FS:Trish>
 
@@ -1235,6 +1239,12 @@ bool LLFloaterSnapshot::postBuild()
     //getChild<LLTextBox>("360_label")->setClickedCallback(boost::bind(&LLFloaterSnapshot::on360Snapshot, this));
     getChild<LLButton>("360_label")->setCommitCallback(boost::bind(&LLFloaterSnapshot::on360Snapshot, this));
     // </FS:Ansariel>
+    // <FS:Trish> Snapshot paper cutout
+    getChild<LLButton>("paper_cutout_btn")->setCommitCallback([this](LLUICtrl*, const LLSD&)
+        {
+            FSCutoutMaterials::instance().createFromSnapshot(getPreviewView());
+        });
+    // </FS:Trish>
 
     // Filters
     LLComboBox* filterbox = getChild<LLComboBox>("filters_combobox");

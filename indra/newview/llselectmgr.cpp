@@ -117,6 +117,7 @@
 #include "llinventoryobserver.h"
 #include "llscripteditorws.h"
 #include "fscommon.h"
+#include "fscutoutmaterials.h" // <FS:Trish/> Snapshot paper cutout
 
 LLViewerObject* getSelectedParentObject(LLViewerObject *object) ;
 //
@@ -6411,6 +6412,7 @@ void LLSelectMgr::processObjectProperties(LLMessageSystem* msg, void** user_data
             node->mFromTaskID = from_task_id;
             node->mName.assign(name);
             node->mDescription.assign(desc);
+            FSCutoutMaterials::instance().onObjectProperties(node->getObject(), name); // <FS:Trish/> Snapshot paper cutout
 
             LLViewerObject* obj = node->getObject();
             if (obj && LLViewerObject::isObjectInPendingUpdate(owner_id, obj))

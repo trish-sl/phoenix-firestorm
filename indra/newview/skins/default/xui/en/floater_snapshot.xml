@@ -153,6 +153,18 @@
          width="100">
             Capture:
         </text>
+        <!-- <FS:Trish> Snapshot paper cutout -->
+        <button
+         follows="left|top"
+         height="18"
+         label="Paper cutout..."
+         tool_tip="Turn this Avatars only (transparent) snapshot into a paper cutout mesh and its material, ready to upload."
+         layout="topleft"
+         left="100"
+         name="paper_cutout_btn"
+         top_delta="-4"
+         width="108" />
+        <!-- </FS:Trish> -->
         <combo_box
          follows="left|top|right"
          height="23"

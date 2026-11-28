@@ -15751,6 +15751,29 @@ Do you want to paste selected no-copy objects as links?
   </notification>
   <!-- </FS:Trish> -->
 
+  <!-- <FS:Trish> Snapshot paper cutout -->
+  <notification
+   icon="alertmodal.tga"
+   name="FSCutoutNoAlpha"
+   type="alertmodal">
+Nothing to cut out: use an Avatars only (transparent) snapshot saved as PNG, with advanced lighting on.
+    <tag>fail</tag>
+    <usetemplate
+     name="okbutton"
+     yestext="OK"/>
+  </notification>
+  <notification
+   icon="alertmodal.tga"
+   name="FSCutoutFailed"
+   type="alertmodal">
+Could not make the paper cutout: the snapshot is too large.
+    <tag>fail</tag>
+    <usetemplate
+     name="okbutton"
+     yestext="OK"/>
+  </notification>
+  <!-- </FS:Trish> -->
+
   <!-- <FS:Trish> Make root -->
   <notification
    icon="alertmodal.tga"

@@ -102,6 +102,7 @@
 #include "fsareasearch.h" // <FS:Cron> Added to provide the ability to update the impact costs in area search. </FS:Cron>
 #include "llavataractions.h"
 #include "fstaa.h" // <FS:Trish/> FSRenderTAA
+#include "fscutoutmaterials.h" // <FS:Trish/> Snapshot paper cutout
 
 extern F32 gMinObjectDistance;
 extern bool gAnimateTextures;
@@ -396,6 +397,7 @@ void LLViewerObjectList::processUpdateCore(LLViewerObject* objectp,
     if (just_created)
     {
         gPipeline.addObject(objectp);
+        FSCutoutMaterials::onObjectCreated(objectp); // <FS:Trish/> Snapshot paper cutout: material applied on rez
     }
 
     // Also sets the approx. pixel area

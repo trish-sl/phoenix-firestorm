@@ -67,6 +67,7 @@
 #include <boost/iostreams/device/array.hpp>
 #include <boost/iostreams/stream.hpp>
 #include <future> // <FS:Trish/>
+#include "fscutoutmaterials.h" // <FS:Trish/> Snapshot paper cutout
 
 const std::string MATERIAL_BASE_COLOR_DEFAULT_NAME = "Base Color";
 const std::string MATERIAL_NORMAL_DEFAULT_NAME = "Normal";
@@ -1640,10 +1641,14 @@ public:
                 inv_item_id,
                 LLAssetType::AT_MATERIAL,
                 mAssetData,
-                [changed, updates](LLUUID item_id, LLUUID new_asset_id, LLUUID new_item_id, LLSD response)
+                // <FS:Trish> Snapshot paper cutout: the material is applied to the cutout on rez
+                //[changed, updates](LLUUID item_id, LLUUID new_asset_id, LLUUID new_item_id, LLSD response)
+                [changed, updates, name = mNewName](LLUUID item_id, LLUUID new_asset_id, LLUUID new_item_id, LLSD response)
+                // </FS:Trish>
                 {
                     // done callback
                     LL_INFOS("Material") << "inventory item uploaded.  item: " << item_id << " new_item_id: " << new_item_id << " response: " << response << LL_ENDL;
+                    FSCutoutMaterials::instance().onMaterialUploaded(name, new_asset_id); // <FS:Trish/> Snapshot paper cutout
 
                     // *HACK: Sometimes permissions do not stick in the UI. They are correct on the server-side, though.
                     if (changed)
@@ -3862,7 +3867,10 @@ S32 LLMaterialEditor::saveTextures()
         // For ease of inventory management, we prepend the material name.
         std::string name = mMaterialName + ": " + mBaseColorName;
 
-        saveTexture(mBaseColorJ2C, name, mBaseColorTextureUploadId, [key](LLUUID newAssetId, LLSD response)
+        // <FS:Trish> Paper cutouts point emissive at the same pending upload: swap it to the new asset too
+        //saveTexture(mBaseColorJ2C, name, mBaseColorTextureUploadId, [key](LLUUID newAssetId, LLSD response)
+        saveTexture(mBaseColorJ2C, name, mBaseColorTextureUploadId, [key, upload_id = mBaseColorTextureUploadId](LLUUID newAssetId, LLSD response)
+        // </FS:Trish>
         {
             LLMaterialEditor* me = LLFloaterReg::findTypedInstance<LLMaterialEditor>("material_editor", key);
             if (me)
@@ -3870,6 +3878,12 @@ S32 LLMaterialEditor::saveTextures()
                 if (response["success"].asBoolean())
                 {
                     me->setBaseColorId(newAssetId);
+                    // <FS:Trish>
+                    if (me->getEmissiveId() == upload_id)
+                    {
+                        me->setEmissiveId(newAssetId);
+                    }
+                    // </FS:Trish>
 
                     // discard upload buffers once texture have been saved
                     me->mBaseColorJ2C = nullptr;

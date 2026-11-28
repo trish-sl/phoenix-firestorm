@@ -108,6 +108,10 @@ set(viewer_SOURCE_FILES
     fsareasearch.cpp
     fsareasearchmenu.cpp
     fsassetblacklist.cpp
+    fscutoutmaterials.cpp # <FS:Trish/> Snapshot paper cutout
+    fscutoutgltf.cpp # <FS:Trish/> Snapshot paper cutout
+    fscutoutmesh.cpp # <FS:Trish/> Snapshot paper cutout
+    fscutoutviewer.cpp # <FS:Trish/> Snapshot paper cutout
     fsavataralpha.cpp
     fsavatarrenderpersistence.cpp
     fsavatartribudget.cpp
@@ -1066,6 +1070,9 @@ set(viewer_HEADER_FILES
     fsareasearch.h
     fsareasearchmenu.h
     fsassetblacklist.h
+    fscutoutgltf.h # <FS:Trish/> Snapshot paper cutout
+    fscutoutmaterials.h # <FS:Trish/> Snapshot paper cutout
+    fscutoutmesh.h # <FS:Trish/> Snapshot paper cutout
     fsavataralpha.h
     fsavatarrenderpersistence.h
     fsavatartribudget.h
@@ -3281,6 +3288,9 @@ if (LL_TESTS)
     llworldmap.cpp
     llworldmipmap.cpp
     fsscriptrepos.cpp # <FS:Trish/> Script repositories core
+    fscutoutmesh.cpp # <FS:Trish/> Snapshot paper cutout outline tracer
+    fscutoutmaterials.cpp # <FS:Trish/> Snapshot paper cutout material store
+    fscutoutgltf.cpp # <FS:Trish/> Snapshot paper cutout glTF writer
   )
 
   set_source_files_properties(
@@ -3347,6 +3357,17 @@ if (LL_TESTS)
   # <FS:Trish> Script repositories core: llcommon and minizip-ng only
   set_property(SOURCE fsscriptrepos.cpp PROPERTY
     LL_TEST_ADDITIONAL_LIBRARIES llcommon ll::minizip-ng)
+  # </FS:Trish>
+  # <FS:Trish> Paper cutout outline tracer: llmath and llcommon only
+  set_property(SOURCE fscutoutmesh.cpp PROPERTY
+    LL_TEST_ADDITIONAL_LIBRARIES llmath llcommon)
+  set_property(SOURCE fscutoutmaterials.cpp PROPERTY
+    LL_TEST_ADDITIONAL_LIBRARIES llcommon)
+  # Paper cutout glTF writer: needs the mesh builder; tinygltf is header-only (the test defines the implementation)
+  set_property(SOURCE fscutoutgltf.cpp PROPERTY
+    LL_TEST_ADDITIONAL_LIBRARIES llmath llcommon)
+  set_source_files_properties(fscutoutgltf.cpp PROPERTIES
+    LL_TEST_ADDITIONAL_SOURCE_FILES fscutoutmesh.cpp)
   # </FS:Trish>
 
   set_source_files_properties(
