@@ -1675,7 +1675,8 @@ F32 LLViewerTextureList::updateImagesCreateTextures(F32 max_time)
         while (!mDownScaleQueue.empty())
         {
             LLViewerFetchedTexture* image = mDownScaleQueue.front();
-            const bool faceless = image->mFSFacelessRelease && FSTextureRelease::active();
+            const bool faceless = image->mFSFacelessRelease && FSTextureRelease::active() &&
+                                  !image->fsNameTagNeedsFullResolution();
             if (faceless || LLViewerTexture::fsShouldDownscale(image->getDiscardLevel(), image->getDesiredDiscardLevel(), image->getGLTexture()))
             {
                 keep.push(image);

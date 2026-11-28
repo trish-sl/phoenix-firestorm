@@ -28360,7 +28360,7 @@ Change of this parameter will affect the layout of buttons in notification toast
       <key>Type</key>
       <string>F32</string>
       <key>Value</key>
-      <real>1.0</real>
+      <real>0.15</real>
     </map>
     <key>FSRenderSpotVolumetricDensity</key>
     <map>
@@ -28371,7 +28371,7 @@ Change of this parameter will affect the layout of buttons in notification toast
       <key>Type</key>
       <string>F32</string>
       <key>Value</key>
-      <real>0.05</real>
+      <real>0.01</real>
     </map>
     <key>FSRenderSpotVolumetricNearRange</key>
     <map>
@@ -28459,7 +28459,7 @@ Change of this parameter will affect the layout of buttons in notification toast
       <key>Type</key>
       <string>Boolean</string>
       <key>Value</key>
-      <integer>0</integer>
+      <integer>1</integer>
     </map>
     <key>FSRenderPointLightScatter</key>
     <map>

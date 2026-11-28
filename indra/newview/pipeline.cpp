@@ -18345,8 +18345,8 @@ void LLPipeline::renderUnderwaterRays()
 void LLPipeline::renderSpotVolumetrics()
 {
     static LLCachedControl<bool> enabled(gSavedSettings, "FSRenderSpotVolumetric", false);
-    static LLCachedControl<F32> strength(gSavedSettings, "FSRenderSpotVolumetricStrength", 1.f);
-    static LLCachedControl<F32> density(gSavedSettings, "FSRenderSpotVolumetricDensity", 0.05f);
+    static LLCachedControl<F32> strength(gSavedSettings, "FSRenderSpotVolumetricStrength", 0.15f);
+    static LLCachedControl<F32> density(gSavedSettings, "FSRenderSpotVolumetricDensity", 0.01f);
     static LLCachedControl<S32> max_lights(gSavedSettings, "FSRenderSpotVolumetricMaxLights", 4);
     static LLCachedControl<F32> resolution(gSavedSettings, "FSRenderSpotVolumetricResolution", 0.5f);
     static LLCachedControl<S32> steps(gSavedSettings, "FSRenderSpotVolumetricSteps", 8);
@@ -18358,7 +18358,7 @@ void LLPipeline::renderSpotVolumetrics()
     // before the projectors, so they share its resolution, temporal resolve and composite
     static LLCachedControl<F32> point_strength(gSavedSettings, "FSRenderPointLightScatterStrength", 1.f);
     static LLCachedControl<S32> point_max_lights(gSavedSettings, "FSRenderPointLightScatterMaxLights", 16);
-    static LLCachedControl<bool> spot_height_fog(gSavedSettings, "FSRenderSpotVolumetricUseHeightFog", false);
+    static LLCachedControl<bool> spot_height_fog(gSavedSettings, "FSRenderSpotVolumetricUseHeightFog", true);
     const bool fs_points = FSClusteredLights::scatterWanted();
     // </FS:Trish>
 

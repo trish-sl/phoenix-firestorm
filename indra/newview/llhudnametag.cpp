@@ -149,6 +149,7 @@ namespace
                 has_picture = false;
                 return nullptr;
             }
+            entry.mTexture->fsRequestNameTagFullResolution(); // <FS:Trish/> also applies to already-cached textures
             return entry.mTexture->getDiscardLevel() >= 0 ? entry.mTexture.get() : nullptr;
         }
 

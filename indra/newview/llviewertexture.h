@@ -422,6 +422,12 @@ public:
     S32  getDesiredDiscardLevel()            { return mDesiredDiscardLevel; }
     void setMinDiscardLevel(S32 discard)    { mMinDesiredDiscardLevel = llmin(mMinDesiredDiscardLevel,(S8)discard); }
 
+    // <FS:Trish> A visible nametag portrait needs the original texture, even
+    // when the shared texture was previously loaded for a smaller use.
+    void fsRequestNameTagFullResolution();
+    bool fsNameTagNeedsFullResolution() const;
+    // </FS:Trish>
+
     void setBoostLevel(S32 level) override;
     bool updateFetch();
 
@@ -538,6 +544,7 @@ private:
 
 private:
     bool  mFullyLoaded;
+    F64 mFSNameTagFullResolutionUntil = 0.0; // <FS:Trish/> short lease renewed by visible nametags
     bool  mInFastCacheList;
     // <FS:Trish> FSPerfDiskThread: the fast cache read runs on the disk thread; mInFastCacheList stays
     // set until its result is applied, so nothing fetches meanwhile

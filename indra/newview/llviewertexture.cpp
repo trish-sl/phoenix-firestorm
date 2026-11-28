@@ -2881,12 +2881,49 @@ void LLViewerFetchedTexture::setDebugText(const std::string& text)
 
 extern bool gCubeSnapshot;
 
+// <FS:Trish> Nametag portraits can share an existing scene texture. A fresh
+// request must override its previous desired discard and wake a completed fetch.
+void LLViewerFetchedTexture::fsRequestNameTagFullResolution()
+{
+    if (!fsNameTagNeedsFullResolution())
+    {
+        // Retry once when a portrait becomes visible after an earlier fetch
+        // stopped at a coarser level; don't reset the failure floor every frame.
+        mMinDiscardLevel = 0;
+    }
+    mFSNameTagFullResolutionUntil = LLFrameTimer::getElapsedSeconds() + 2.0;
+    // Also refresh virtual size when this texture was already UI-boosted.
+    setBoostLevel(llmax((S32)getBoostLevel(), (S32)LLGLTexture::BOOST_UI));
+    mDesiredDiscardLevel = 0;
+    if (getDiscardLevel() != 0)
+    {
+        mFullyLoaded = false;
+    }
+}
+
+bool LLViewerFetchedTexture::fsNameTagNeedsFullResolution() const
+{
+    return mFSNameTagFullResolutionUntil > LLFrameTimer::getElapsedSeconds();
+}
+// </FS:Trish>
+
 //virtual
 void LLViewerFetchedTexture::processTextureStats()
 {
     LL_PROFILE_ZONE_SCOPED_CATEGORY_TEXTURE;
     llassert(!gCubeSnapshot);  // should only be called when the main camera is active
     llassert(!LLPipeline::sShadowRender);
+
+    // <FS:Trish> Ignore a shared texture's draw-size or residency bias while
+    // a nametag requests it, including 4096-pixel profile images.
+    if (fsNameTagNeedsFullResolution())
+    {
+        updateVirtualSize();
+        mDesiredDiscardLevel = 0;
+        if (getDiscardLevel() != 0) mFullyLoaded = false;
+        return;
+    }
+    // </FS:Trish>
 
     if(mFullyLoaded)
     {
@@ -3377,7 +3414,7 @@ bool LLViewerFetchedTexture::updateFetch()
     // Compare against the same target that will be sent to the worker.
     static LLCachedControl<U32> sTextureDiscardLevel(gSavedSettings, "TextureDiscardLevel");
     const U32 override_tex_discard_level = sTextureDiscardLevel();
-    if (override_tex_discard_level != 0 && override_tex_discard_level <= MAX_DISCARD_LEVEL)
+    if (!fsNameTagNeedsFullResolution() && override_tex_discard_level != 0 && override_tex_discard_level <= MAX_DISCARD_LEVEL) // <FS:Trish/> nametag portraits need full resolution
     {
         desired_discard = override_tex_discard_level;
     }
@@ -4421,6 +4458,13 @@ void LLViewerLODTexture::processTextureStats()
 {
     LL_PROFILE_ZONE_SCOPED_CATEGORY_TEXTURE;
     updateVirtualSize();
+    // <FS:Trish> The UUID may already have been created as an LOD texture.
+    if (fsNameTagNeedsFullResolution())
+    {
+        mDesiredDiscardLevel = 0;
+        return;
+    }
+    // </FS:Trish>
     const bool fs_release_faceless = fsFacelessReleaseDue(); // <FS:Trish/> FSTextureReleaseFaceless
 
     bool did_downscale = false;
