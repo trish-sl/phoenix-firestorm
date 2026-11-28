@@ -1992,8 +1992,10 @@ bool LLAppViewer::doFrame()
     {
         static LLCachedControl<bool> gpu_timings(gSavedSettings, "FSRenderGPUTimings", false);
         static LLCachedControl<F32> gpu_timings_interval(gSavedSettings, "FSRenderGPUTimingsInterval", 10.f);
+        static LLCachedControl<bool> show_frame_times(gSavedSettings, "FSStatusBarShowFrameTimes", false);
+        static LLCachedControl<bool> show_fps(gSavedSettings, "FSStatusBarShowFPS", true);
         FSSettingsTuner::frame(); // Suggest settings: its measurement, which turns the GPU timers on for itself
-        FSGPUTimers::frame(gpu_timings && gGLManager.mInited, gpu_timings_interval);
+        FSGPUTimers::frame(gpu_timings && gGLManager.mInited, gpu_timings_interval, show_frame_times && show_fps);
         FSAvatarCostLog::frame(gpu_timings && LLStartUp::getStartupState() >= STATE_STARTED, gpu_timings_interval);
         FSParticleRender::frame(gpu_timings && LLStartUp::getStartupState() >= STATE_STARTED, gpu_timings_interval);
         FSAvatarAlpha::frame(gpu_timings && LLStartUp::getStartupState() >= STATE_STARTED, gpu_timings_interval);

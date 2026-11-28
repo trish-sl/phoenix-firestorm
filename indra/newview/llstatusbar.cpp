@@ -28,6 +28,8 @@
 #include "llviewerprecompiledheaders.h"
 
 #include "llstatusbar.h"
+#include "fsgputimers.h" // <FS:Trish/> Live frame timings
+#include "fsstallwatch.h" // <FS:Trish/> Main-thread CPU time
 
 // viewer includes
 #include "llagent.h"
@@ -534,6 +536,10 @@ bool LLStatusBar::postBuild()
     {
         onShowFPSChanged(LLSD(false));
     }
+    // <FS:Trish> Optional CPU/GPU frame timings in the FPS display
+    gSavedSettings.getControl("FSStatusBarShowFrameTimes")->getSignal()->connect(boost::bind(&LLStatusBar::onShowFrameTimesChanged, this));
+    onShowFrameTimesChanged();
+    // </FS:Trish>
     // </FS:Ansariel>
 
     // <FS:PP> Option to hide volume controls (sounds, media, stream) in upper right
@@ -626,7 +632,21 @@ void LLStatusBar::refresh()
 
         mFPSUpdateTimer.reset();
         const auto fps = LLTrace::get_frame_recording().getPeriodMedianPerSec(LLStatViewer::FPS);
-        mFPSText->setText(llformat("%.1f", fps));
+        // <FS:Trish> CPU and GPU run concurrently; these are not parts of a sum.
+        //mFPSText->setText(llformat("%.1f", fps));
+        static LLCachedControl<bool> show_frame_times(gSavedSettings, "FSStatusBarShowFrameTimes", false);
+        if (show_frame_times)
+        {
+            F64 cpu_ms = 0.0, gpu_ms = 0.0;
+            const std::string cpu = FSStallWatch::liveCPUFrameMs(cpu_ms) ? llformat("%.1f", cpu_ms) : "--";
+            const std::string gpu = FSGPUTimers::getLiveFrameMs(gpu_ms) ? llformat("%.1f", gpu_ms) : "--";
+            mFPSText->setText(llformat("%.1f  CPU %s  GPU %s ms", fps, cpu.c_str(), gpu.c_str()));
+        }
+        else
+        {
+            mFPSText->setText(llformat("%.1f", fps));
+        }
+        // </FS:Trish>
 
         auto fps_color{ fps_uncapped_color };
         if (fsStatusBarShowFPSColors)
@@ -1904,6 +1924,34 @@ void LLStatusBar::onShowFPSChanged(const LLSD& newvalue)
     updateOmnifilterPanelPosition();
     update();
 }
+
+// <FS:Trish> Expand the FPS control and move the panel left, keeping its right edge anchored.
+void LLStatusBar::onShowFrameTimesChanged()
+{
+    const bool show = gSavedSettings.getBOOL("FSStatusBarShowFrameTimes");
+    LLRect fps_rect = mFPSText->getRect();
+    const S32 new_width = show ? 200 : 42;
+    const S32 delta = new_width - fps_rect.getWidth();
+    fps_rect.mRight += delta;
+    mFPSText->setRect(fps_rect);
+    mFPSText->setToolTip(LLStringExplicit(show
+        ? "FPS; CPU: main-thread CPU time, GPU: timestamp span in milliseconds. These overlap; GPU time can include idle gaps. Click to adjust the FPS limit."
+        : "Frames per second (click to adjust limit)"));
+    if (mFPSText->getVisible() && delta != 0)
+    {
+        LLRect rect = mTimeMediaPanel->getRect();
+        rect.translate(-delta, 0);
+        rect.mRight += delta;
+        mTimeMediaPanel->setRect(rect);
+        rect = mBalancePanel->getRect();
+        rect.translate(-delta, 0);
+        mBalancePanel->setRect(rect);
+        updateMenuSearchPosition();
+        updateOmnifilterPanelPosition();
+        update();
+    }
+}
+// </FS:Trish>
 
 bool LLStatusBar::rebakeRegionCallback(const LLSD& notification, const LLSD& response)
 {

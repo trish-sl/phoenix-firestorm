@@ -44,7 +44,10 @@ namespace FSGPUTimers
 {
     // Main thread, once per frame, at the start of the frame: turns timing on or off, closes the
     // previous frame, collects finished frames and logs every interval_seconds.
-    void frame(bool enabled, F32 interval_seconds);
+    void frame(bool enabled, F32 interval_seconds, bool live_frame = false);
+
+    // Recent GPU frame timestamp span, or false while unavailable/stale. Does not wait for the GPU.
+    bool getLiveFrameMs(F64& ms);
 
     // Main thread, GL context gone or going: forget all queries
     void releaseGL();

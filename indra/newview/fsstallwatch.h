@@ -43,6 +43,9 @@ namespace FSStallWatch
     // faults and disk traffic of the process. A long frame with little CPU time was waiting.
     std::string lastFrameCosts();
 
+    // Smoothed main-thread CPU time per frame; false where this measurement is unavailable.
+    bool liveCPUFrameMs(F64& ms);
+
     void shutdown();
 }
 

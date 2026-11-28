@@ -131,6 +131,13 @@
              parameter="FSStatusBarShowFPS" />
     </menu_item_check>
     <menu_item_check
+         label="Show CPU and GPU Frame Times"
+         name="FSStatusBarShowFrameTimes">
+        <on_click function="ToggleControl" parameter="FSStatusBarShowFrameTimes" />
+        <on_check function="CheckControl" parameter="FSStatusBarShowFrameTimes" />
+        <on_enable function="CheckControl" parameter="FSStatusBarShowFPS" />
+    </menu_item_check>
+    <menu_item_check
          label="Show Color Indicator for Frames per Second"
          name="FSStatusBarShowFPSColors">
         <on_click

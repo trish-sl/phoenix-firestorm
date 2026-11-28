@@ -59,6 +59,8 @@ std::atomic<U64> sFrameCpuStart{ 0 }; // main thread CPU time at frame start, 10
 std::atomic<bool> sWatching{ false };
 std::atomic<F32> sStackMs{ 0.f };
 std::atomic<bool> sShutdown{ false };
+F64 sLiveCpuMs = 0.0;
+bool sLiveCpuValid = false;
 
 #if LL_WINDOWS
 U64 filetime(const FILETIME& ft)
@@ -526,6 +528,9 @@ void FSStallWatch::frameMark(bool watching, F32 stack_ms)
         sLastFrame.mRead = now.mRead - sFrameCounters.mRead;
         sLastFrame.mWrite = now.mWrite - sFrameCounters.mWrite;
         sHaveLastFrame = true;
+        const F64 cpu_ms = (sLastFrame.mUser + sLastFrame.mKernel) / 10000.0;
+        sLiveCpuMs = sLiveCpuValid ? sLiveCpuMs * 0.9 + cpu_ms * 0.1 : cpu_ms;
+        sLiveCpuValid = true;
     }
     sFrameCounters = now;
     sHaveCounters = true;
@@ -552,6 +557,13 @@ std::string FSStallWatch::lastFrameCosts()
     }
 #endif
     return std::string();
+}
+
+bool FSStallWatch::liveCPUFrameMs(F64& ms)
+{
+    if (!sLiveCpuValid) return false;
+    ms = sLiveCpuMs;
+    return true;
 }
 
 void FSStallWatch::shutdown()

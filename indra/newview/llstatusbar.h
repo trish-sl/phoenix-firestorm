@@ -277,6 +277,7 @@ private:
 
     // <FS:Ansariel> FIRE-14482: Show FPS in status bar
     void onShowFPSChanged(const LLSD& newvalue);
+    void onShowFrameTimesChanged(); // <FS:Trish/> Live frame timings beside FPS
 
     /**
      * Updates parcel panel pos (mParcelPanel).

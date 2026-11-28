@@ -86,6 +86,10 @@ namespace
     U32 sDropped = 0;
     U32 sDroppedZones = 0;                  // zones past MAX_ZONES_PER_FRAME, not timed
     LLTimer sLogTimer;
+    bool sLive = false;
+    bool sLiveValid = false;
+    F64 sLiveMs = 0.0;
+    LLTimer sLiveTimer;
 
     // The settings tuner's capture: the same sums over the whole measurement. A frame whose GPU time alone is
     // over the tuner's hitch limit (a driver shader build, VRAM paging) is left out, as the tuner leaves out the
@@ -217,6 +221,13 @@ namespace
         bool capture = sCapture;
         if (timestamp(f.mFrameBegin, t0) && timestamp(f.mFrameEnd, t1) && t1 > t0)
         {
+            if (sLive)
+            {
+                const F64 ms = (F64)(t1 - t0) / 1.0e6;
+                sLiveMs = sLiveValid ? sLiveMs * 0.9 + ms * 0.1 : ms;
+                sLiveValid = true;
+                sLiveTimer.reset();
+            }
             sFrameNs += t1 - t0;
             capture = capture && t1 - t0 <= CAPTURE_HITCH_NS;
             if (capture)
@@ -315,7 +326,7 @@ namespace
 
 namespace FSGPUTimers
 {
-    void frame(bool enabled, F32 interval_seconds)
+    void frame(bool enabled, F32 interval_seconds, bool live_frame)
     {
         if (sMainThread == std::thread::id())
         {
@@ -325,13 +336,20 @@ namespace FSGPUTimers
         }
         // A capture times frames without logging them
         const bool log = enabled;
-        enabled = enabled || (sCapture && gGLManager.mInited);
+        const bool zones = enabled || (sCapture && gGLManager.mInited);
+        enabled = zones || (live_frame && gGLManager.mInited);
 #if LL_WINDOWS // elsewhere these are prototypes, not loaded pointers
         if (!glQueryCounter || !glGetQueryObjectui64v)
         {
             enabled = false;
         }
 #endif
+
+        sLive = enabled && live_frame;
+        if (!sLive)
+        {
+            sLiveValid = false;
+        }
 
         if (sOn)
         {
@@ -375,7 +393,7 @@ namespace FSGPUTimers
         }
 
         sOn = enabled;
-        LLFSGPUZone::sActive.store(enabled, std::memory_order_relaxed);
+        LLFSGPUZone::sActive.store(enabled && zones, std::memory_order_relaxed);
         if (sOn)
         {
             sCur.mFrameBegin = takeQuery();
@@ -387,6 +405,7 @@ namespace FSGPUTimers
     {
         LLFSGPUZone::sActive.store(false, std::memory_order_relaxed);
         sOn = false;
+        sLive = sLiveValid = false;
         sStack.clear();
         giveBack(sCur);
         for (Frame& f : sPending)
@@ -399,6 +418,16 @@ namespace FSGPUTimers
             glDeleteQueries((GLsizei)sFreeQueries.size(), sFreeQueries.data());
         }
         sFreeQueries.clear();
+    }
+
+    bool getLiveFrameMs(F64& ms)
+    {
+        if (!sLive || !sLiveValid || sLiveTimer.getElapsedTimeF32() > 2.f)
+        {
+            return false;
+        }
+        ms = sLiveMs;
+        return true;
     }
 
     void startCapture()
