@@ -140,7 +140,7 @@
              bottom="-1">
                 <panel
                  follows="left|top"
-                 height="1166"
+                 height="1193"
                  layout="topleft"
                  left="0"
                  name="experimental_general_settings"
@@ -782,6 +782,17 @@
                      tool_tip="How many of the most recent chat log lines a conversation or nearby chat shows when it opens. 0: all the viewer recalls (about 200), as standard."
                      top="1124"
                      width="100" />
+                    <check_box
+                     control_name="ChatServiceEnabled"
+                     follows="left|top"
+                     height="20"
+                     label="Fetch direct-message history from Chat Service"
+                     layout="topleft"
+                     left="15"
+                     name="chat_service_enabled"
+                     tool_tip="Fetch and show direct-message history from Chat Service. Applies to all accounts on this viewer and takes effect at the next login. Local chat logs are unaffected."
+                     top="1150"
+                     width="475" />
                 </panel>
             </scroll_container>
         </panel>
